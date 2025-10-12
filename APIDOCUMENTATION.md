@@ -1,4 +1,4 @@
-# 🚌 Madison Metro ML API Documentation
+# Madison Metro ML API Documentation
 
 ## Overview
 
@@ -22,7 +22,7 @@ Currently, no authentication is required. In production, consider implementing A
 
 ## Core Endpoints
 
-### 🚌 Bus Routes
+### Bus Routes
 
 #### Get All Routes
 ```http
@@ -93,7 +93,7 @@ GET /stops?rt={route}&dir={direction}
 }
 ```
 
-### 🚌 Live Vehicles
+### Live Vehicles
 
 #### Get Live Vehicle Locations
 ```http
@@ -154,7 +154,7 @@ GET /predictions?stpid={stop_id}
 }
 ```
 
-### 🗺️ Route Patterns
+### Route Patterns
 
 #### Get Route Patterns
 ```http
@@ -281,7 +281,7 @@ GET /ml/insights
 }
 ```
 
-## 📊 Analytics Endpoints
+## Analytics Endpoints
 
 ### Get Route Statistics
 ```http
@@ -317,7 +317,7 @@ GET /analytics/system
 }
 ```
 
-## 🔧 Error Handling
+## Error Handling
 
 ### Error Response Format
 ```json
@@ -338,14 +338,14 @@ GET /analytics/system
 | `ML_MODEL_ERROR` | ML prediction failed | Check model status |
 | `DATA_UNAVAILABLE` | No data available | Check data collection |
 
-## 📈 Performance Metrics
+## Performance Metrics
 
 - **Average Response Time**: <200ms
 - **Uptime**: 99.9%
 - **Data Freshness**: <5 minutes
 - **Prediction Accuracy**: 87.5%
 
-## 🚀 Usage Examples
+## Usage Examples
 
 ### JavaScript/React
 ```javascript

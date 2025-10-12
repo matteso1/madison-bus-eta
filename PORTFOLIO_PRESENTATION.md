@@ -1,14 +1,14 @@
-# 🚌 Madison Metro ML - Portfolio Presentation
+# Madison Metro ML - Portfolio Presentation
 
-## 🎯 **Project Overview**
+## Project Overview
 
 **Madison Metro ML** is a comprehensive machine learning system that predicts bus delays in real-time using advanced data science techniques. This project demonstrates end-to-end capabilities in data collection, ML model development, and production deployment.
 
 ---
 
-## 🏆 **Key Achievements**
+## Key Achievements
 
-### 📊 **Data Science Excellence**
+### Data Science Excellence
 - **100,000+ records** collected from real-time API
 - **87.5% prediction accuracy** (17.5% improvement over baseline)
 - **1.79 minute MAE** for delay predictions
@@ -28,7 +28,7 @@
 
 ---
 
-## 🛠️ **Technical Stack**
+## Technical Stack
 
 ### **Backend Technologies**
 - **Python 3.9** - Core application language
@@ -54,7 +54,7 @@
 
 ---
 
-## 📈 **Project Impact & Results**
+## Project Impact & Results
 
 ### **Quantitative Results**
 - **Data Volume**: 100,000+ bus prediction records
@@ -71,7 +71,7 @@
 
 ---
 
-## 🎨 **Visual Highlights**
+## Visual Highlights
 
 ### **Interactive Dashboard**
 - **Live bus tracking** with real-time map updates
@@ -87,7 +87,7 @@
 
 ---
 
-## 🚀 **Deployment & Scalability**
+## Deployment & Scalability
 
 ### **Production Ready**
 - **Docker containerization** for easy deployment
@@ -125,7 +125,7 @@
 
 ---
 
-## 🎯 **Portfolio Value**
+## Portfolio Value
 
 ### **For Data Science Roles**
 - Demonstrates **end-to-end ML pipeline** development
@@ -147,7 +147,7 @@
 
 ---
 
-## 🔮 **Future Enhancements**
+## Future Enhancements
 
 ### **Technical Improvements**
 - **Real-time database** integration (PostgreSQL/MongoDB)
@@ -199,7 +199,7 @@
 
 ---
 
-## 💡 **Key Takeaways**
+## Key Takeaways
 
 ### **What This Project Demonstrates**
 - **End-to-end** data science project execution

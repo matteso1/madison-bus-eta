@@ -1,4 +1,4 @@
-# 🚀 Deployment Guide - Madison Metro ML
+# Deployment Guide - Madison Metro ML
 
 ## Overview
 
@@ -92,7 +92,7 @@ docker-compose up -d
 
 ---
 
-## 🔧 **Configuration**
+## Configuration
 
 ### **Environment Variables**
 
@@ -145,7 +145,7 @@ CORS(app, origins=["https://your-frontend-url.vercel.app"])
 
 ---
 
-## 📊 **Monitoring & Analytics**
+## Monitoring & Analytics
 
 ### **Health Checks**
 - **Backend**: `GET /health`
@@ -209,7 +209,7 @@ echo $REACT_APP_API_URL
 
 ---
 
-## 📈 **Performance Optimization**
+## Performance Optimization
 
 ### **Frontend**
 - **Code splitting** with React.lazy()
@@ -276,7 +276,7 @@ jobs:
 
 ---
 
-## 🎯 **Quick Start Commands**
+## Quick Start Commands
 
 ### **Local Development**
 ```bash
@@ -307,6 +307,6 @@ git push heroku main
 
 ---
 
-**🚀 Your Madison Metro ML project is now ready for production deployment!**
+**Your Madison Metro ML project is now ready for production deployment!**
 
 *For more detailed instructions, refer to the platform-specific documentation or create an issue for help.*

@@ -1,270 +1,329 @@
-# Madison Metro ML - Real-Time Bus Delay Prediction System
+# Madison Metro Bus Arrival Time Prediction System
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-[![React](https://img.shields.io/badge/React-19.1.1-blue.svg)](https://reactjs.org)
-[![Machine Learning](https://img.shields.io/badge/ML-XGBoost%20%7C%20LightGBM%20%7C%20Neural%20Networks-orange.svg)](https://scikit-learn.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+A machine learning system that improves bus arrival time predictions by **21.3%** over the Madison Metro Transit API using real-world data and advanced ML techniques.
 
-A machine learning system for predicting Madison Metro bus delays using real-time data collection, ML models, and interactive visualizations. Demonstrates end-to-end data science capabilities with production deployment.
+## Project Overview
 
-## Key Features
+This project demonstrates end-to-end machine learning engineering through the development of a production-ready system that predicts bus arrival times more accurately than the existing Madison Metro API. By collecting 200,000+ real-world predictions over 20 days and engineering 28 intelligent features, the system achieves significant improvements in prediction accuracy.
 
-### Data Collection & Processing
-- **Real-time API integration** with Madison Metro BusTime API
-- **1,880+ CSV files** containing 100,000+ prediction records
-- **Intelligent data collection** with adaptive scheduling (2-30 minute intervals)
-- **95.4% data completeness** with automatic error recovery
-- **API rate limiting** (9,500 calls/day) with smart optimization
+## Key Achievements
 
-### Machine Learning Pipeline
-- **Multiple ML models**: XGBoost, LightGBM, Neural Networks, Random Forest, Linear Regression
-- **87.5% prediction accuracy** with 1.79 minute Mean Absolute Error
-- **Real-time predictions** for bus delays and arrival times
-- **Feature engineering** with temporal, spatial, and contextual features
-- **Model comparison** and performance analysis
+- **21.3% improvement** in prediction accuracy over the Madison Metro API baseline (MAE: 0.292 vs 0.371 minutes)
+- Trained and compared **4 ML models** (XGBoost, LightGBM, Random Forest, Gradient Boosting) - all beat the baseline
+- Collected and processed **204,380 prediction records** across 22 bus routes over 20 days
+- Engineered **28 features** incorporating temporal patterns, route characteristics, and historical statistics
+- Deployed **production REST API** with Flask for real-time enhanced predictions
+- Prepared **clean dataset for Kaggle** with comprehensive documentation
 
-### Interactive Dashboard
-- **Live bus tracking** with real-time map updates
-- **ML analytics dashboard** with performance metrics
-- **Interactive visualizations** using Chart.js and Recharts
-- **Responsive design** with modern UI/UX
-- **Real-time statistics** and route performance analysis
+## Technical Stack
 
-### Production Ready
-- **Flask REST API** with comprehensive endpoints
-- **React frontend** with modern component architecture
-- **Docker support** for easy deployment
-- **Comprehensive logging** and error handling
-- **Scalable architecture** for handling high data volumes
+### Data Pipeline
+- **Python 3.13** with pandas and numpy for data processing
+- **Real-time data collection** with rate-limited API polling
+- **CSV-based storage** with efficient consolidation pipeline
 
-## 📈 **Project Impact**
+### Machine Learning
+- **Models:** XGBoost, LightGBM, Random Forest, Gradient Boosting
+- **Framework:** scikit-learn for preprocessing and evaluation
+- **Features:** 28 engineered features from temporal and categorical data
+- **Validation:** 80/20 train-test split with proper baseline comparison
 
-- **Data Volume**: 100,000+ bus prediction records
-- **Coverage**: 19 bus routes across Madison
-- **Accuracy**: 87.5% prediction accuracy (17.5% improvement over baseline)
-- **Real-time**: Sub-minute prediction updates
-- **Scalability**: Handles 1,000+ API calls per day
+### Production API
+- **Flask** REST API with CORS support
+- **Enhanced prediction endpoints** serving sub-second predictions
+- **Model integration** with 1.44 MB XGBoost model footprint
 
-## 🏗️ **Architecture Overview**
+## Model Performance
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Data Source   │    │   ML Pipeline   │    │   Frontend      │
-│                 │    │                 │    │                 │
-│ Madison Metro   │───▶│ Data Collection │───▶│ React Dashboard │
-│ BusTime API     │    │ Feature Eng.    │    │ Interactive Map │
-│                 │    │ Model Training  │    │ ML Analytics    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Data Storage  │    │   ML Models     │    │   API Layer     │
-│                 │    │                 │    │                 │
-│ CSV Files       │    │ XGBoost         │    │ Flask REST API  │
-│ (1,880 files)   │    │ LightGBM        │    │ Real-time       │
-│                 │    │ Neural Networks │    │ Predictions     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+| Model | MAE (minutes) | RMSE | R² | Improvement vs API |
+|-------|---------------|------|----|--------------------|
+| **XGBoost** | **0.292** | **0.353** | **1.000** | **+21.3%** |
+| LightGBM | 0.299 | 0.362 | 1.000 | +19.2% |
+| Random Forest | 0.300 | 0.367 | 1.000 | +19.1% |
+| Gradient Boosting | 0.304 | 0.368 | 1.000 | +18.0% |
+| Madison Metro API (Baseline) | 0.371 | 0.453 | 1.000 | - |
 
-## 🚀 **Quick Start**
+**All models achieved 100% of predictions within 2 minutes of actual arrival time.**
+
+## Dataset Statistics
+
+- **Total Records:** 204,380 predictions
+- **Routes:** 22 bus routes across Madison, Wisconsin
+- **Stops:** 24 major stops
+- **Vehicles:** 176 unique vehicles tracked
+- **Collection Period:** 20 days (September 12 - October 2, 2025)
+- **Time Coverage:** Including rush hours, weekends, and various weather conditions
+
+## Feature Engineering
+
+The system uses 28 engineered features across five categories:
+
+### Temporal Features (13 features)
+- Hour of day, day of week, minute of hour
+- Rush hour indicators (morning 7-9 AM, evening 4-6 PM)
+- Weekend flags
+- Cyclical encodings (sine/cosine) for time continuity
+
+### Route Features (6 features)
+- Route type (BRT vs regular)
+- Historical average wait times
+- Route reliability scores
+- Wait time standard deviation
+
+### Stop Features (5 features)
+- Stop-specific average wait times
+- Stop frequency (traffic volume)
+- Historical reliability by stop
+
+### Interaction Features (4 features)
+- Route-hour interactions
+- Route-day interactions
+- Weekday rush hour combinations
+
+### Prediction Features (2 features)
+- API prediction horizon
+- Deviation from historical averages
+
+**Top 3 Most Important Features:**
+1. `prediction_horizon` (59.5%) - The API's prediction itself
+2. `predicted_minutes` (23.4%) - Raw API value  
+3. `predicted_vs_avg` (17.2%) - Deviation from historical patterns
+
+*The model learns to intelligently correct API predictions using contextual information.*
+
+## Installation & Setup
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 14+
-- Madison Metro API key
+- Python 3.11 or higher
+- pip package manager
+- Madison Metro API key (obtain from City of Madison)
 
-### 1. Clone the Repository
+### Backend Setup
+
 ```bash
-git clone https://github.com/yourusername/madison-bus-eta.git
+# Clone the repository
+git clone https://github.com/matteso1/madison-bus-eta.git
 cd madison-bus-eta
-```
 
-### 2. Backend Setup
-```bash
+# Create virtual environment
 cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Environment Configuration
-```bash
-cp .env.example .env
-# Edit .env and add your Madison Metro API key
-```
+# Set up environment variables
+echo "MADISON_METRO_API_KEY=your_api_key_here" > .env
+echo "MADISON_METRO_API_BASE=https://metromap.cityofmadison.com/bustime/api/v3" >> .env
 
-### 4. Start the Backend
-```bash
-# Start data collection
-python start_data_collection.py
-
-# Start API server (in another terminal)
+# Run the Flask API
 python app.py
 ```
 
-### 5. Frontend Setup
+### Frontend Setup
+
 ```bash
 cd frontend
 npm install
 npm start
 ```
 
-### 6. Access the Application
-- **Frontend**: http://localhost:3000
-- **API**: http://localhost:5000
-- **API Docs**: http://localhost:5000/docs
+The application will be available at `http://localhost:3000`
 
-## 📊 **Data Science Showcase**
+## API Documentation
 
-### Model Performance Comparison
-| Model | Accuracy | MAE (min) | Training Time |
-|-------|----------|-----------|---------------|
-| **XGBoost** | **87.5%** | **1.79** | 45s |
-| LightGBM | 85.2% | 2.1 | 32s |
-| Neural Network | 82.8% | 2.4 | 120s |
-| Random Forest | 80.1% | 2.8 | 28s |
-| Linear Regression | 75.3% | 3.2 | 5s |
+### Enhanced Prediction Endpoint
 
-### Feature Importance Analysis
-- **Time of Day**: 35% - Peak hours show highest delay variance
-- **Route Type**: 28% - BRT routes vs local routes
-- **Weather**: 18% - Weather conditions impact delays
-- **Traffic**: 12% - Real-time traffic data
-- **Passenger Load**: 7% - Bus capacity affects timing
+**Request:**
+```http
+POST /predict/enhanced
+Content-Type: application/json
 
-### Key Insights
-- **Peak Delay Times**: Morning rush (7-8 AM) shows 40% more delays
-- **Route Performance**: Route A has highest delay variance
-- **Data Quality**: 95.4% completeness with real-time collection
-- **Model Accuracy**: 17.5% improvement over baseline predictions
+{
+  "route": "A",
+  "stop_id": "1234",
+  "api_prediction": 5.0
+}
+```
 
-## 🔧 **API Endpoints**
+**Response:**
+```json
+{
+  "enhanced_prediction": 4.8,
+  "api_prediction": 5.0,
+  "improvement_minutes": 0.2,
+  "improvement_percent": 4.0,
+  "confidence": 0.85,
+  "model": "XGBoost",
+  "timestamp": "2025-10-11T15:30:00"
+}
+```
 
-### Core Endpoints
-- `GET /routes` - Get all bus routes
-- `GET /directions?rt=<route>` - Get directions for a route
-- `GET /stops?rt=<route>&dir=<direction>` - Get stops for route/direction
-- `GET /vehicles?rt=<route>` - Get live vehicle locations
-- `GET /predictions?stpid=<stop_id>` - Get arrival predictions
+### Batch Predictions
 
-### ML Endpoints
-- `POST /predict` - Get delay prediction for specific bus
-- `GET /ml/performance` - Get model performance metrics
-- `GET /ml/features` - Get feature importance analysis
-- `GET /ml/insights` - Get data science insights
+**Request:**
+```http
+POST /predict/enhanced/batch
+Content-Type: application/json
 
-## 📁 **Project Structure**
+{
+  "predictions": [
+    {"route": "A", "stop_id": "1234", "api_prediction": 5.0},
+    {"route": "B", "stop_id": "5678", "api_prediction": 3.0}
+  ]
+}
+```
+
+### Model Information
+
+```http
+GET /ml/model-info
+```
+
+Returns model performance metrics, features count, and improvement statistics.
+
+### Additional Endpoints
+
+- `GET /routes` - List all available routes
+- `GET /directions?rt={route}` - Get directions for a route
+- `GET /stops?rt={route}&dir={direction}` - Get stops for a route/direction
+- `GET /vehicles?rt={route}` - Get live vehicle locations
+- `GET /predictions?stpid={stop_id}` - Get arrival predictions for a stop
+- `GET /ml/status` - Check ML system status
+
+## Project Structure
 
 ```
 madison-bus-eta/
-├── backend/                    # Python backend services
-│   ├── app.py                 # Flask API server
-│   ├── optimal_collector.py   # Data collection system
-│   ├── ml/                    # Machine learning components
-│   │   ├── train_models.py    # Model training pipeline
-│   │   ├── delay_predictor.py # Prediction models
-│   │   ├── data_processor.py  # Data preprocessing
-│   │   ├── models/            # Trained ML models
-│   │   └── visualizations/    # ML visualizations
-│   ├── collected_data/        # CSV data files (1,880 files)
-│   ├── analysis/              # Data analysis outputs
-│   └── utils/                 # Utility functions
-├── frontend/                  # React frontend
+├── backend/
+│   ├── app.py                          # Main Flask application
+│   ├── optimal_collector.py            # Data collection system
+│   ├── requirements.txt                # Python dependencies
+│   ├── ml/
+│   │   ├── data_consolidator.py        # Data pipeline
+│   │   ├── feature_engineer.py         # Feature engineering
+│   │   ├── train_arrival_models.py     # Model training
+│   │   ├── smart_prediction_api.py     # Production ML API
+│   │   └── prepare_kaggle_dataset.py   # Dataset preparation
+│   └── collected_data/                 # Raw data (gitignored)
+├── frontend/
 │   ├── src/
-│   │   ├── App.js            # Main application
-│   │   ├── MapView.js        # Interactive map component
-│   │   ├── MLDashboard.js    # ML analytics dashboard
-│   │   └── api.js            # API integration
-│   └── public/
-├── docs/                      # Documentation
-├── docker/                    # Docker configuration
-└── README.md                  # This file
+│   │   ├── App.js                      # Main React component
+│   │   ├── MapView.js                  # Interactive map
+│   │   └── MLDashboard.js              # ML metrics dashboard
+│   └── package.json
+├── ML_PROJECT_SUMMARY.md               # Detailed project documentation
+└── README.md                           # This file
 ```
 
-## 🎯 **Technical Highlights**
+## Data Collection Process
 
-### Data Collection
-- **Adaptive scheduling** based on time of day
-- **Error recovery** with exponential backoff
-- **Data validation** and quality checks
-- **CSV storage** with timestamped files
+The system employs an optimized data collection strategy:
 
-### Machine Learning
-- **Feature engineering** with 20+ features
-- **Cross-validation** with time series splits
-- **Hyperparameter tuning** with Optuna
-- **Model ensemble** for improved accuracy
+1. **Smart Polling:** Adaptive collection frequency based on time of day
+   - 2-minute intervals during rush hours (7-9 AM, 4-6 PM)
+   - 5-minute intervals during regular hours
+   - Reduced frequency during off-peak times
 
-### Frontend
-- **React 19** with modern hooks
-- **Framer Motion** for animations
-- **Chart.js** for data visualization
-- **Leaflet** for interactive maps
-- **Responsive design** for all devices
+2. **Rate Limiting:** Stays well within API limits (9,500/10,000 daily requests)
 
-### Backend
-- **Flask** with RESTful API design
-- **Pandas** for data processing
-- **Scikit-learn** for ML models
-- **XGBoost/LightGBM** for gradient boosting
-- **TensorFlow** for neural networks
+3. **Data Validation:** Real-time validation and error handling
 
-## 📊 **Performance Metrics**
+4. **Efficient Storage:** CSV-based storage with timestamp-based file organization
 
-- **Data Collection**: 95.4% completeness
-- **API Response**: <200ms average
-- **Model Accuracy**: 87.5%
-- **Prediction Time**: <50ms
-- **Uptime**: 99.9% (with error recovery)
+## Machine Learning Pipeline
 
-## 🚀 **Deployment Options**
-
-### Local Development
+### 1. Data Consolidation
 ```bash
-# Backend
-cd backend && python app.py
-
-# Frontend
-cd frontend && npm start
+python backend/ml/data_consolidator.py
 ```
+Loads 4,000+ CSV files and creates a unified ML-ready dataset.
 
-### Docker Deployment
+### 2. Feature Engineering
 ```bash
-docker-compose up -d
+python backend/ml/feature_engineer.py
 ```
+Engineers 28 features from raw transit data.
 
-### Cloud Deployment
-- **Frontend**: Vercel, Netlify, or AWS S3
-- **Backend**: Heroku, AWS EC2, or Google Cloud
-- **Database**: PostgreSQL or MongoDB (optional)
+### 3. Model Training
+```bash
+python backend/ml/train_arrival_models.py
+```
+Trains multiple models and compares against API baseline.
 
-## 🤝 **Contributing**
+### 4. Kaggle Dataset Preparation
+```bash
+python backend/ml/prepare_kaggle_dataset.py
+```
+Creates clean, documented dataset for public release.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Results & Insights
 
-## 📄 **License**
+### Performance Improvements
+- **Mean Absolute Error:** Reduced from 0.371 to 0.292 minutes (21.3% improvement)
+- **Root Mean Square Error:** Reduced from 0.453 to 0.353 minutes (22.1% improvement)
+- **Predictions within 1 minute:** Improved from 99.2% to 99.9%
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Key Findings
+1. **API predictions are already quite good** - The baseline MAE of 0.371 minutes demonstrates high-quality API predictions
+2. **Temporal context matters** - Time of day and day of week significantly impact prediction accuracy
+3. **Route characteristics are predictive** - BRT routes show different patterns than regular routes
+4. **Historical patterns help** - Leveraging route/stop history improves predictions
+5. **The model learns corrections** - Rather than replacing the API, the model learns when and how to adjust its predictions
 
-## 🙏 **Acknowledgments**
+## Use Cases
 
-- **Madison Metro** for providing the BusTime API
-- **OpenStreetMap** for map data
-- **React** and **Python** communities for excellent libraries
-- **University of Wisconsin-Madison** for academic support
+- **Transit Planning:** Identify routes with high prediction variance
+- **Service Optimization:** Understand delay patterns by time and location
+- **Rider Experience:** Provide more accurate arrival times to passengers
+- **ML Education:** Demonstrate real-world ML pipeline from data collection to deployment
+- **Research:** Public dataset for transportation ML research
 
-## 📞 **Contact**
+## Future Enhancements
 
-- **GitHub**: [@yourusername](https://github.com/yourusername)
-- **LinkedIn**: [Your Name](https://linkedin.com/in/yourname)
-- **Email**: your.email@example.com
+- **Weather Integration:** Add weather data to improve predictions during adverse conditions
+- **Deep Learning:** Experiment with LSTM/Transformer models for sequence modeling
+- **Real-time Deployment:** Deploy to cloud platform for live predictions
+- **Mobile Application:** Create native app with enhanced predictions
+- **Expand Coverage:** Add more cities and transit systems
+- **A/B Testing:** Measure real-world user satisfaction improvement
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- **Madison Metro Transit** for providing public API access
+- **City of Madison, Wisconsin** for open data initiative
+- **XGBoost, LightGBM, scikit-learn** communities for excellent ML tools
+
+## Contact
+
+For questions or collaboration opportunities:
+- GitHub: [@matteso1](https://github.com/matteso1)
+- Project Repository: [madison-bus-eta](https://github.com/matteso1/madison-bus-eta)
+
+## Citation
+
+If you use this project or dataset in your research, please cite:
+
+```
+Madison Metro Bus Arrival Time Prediction System
+Author: matteso1
+Year: 2025
+URL: https://github.com/matteso1/madison-bus-eta
+```
 
 ---
 
-**⭐ Star this repository if you found it helpful!**
+**Project Status:** Complete and production-ready
 
-*This project demonstrates advanced data science and machine learning skills with real-world applications in public transportation.*
+**Dataset:** Available in `kaggle_dataset/` directory (excluded from git for size - contact for access)
+
+**Models:** Trained models available upon request (excluded from git for size)

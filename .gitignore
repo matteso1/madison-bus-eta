@@ -182,18 +182,24 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# ML model artifacts
+# ML model artifacts (large files)
 models/*.pkl
 models/*.h5
 models/*.joblib
 */models/*.pkl
 */models/*.h5
 */models/*.joblib
+backend/ml/models/*.pkl
+backend/ml/encoders/*.pkl
 
 # Large data files
 *.csv
 !sample_data.csv
 !example_data.csv
+backend/collected_data/*.csv
+backend/ml/data/*.csv
+kaggle_dataset/
+backend/kaggle_dataset/
 
 # Temporary files
 *.tmp

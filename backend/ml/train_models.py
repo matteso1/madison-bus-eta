@@ -1,456 +1,237 @@
-"""
-Madison Metro Bus ETA Prediction - ML Training Pipeline
-Optimized for RTX 4090 with comprehensive data processing
-"""
-
 import pandas as pd
 import numpy as np
-import os
-import glob
-from datetime import datetime, timedelta
-import warnings
-warnings.filterwarnings('ignore')
-
-# ML Libraries
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler, LabelEncoder
 import xgboost as xgb
 import lightgbm as lgb
+import joblib
+import os
+from .data_processor import MadisonMetroDataProcessor
 
-# Deep Learning
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-
-# Visualization
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-class MadisonMetroMLPipeline:
-    def __init__(self, data_dir="../collected_data"):
-        self.data_dir = data_dir
-        self.vehicle_data = None
-        self.prediction_data = None
-        self.processed_data = None
+class ModelTrainer:
+    def __init__(self):
+        self.processor = MadisonMetroDataProcessor()
         self.models = {}
-        self.scalers = {}
-        self.encoders = {}
+        self.model_scores = {}
         
-        # Configure TensorFlow for GPU
-        self.configure_gpu()
+    def load_and_prepare_data(self, data_files):
+        """Load and prepare data from multiple files"""
+        all_data = []
         
-    def configure_gpu(self):
-        """Configure TensorFlow to use GPU efficiently"""
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            try:
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-                print(f"✅ GPU configured: {len(gpus)} GPU(s) available")
-            except RuntimeError as e:
-                print(f"GPU configuration error: {e}")
-        else:
-            print("⚠️ No GPU found, using CPU")
+        for file_path in data_files:
+            df = self.processor.load_data(file_path)
+            if df is not None:
+                df = self.processor.create_features(df)
+                if df is not None and len(df) > 0:
+                    all_data.append(df)
+        
+        if not all_data:
+            print("No data loaded")
+            return None, None
+            
+        combined_df = pd.concat(all_data, ignore_index=True)
+        print(f"Combined dataset: {len(combined_df)} records")
+        
+        X, y = self.processor.prepare_features(combined_df)
+        return X, y
     
-    def load_all_data(self):
-        """Load and combine all CSV files"""
-        print("🔄 Loading all data files...")
-        
-        # Load vehicle data
-        vehicle_files = glob.glob(os.path.join(self.data_dir, "vehicles_*.csv"))
-        vehicle_dfs = []
-        
-        for file in vehicle_files:
-            try:
-                df = pd.read_csv(file)
-                vehicle_dfs.append(df)
-            except Exception as e:
-                print(f"⚠️ Error loading {file}: {e}")
-        
-        if vehicle_dfs:
-            self.vehicle_data = pd.concat(vehicle_dfs, ignore_index=True)
-            print(f"✅ Loaded {len(vehicle_dfs)} vehicle files: {len(self.vehicle_data)} records")
-        else:
-            print("❌ No vehicle data found")
-            return False
-        
-        # Load prediction data
-        prediction_files = glob.glob(os.path.join(self.data_dir, "predictions_*.csv"))
-        prediction_dfs = []
-        
-        for file in prediction_files:
-            try:
-                df = pd.read_csv(file)
-                prediction_dfs.append(df)
-            except Exception as e:
-                print(f"⚠️ Error loading {file}: {e}")
-        
-        if prediction_dfs:
-            self.prediction_data = pd.concat(prediction_dfs, ignore_index=True)
-            print(f"✅ Loaded {len(prediction_files)} prediction files: {len(self.prediction_data)} records")
-        else:
-            print("❌ No prediction data found")
-            return False
-        
-        return True
-    
-    def clean_and_preprocess(self):
-        """Clean and preprocess the data for ML training"""
-        print("🔄 Cleaning and preprocessing data...")
-        
-        # Clean vehicle data
-        if self.vehicle_data is not None:
-            # Convert timestamps
-            self.vehicle_data['collection_timestamp'] = pd.to_datetime(self.vehicle_data['collection_timestamp'])
-            self.vehicle_data['tmstmp'] = pd.to_datetime(self.vehicle_data['tmstmp'])
-            
-            # Handle missing values
-            self.vehicle_data = self.vehicle_data.dropna(subset=['lat', 'lon', 'rt'])
-            
-            # Convert delay to binary
-            self.vehicle_data['dly'] = self.vehicle_data['dly'].astype(int)
-            
-            # Convert passenger load to numeric
-            psgld_mapping = {'EMPTY': 0, 'LIGHT': 1, 'HALF_EMPTY': 2, 'FULL': 3}
-            self.vehicle_data['psgld_numeric'] = self.vehicle_data['psgld'].map(psgld_mapping).fillna(0)
-            
-            print(f"✅ Vehicle data cleaned: {len(self.vehicle_data)} records")
-        
-        # Clean prediction data
-        if self.prediction_data is not None:
-            # Convert timestamps
-            self.prediction_data['collection_timestamp'] = pd.to_datetime(self.prediction_data['collection_timestamp'])
-            self.prediction_data['prdtm'] = pd.to_datetime(self.prediction_data['prdtm'])
-            
-            # Handle missing values
-            self.prediction_data = self.prediction_data.dropna(subset=['stpid', 'rt', 'prdctdn'])
-            
-            # Convert prediction countdown to numeric
-            self.prediction_data['prdctdn_numeric'] = pd.to_numeric(
-                self.prediction_data['prdctdn'].replace('DUE', 0).replace('DLY', -1), 
-                errors='coerce'
-            ).fillna(0)
-            
-            # Calculate actual delay (if available)
-            self.prediction_data['actual_delay'] = (
-                self.prediction_data['prdtm'] - self.prediction_data['collection_timestamp']
-            ).dt.total_seconds() / 60  # Convert to minutes
-            
-            print(f"✅ Prediction data cleaned: {len(self.prediction_data)} records")
-        
-        return True
-    
-    def create_features(self):
-        """Create features for ML training"""
-        print("🔄 Creating features...")
-        
-        # Combine vehicle and prediction data for comprehensive features
-        combined_data = []
-        
-        if self.vehicle_data is not None and self.prediction_data is not None:
-            # Merge on route and timestamp proximity
-            for _, pred in self.prediction_data.iterrows():
-                # Find vehicles on same route within 5 minutes
-                time_window = timedelta(minutes=5)
-                vehicles = self.vehicle_data[
-                    (self.vehicle_data['rt'] == pred['rt']) &
-                    (abs(self.vehicle_data['collection_timestamp'] - pred['collection_timestamp']) <= time_window)
-                ]
-                
-                if not vehicles.empty:
-                    # Use the closest vehicle
-                    closest_vehicle = vehicles.iloc[0]
-                    
-                    # Create feature row
-                    feature_row = {
-                        'route': pred['rt'],
-                        'stop_id': pred['stpid'],
-                        'vehicle_lat': closest_vehicle['lat'],
-                        'vehicle_lon': closest_vehicle['lon'],
-                        'vehicle_speed': closest_vehicle['spd'],
-                        'vehicle_delay': closest_vehicle['dly'],
-                        'passenger_load': closest_vehicle['psgld_numeric'],
-                        'distance_to_stop': pred.get('dstp', 0),
-                        'predicted_countdown': pred['prdctdn_numeric'],
-                        'actual_delay': pred['actual_delay'],
-                        'hour': pred['collection_timestamp'].hour,
-                        'day_of_week': pred['collection_timestamp'].dayofweek,
-                        'is_weekend': pred['collection_timestamp'].dayofweek >= 5,
-                        'collection_time': pred['collection_timestamp']
-                    }
-                    combined_data.append(feature_row)
-        
-        self.processed_data = pd.DataFrame(combined_data)
-        
-        if not self.processed_data.empty:
-            print(f"✅ Features created: {len(self.processed_data)} samples")
-            
-            # Add more engineered features
-            self.processed_data['speed_squared'] = self.processed_data['vehicle_speed'] ** 2
-            self.processed_data['distance_speed_ratio'] = (
-                self.processed_data['distance_to_stop'] / (self.processed_data['vehicle_speed'] + 1)
-            )
-            self.processed_data['is_rush_hour'] = (
-                (self.processed_data['hour'] >= 7) & (self.processed_data['hour'] <= 9) |
-                (self.processed_data['hour'] >= 16) & (self.processed_data['hour'] <= 18)
-            )
-            
-            return True
-        else:
-            print("❌ No combined data created")
-            return False
-    
-    def prepare_training_data(self):
-        """Prepare data for model training"""
-        print("🔄 Preparing training data...")
-        
-        if self.processed_data is None or self.processed_data.empty:
-            print("❌ No processed data available")
-            return False
-        
-        # Select features
-        feature_columns = [
-            'vehicle_lat', 'vehicle_lon', 'vehicle_speed', 'vehicle_delay',
-            'passenger_load', 'distance_to_stop', 'hour', 'day_of_week',
-            'is_weekend', 'speed_squared', 'distance_speed_ratio', 'is_rush_hour'
-        ]
-        
-        # Encode categorical variables
-        le_route = LabelEncoder()
-        le_stop = LabelEncoder()
-        
-        # Convert to string to handle mixed types
-        self.processed_data['route_encoded'] = le_route.fit_transform(self.processed_data['route'].astype(str))
-        self.processed_data['stop_encoded'] = le_stop.fit_transform(self.processed_data['stop_id'].astype(str))
-        
-        self.encoders['route'] = le_route
-        self.encoders['stop'] = le_stop
-        
-        feature_columns.extend(['route_encoded', 'stop_encoded'])
-        
-        X = self.processed_data[feature_columns]
-        y = self.processed_data['actual_delay']
-        
-        # Remove infinite values
-        X = X.replace([np.inf, -np.inf], np.nan)
-        X = X.fillna(X.median())
-        
-        # Split data (time series split for temporal data)
-        split_point = int(len(X) * 0.8)
-        X_train, X_test = X[:split_point], X[split_point:]
-        y_train, y_test = y[:split_point], y[split_point:]
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        self.scalers['main'] = scaler
-        
-        self.X_train, self.X_test = X_train_scaled, X_test_scaled
-        self.y_train, self.y_test = y_train, y_test
-        
-        print(f"✅ Training data prepared: {len(X_train)} train, {len(X_test)} test samples")
-        return True
-    
-    def train_models(self):
+    def train_models(self, X, y):
         """Train multiple ML models"""
-        print("🔄 Training models...")
+        if X is None or y is None:
+            print("No data available for training")
+            return
         
-        if not hasattr(self, 'X_train'):
-            print("❌ No training data available")
-            return False
-        
-        # 1. Linear Regression
-        print("Training Linear Regression...")
-        lr = LinearRegression()
-        lr.fit(self.X_train, self.y_train)
-        self.models['linear_regression'] = lr
-        
-        # 2. Random Forest
-        print("Training Random Forest...")
-        rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-        rf.fit(self.X_train, self.y_train)
-        self.models['random_forest'] = rf
-        
-        # 3. XGBoost
-        print("Training XGBoost...")
-        xgb_model = xgb.XGBRegressor(
-            n_estimators=100,
-            max_depth=6,
-            learning_rate=0.1,
-            random_state=42,
-            n_jobs=-1
-        )
-        xgb_model.fit(self.X_train, self.y_train)
-        self.models['xgboost'] = xgb_model
-        
-        # 4. LightGBM
-        print("Training LightGBM...")
-        lgb_model = lgb.LGBMRegressor(
-            n_estimators=100,
-            max_depth=6,
-            learning_rate=0.1,
-            random_state=42,
-            n_jobs=-1
-        )
-        lgb_model.fit(self.X_train, self.y_train)
-        self.models['lightgbm'] = lgb_model
-        
-        # 5. Neural Network
-        print("Training Neural Network...")
-        self.train_neural_network()
-        
-        print("✅ All models trained successfully!")
-        return True
-    
-    def train_neural_network(self):
-        """Train a neural network model"""
-        model = Sequential([
-            Dense(128, activation='relu', input_shape=(self.X_train.shape[1],)),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(64, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.3),
-            Dense(32, activation='relu'),
-            Dropout(0.2),
-            Dense(1, activation='linear')
-        ])
-        
-        model.compile(
-            optimizer=Adam(learning_rate=0.001),
-            loss='mse',
-            metrics=['mae']
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
         )
         
-        callbacks = [
-            EarlyStopping(patience=10, restore_best_weights=True),
-            ReduceLROnPlateau(factor=0.5, patience=5)
-        ]
+        print(f"Training set: {len(X_train)} samples")
+        print(f"Test set: {len(X_test)} samples")
         
-        history = model.fit(
-            self.X_train, self.y_train,
-            validation_data=(self.X_test, self.y_test),
-            epochs=100,
-            batch_size=32,
-            callbacks=callbacks,
-            verbose=0
-        )
+        # Define models
+        models = {
+            'linear_regression': LinearRegression(),
+            'random_forest': RandomForestRegressor(n_estimators=100, random_state=42),
+            'xgboost': xgb.XGBRegressor(n_estimators=100, random_state=42),
+            'lightgbm': lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+        }
         
-        self.models['neural_network'] = model
-        self.nn_history = history
-    
-    def evaluate_models(self):
-        """Evaluate all trained models"""
-        print("🔄 Evaluating models...")
-        
-        results = {}
-        
-        for name, model in self.models.items():
-            if name == 'neural_network':
-                y_pred = model.predict(self.X_test).flatten()
-            else:
-                y_pred = model.predict(self.X_test)
+        # Train and evaluate models
+        for name, model in models.items():
+            print(f"\nTraining {name}...")
             
-            mae = mean_absolute_error(self.y_test, y_pred)
-            mse = mean_squared_error(self.y_test, y_pred)
-            rmse = np.sqrt(mse)
-            r2 = r2_score(self.y_test, y_pred)
+            # Train model
+            model.fit(X_train, y_train)
             
-            results[name] = {
-                'MAE': mae,
-                'MSE': mse,
-                'RMSE': rmse,
-                'R2': r2
+            # Make predictions
+            y_pred = model.predict(X_test)
+            
+            # Calculate metrics
+            mae = mean_absolute_error(y_test, y_pred)
+            mse = mean_squared_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
+            
+            # Cross-validation score
+            cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='neg_mean_absolute_error')
+            cv_mae = -cv_scores.mean()
+            
+            # Store model and scores
+            self.models[name] = model
+            self.model_scores[name] = {
+                'mae': mae,
+                'mse': mse,
+                'r2': r2,
+                'cv_mae': cv_mae,
+                'rmse': np.sqrt(mse)
             }
             
-            print(f"{name:20} - MAE: {mae:.2f}, RMSE: {rmse:.2f}, R²: {r2:.3f}")
+            print(f"{name} - MAE: {mae:.3f}, R²: {r2:.3f}, CV MAE: {cv_mae:.3f}")
         
-        self.evaluation_results = results
-        return results
+        # Find best model
+        best_model_name = min(self.model_scores.keys(), 
+                             key=lambda x: self.model_scores[x]['mae'])
+        print(f"\nBest model: {best_model_name}")
+        print(f"Best MAE: {self.model_scores[best_model_name]['mae']:.3f}")
+        
+        return best_model_name
     
-    def save_models(self, save_dir="ml/models"):
-        """Save trained models and scalers"""
-        os.makedirs(save_dir, exist_ok=True)
+    def save_models(self, output_dir='models'):
+        """Save trained models"""
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Save scikit-learn models
-        import joblib
         for name, model in self.models.items():
-            if name != 'neural_network':
-                joblib.dump(model, os.path.join(save_dir, f"{name}.pkl"))
+            filepath = os.path.join(output_dir, f'{name}.pkl')
+            joblib.dump(model, filepath)
+            print(f"Saved {name} to {filepath}")
         
-        # Save neural network
-        if 'neural_network' in self.models:
-            self.models['neural_network'].save(os.path.join(save_dir, "neural_network.h5"))
-        
-        # Save scalers and encoders
-        joblib.dump(self.scalers, os.path.join(save_dir, "scalers.pkl"))
-        joblib.dump(self.encoders, os.path.join(save_dir, "encoders.pkl"))
-        
-        print(f"✅ Models saved to {save_dir}")
+        # Save best model separately
+        if self.models:
+            best_model_name = min(self.model_scores.keys(), 
+                                 key=lambda x: self.model_scores[x]['mae'])
+            best_model_path = os.path.join(output_dir, 'best_model.pkl')
+            joblib.dump(self.models[best_model_name], best_model_path)
+            print(f"Saved best model ({best_model_name}) to {best_model_path}")
     
-    def run_full_pipeline(self):
-        """Run the complete ML pipeline"""
-        print("🚀 Starting Madison Metro ML Pipeline")
-        print("=" * 50)
+    def get_feature_importance(self, model_name='random_forest'):
+        """Get feature importance from model"""
+        if model_name not in self.models:
+            return None
+            
+        model = self.models[model_name]
         
-        # Load data
-        if not self.load_all_data():
-            return False
+        if hasattr(model, 'feature_importances_'):
+            importance = model.feature_importances_
+            features = self.processor.feature_columns
+            
+            feature_importance = list(zip(features, importance))
+            feature_importance.sort(key=lambda x: x[1], reverse=True)
+            
+            return feature_importance
+        else:
+            return None
+    
+    def generate_insights(self):
+        """Generate insights from trained models"""
+        insights = []
         
-        # Clean and preprocess
-        if not self.clean_and_preprocess():
-            return False
+        if not self.model_scores:
+            return insights
         
-        # Create features
-        if not self.create_features():
-            return False
+        # Best model performance
+        best_model = min(self.model_scores.keys(), 
+                        key=lambda x: self.model_scores[x]['mae'])
+        best_score = self.model_scores[best_model]
         
-        # Prepare training data
-        if not self.prepare_training_data():
-            return False
+        insights.append({
+            'title': 'Model Performance',
+            'description': f'Best performing model: {best_model} with MAE of {best_score["mae"]:.2f} minutes',
+            'type': 'performance'
+        })
         
-        # Train models
-        if not self.train_models():
-            return False
+        # Feature importance
+        feature_importance = self.get_feature_importance()
+        if feature_importance:
+            top_features = feature_importance[:3]
+            insights.append({
+                'title': 'Key Predictors',
+                'description': f'Most important features: {", ".join([f[0] for f in top_features])}',
+                'type': 'features'
+            })
         
-        # Evaluate models
-        self.evaluate_models()
+        # Model comparison
+        if len(self.model_scores) > 1:
+            model_comparison = []
+            for name, scores in self.model_scores.items():
+                model_comparison.append(f"{name}: {scores['mae']:.2f} min MAE")
+            
+            insights.append({
+                'title': 'Model Comparison',
+                'description': f'Model accuracy comparison - {"; ".join(model_comparison)}',
+                'type': 'comparison'
+            })
         
-        # Save models
-        self.save_models()
-        
-        print("=" * 50)
-        print("🎉 ML Pipeline completed successfully!")
-        return True
+        return insights
 
 def main():
-    """Main function to run the ML pipeline"""
-    pipeline = MadisonMetroMLPipeline()
-    success = pipeline.run_full_pipeline()
+    """Main training function"""
+    trainer = ModelTrainer()
     
-    if success:
-        print("\n📊 Model Performance Summary:")
-        print("-" * 30)
-        for model_name, metrics in pipeline.evaluation_results.items():
-            print(f"{model_name}:")
-            for metric, value in metrics.items():
-                print(f"  {metric}: {value:.3f}")
-            print()
+    # Look for data files
+    data_dir = '../collected_data'
+    data_files = []
+    
+    if os.path.exists(data_dir):
+        for file in os.listdir(data_dir):
+            if file.endswith('.csv') and 'predictions' in file:
+                data_files.append(os.path.join(data_dir, file))
+    
+    if not data_files:
+        print("No prediction data files found. Creating sample data...")
+        # Create sample data for demonstration
+        sample_data = create_sample_data()
+        sample_file = os.path.join(data_dir, 'sample_predictions.csv')
+        os.makedirs(data_dir, exist_ok=True)
+        sample_data.to_csv(sample_file, index=False)
+        data_files = [sample_file]
+    
+    print(f"Found {len(data_files)} data files")
+    
+    # Load and prepare data
+    X, y = trainer.load_and_prepare_data(data_files)
+    
+    if X is not None and y is not None:
+        # Train models
+        best_model = trainer.train_models(X, y)
         
-        print("🎯 Next Steps:")
-        print("1. Review model performance")
-        print("2. Fine-tune hyperparameters")
-        print("3. Collect more data for better accuracy")
-        print("4. Deploy best model to production")
+        # Save models and encoders
+        trainer.save_models()
+        trainer.processor.save_encoders('encoders.pkl')
+        
+        # Generate insights
+        insights = trainer.generate_insights()
+        print("\nGenerated Insights:")
+        for insight in insights:
+            print(f"- {insight['title']}: {insight['description']}")
     else:
-        print("❌ Pipeline failed. Check the logs above.")
+        print("Failed to load data for training")
+
+def create_sample_data():
+    """Create sample data for demonstration"""
+    np.random.seed(42)
+    n_samples = 1000
+    
+    data = {
+        'collection_timestamp': pd.date_range('2024-01-01', periods=n_samples, freq='5min'),
+        'rt': np.random.choice(['A', 'B', 'C', 'D', 'E', '80', '81', '82'], n_samples),
+        'rtdir': np.random.choice(['Northbound', 'Southbound', 'Eastbound', 'Westbound'], n_samples),
+        'stpid': np.random.randint(1000, 9999, n_samples),
+        'prdctdn': np.random.normal(5, 3, n_samples).clip(0, 20)
+    }
+    
+    return pd.DataFrame(data)
 
 if __name__ == "__main__":
     main()

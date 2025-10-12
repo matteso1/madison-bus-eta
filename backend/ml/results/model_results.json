@@ -1,0 +1,53 @@
+{
+  "timestamp": "2025-10-11T22:23:32.109891",
+  "test_size": 40876,
+  "train_size": 163504,
+  "num_features": 28,
+  "models": {
+    "api_baseline": {
+      "name": "Madison Metro API",
+      "mae": 0.37057795702572,
+      "rmse": 0.45275267442440853,
+      "r2": 0.9996894417788489,
+      "within_1min": 99.22448380467756,
+      "within_2min": 99.99755357667091,
+      "within_5min": 100.0
+    },
+    "random_forest": {
+      "name": "Random Forest",
+      "mae": 0.2999072161373619,
+      "rmse": 0.3666562846137485,
+      "r2": 0.9997963242855552,
+      "within_1min": 99.70642920050886,
+      "within_2min": 100.0,
+      "within_5min": 100.0
+    },
+    "xgboost": {
+      "name": "XGBoost",
+      "mae": 0.2915508705056448,
+      "rmse": 0.352924147264639,
+      "r2": 0.9998112948599919,
+      "within_1min": 99.87767883354536,
+      "within_2min": 100.0,
+      "within_5min": 100.0
+    },
+    "lightgbm": {
+      "name": "LightGBM",
+      "mae": 0.2992901484555075,
+      "rmse": 0.36176784323029987,
+      "r2": 0.9998017190901202,
+      "within_1min": 99.88257168020354,
+      "within_2min": 100.0,
+      "within_5min": 100.0
+    },
+    "gradient_boosting": {
+      "name": "Gradient Boosting",
+      "mae": 0.30392464625731136,
+      "rmse": 0.3677676508584032,
+      "r2": 0.999795087697617,
+      "within_1min": 99.84587533026715,
+      "within_2min": 100.0,
+      "within_5min": 100.0
+    }
+  }
+}

@@ -186,7 +186,7 @@ class OptimalBusDataCollector:
             return list(set(active_uw + active_major))  # Remove duplicates
         elif route_type == 'major':  # Legacy support
             return self.get_active_routes(self.major_local_routes)
-        elif route_type == 'all':
+        elif route_type == 'all' or route_type == 'all_active':
             active_rapid = self.get_active_routes(self.rapid_routes)
             active_uw = self.get_active_routes(self.uw_campus_routes)
             active_major = self.get_active_routes(self.major_local_routes)
@@ -344,10 +344,9 @@ class OptimalBusDataCollector:
         # Collect vehicle data
         vehicles = self.collect_vehicle_data(routes)
         
-        # Collect prediction data (less frequently)
+        # Collect prediction data (always collect for ML training)
         predictions = []
-        if current_schedule['routes'] in ['rapid', 'rapid_plus_uw', 'uw_campus', 'uw_plus_major', 'critical', 'major']:
-            predictions = self.collect_prediction_data(routes)
+        predictions = self.collect_prediction_data(routes)
         
         # Save data
         self.save_data(vehicles, predictions)
