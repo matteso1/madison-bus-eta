@@ -9,6 +9,14 @@ ENV/
 env/
 .env
 
+# Large ML model files (keep only XGBoost - the best one)
+backend/ml/models/random_forest_arrival_model.pkl
+backend/ml/models/random_forest.pkl
+backend/ml/models/lightgbm.pkl
+backend/ml/models/linear_regression.pkl
+backend/ml/models/gradient_boosting_arrival_model.pkl
+backend/ml/models/best_model.pkl
+
 # Node
 node_modules/
 npm-debug.log*
