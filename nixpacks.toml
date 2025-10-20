@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python313"]
+
+[phases.install]
+cmds = ["cd backend && pip install -r requirements.txt"]
+
+[phases.build]
+cmds = ["echo 'Build complete'"]
+
+[start]
+cmd = "cd backend && gunicorn app:app --bind 0.0.0.0:$PORT"
+
