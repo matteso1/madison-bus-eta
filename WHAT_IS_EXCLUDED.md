@@ -70,9 +70,13 @@ Your `.gitignore` is protecting these files from being public:
 - ✅ `.gitignore` - Git exclusions
 
 ### **Models & Results**
-- ✅ `backend/ml/models/*.pkl` - Trained ML models (small files, 1-2 MB each)
+- ✅ `backend/ml/models/xgboost_arrival_model.pkl` - Best ML model (1.44 MB)
+- ✅ `backend/ml/models/lightgbm_arrival_model.pkl` - Alternative model (0.29 MB)
+- ❌ Other large models (Random Forest 207 MB, etc.) - Excluded, available on request
 - ✅ `backend/ml/encoders/*.pkl` - Feature encoders
 - ✅ `backend/ml/results/model_results.json` - Performance metrics
+
+**Note**: We keep only the 2 best-performing, smallest models on GitHub. All 4 trained models exist locally and in your results JSON.
 
 ---
 
