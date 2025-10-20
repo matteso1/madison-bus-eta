@@ -2,6 +2,12 @@
 
 A machine learning system that improves bus arrival time predictions by **21.3%** over the Madison Metro Transit API using real-world data and advanced ML techniques.
 
+## 🌐 Live Demo
+
+**🚀 [View Live Application](#)** *(Deploy to Vercel and add your URL here!)*
+
+**📊 [API Documentation](./APIDOCUMENTATION.md)** | **🎬 [Demo Script](./DEMO_SCRIPT.md)** | **💼 [Portfolio Guide](./PORTFOLIO_GUIDE.md)**
+
 ## Project Overview
 
 This project demonstrates end-to-end machine learning engineering through the development of a production-ready system that predicts bus arrival times more accurately than the existing Madison Metro API. By collecting 200,000+ real-world predictions over 20 days and engineering 28 intelligent features, the system achieves significant improvements in prediction accuracy.
@@ -91,12 +97,41 @@ The system uses 28 engineered features across five categories:
 
 *The model learns to intelligently correct API predictions using contextual information.*
 
+## 🚀 Quick Start (For Recruiters & Demo)
+
+### Option 1: View Live Demo
+Visit the live application: **[Add your Vercel URL here]**
+
+### Option 2: Run Locally (5 minutes)
+
+The app works even without a Madison Metro API key (ML models are pre-trained!)
+
+**Backend:**
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
+```
+Visit http://localhost:5000/ml/status to verify ML models loaded successfully.
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm start
+```
+Visit http://localhost:3000 to see the application!
+
+For full setup with live bus tracking, see detailed instructions below.
+
+---
+
 ## Installation & Setup
 
 ### Prerequisites
 - Python 3.11 or higher
 - pip package manager
-- Madison Metro API key (obtain from City of Madison)
+- Madison Metro API key (optional - needed for live bus data, but ML models work without it)
 
 ### Backend Setup
 
@@ -303,11 +338,22 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **City of Madison, Wisconsin** for open data initiative
 - **XGBoost, LightGBM, scikit-learn** communities for excellent ML tools
 
+## 📚 Documentation
+
+- **[Portfolio Guide](./PORTFOLIO_GUIDE.md)** - How to present this project to recruiters
+- **[Demo Script](./DEMO_SCRIPT.md)** - Step-by-step guide for giving live demos
+- **[Deployment Guide](./DEPLOYMENT_GUIDE.md)** - How to deploy to Vercel/Railway/Heroku
+- **[Deploy Now Guide](./DEPLOY_NOW.md)** - Quick deployment steps
+- **[API Documentation](./APIDOCUMENTATION.md)** - Complete API reference
+- **[ML Project Summary](./ML_PROJECT_SUMMARY.md)** - Detailed technical writeup
+
 ## Contact
 
 For questions or collaboration opportunities:
 - GitHub: [@matteso1](https://github.com/matteso1)
 - Project Repository: [madison-bus-eta](https://github.com/matteso1/madison-bus-eta)
+- LinkedIn: [Add your LinkedIn profile]
+- Portfolio: [nilsmatteson.com](https://nilsmatteson.com)
 
 ## Citation
 
