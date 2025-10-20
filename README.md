@@ -352,7 +352,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 For questions or collaboration opportunities:
 - GitHub: [@matteso1](https://github.com/matteso1)
 - Project Repository: [madison-bus-eta](https://github.com/matteso1/madison-bus-eta)
-- LinkedIn: [Nils Matteson]https://www.linkedin.com/in/nilsmatteson/
+- LinkedIn: [Nils Matteson](https://www.linkedin.com/in/nilsmatteson/)
 - Portfolio: [nilsmatteson.com](https://nilsmatteson.com)
 
 ## Citation
