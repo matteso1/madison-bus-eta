@@ -30,8 +30,9 @@ CORS(app)
 API_KEY = os.getenv('MADISON_METRO_API_KEY')
 API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.com/bustime/api/v3')
 
+# API key is optional - ML endpoints work without it
 if not API_KEY:
-    raise ValueError("MADISON_METRO_API_KEY environment variable is required")
+    print("⚠️  Warning: MADISON_METRO_API_KEY not set. Live bus data endpoints will not work, but ML prediction endpoints are available.")
 
 def api_get(endpoint, **params):
     p = {"key": API_KEY, "format": "json"}
