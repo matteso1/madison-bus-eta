@@ -157,42 +157,6 @@ def predict_delay():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/ml/performance")
-def get_ml_performance():
-    """Get ML model performance metrics"""
-    if not ML_AVAILABLE:
-        return jsonify({"error": "ML model not available"}), 503
-    
-    try:
-        performance = prediction_api.get_model_performance()
-        return jsonify(performance)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/ml/features")
-def get_feature_importance():
-    """Get feature importance from ML model"""
-    if not ML_AVAILABLE:
-        return jsonify({"error": "ML model not available"}), 503
-    
-    try:
-        features = prediction_api.get_feature_importance()
-        return jsonify({"features": features})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/ml/insights")
-def get_ml_insights():
-    """Get ML insights and analysis"""
-    if not ML_AVAILABLE:
-        return jsonify({"error": "ML model not available"}), 503
-    
-    try:
-        insights = prediction_api.get_insights()
-        return jsonify({"insights": insights})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/ml/status")
 def get_ml_status():
     """Get ML system status"""
