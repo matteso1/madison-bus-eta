@@ -159,11 +159,14 @@ export default function MapView() {
             id: 'heatmap',
             data: heatmapData,
             getPosition: (d: any) => [d.lon, d.lat],
+            getElevationWeight: (d: any) => d.avg_error || 1,
+            getColorWeight: (d: any) => d.avg_error || 1,
+            elevationAggregation: 'MEAN',
             pickable: true,
             extruded: true,
-            radius: 200,
-            elevationScale: 50, // Taller for drama
-            opacity: 0.6,
+            radius: 300,
+            elevationScale: 100, // Even taller
+            opacity: 0.4,
             colorRange: [
                 [0, 255, 255],   // Cyan
                 [60, 80, 255],   // Blue-ish

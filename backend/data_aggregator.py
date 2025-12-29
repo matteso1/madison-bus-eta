@@ -174,7 +174,8 @@ class DataAggregator:
         stop_data.rename(columns={'mean': 'avg_error', 'count': 'prediction_count'}, inplace=True)
         
         # Filter out stops with very few data points to reduce noise
-        stop_data = stop_data[stop_data['prediction_count'] > 10]
+        # Relaxed filter for visibility
+        stop_data = stop_data[stop_data['prediction_count'] > 0]
 
         return stop_data[['lat', 'lon', 'avg_error']].to_dict(orient='records')
 
