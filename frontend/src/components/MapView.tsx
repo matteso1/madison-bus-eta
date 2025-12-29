@@ -39,7 +39,7 @@ export default function MapView() {
 
     // Layer Toggles
     const [showHeatmap, setShowHeatmap] = useState(true);
-    const [showTrips, setShowTrips] = useState(false);
+    const [showTrips, setShowTrips] = useState(true);
     const [showLive, setShowLive] = useState(true);
 
     // Animation loop
