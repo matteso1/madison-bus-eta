@@ -55,17 +55,25 @@ export default function MapView() {
         return () => cancelAnimationFrame(animation);
     }, [isPlaying, animationSpeed]);
 
+    // Base API URL
+    const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
+
     // Initial Data Fetch (Historical + Stops)
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [heatmapRes, tripsRes, routesRes] = await Promise.all([
-                    axios.get('http://localhost:8000/geo/heatmap'),
-                    axios.get('http://localhost:8000/geo/trips'),
-                    axios.get('http://localhost:8000/geo/routes')
+                // Mapping to available endpoints in app.py
+                const [heatmapRes, routesRes] = await Promise.all([
+                    axios.get(`${API_BASE}/viz/heatmap`),
+                    axios.get(`${API_BASE}/routes`)
                 ]);
-                setHeatmapData(heatmapRes.data);
-                setTripsData(tripsRes.data);
+
+                if (heatmapRes.data) {
+                    setHeatmapData(heatmapRes.data);
+                }
+
+                setTripsData([]); // /viz/trips not currently available in backend
+
                 if (routesRes.data['bustime-response']?.routes) {
                     setRoutes(routesRes.data['bustime-response'].routes);
                 }
@@ -82,16 +90,7 @@ export default function MapView() {
 
         const fetchLive = async () => {
             try {
-                // We'll use the existing backend endpoint. 
-                // Note: The backend might need a specific endpoint for ALL vehicles if not already present.
-                // Assuming /vehicles returns all if no route specified, or we fetch a known list.
-                // For now, let's try fetching without params or a default set.
-                // If the backend requires a route, we might need to update it or loop through routes.
-                // Let's assume we can hit /vehicles directly.
-                // Checking backend code... api/routers/geo.py doesn't have live vehicles.
-                // api/routers/transit.py (implied) likely has it.
-                // Let's try the standard endpoint we saw in the other file: /vehicles
-                const res = await axios.get('http://localhost:8000/geo/live-vehicles');
+                const res = await axios.get(`${API_BASE}/vehicles`); // Standard endpoint
                 const data = res.data;
                 if (data['bustime-response']?.vehicle) {
                     const vehicles = data['bustime-response'].vehicle;
@@ -113,7 +112,6 @@ export default function MapView() {
         };
 
         fetchLive();
-        fetchLive();
         const interval = setInterval(fetchLive, 2000); // Poll every 2s
         return () => clearInterval(interval);
     }, [showLive]);
@@ -121,14 +119,25 @@ export default function MapView() {
     // Fetch patterns when route changes
     useEffect(() => {
         const fetchPatterns = async () => {
-            // if (selectedRoute === 'ALL') {
-            //    setPatternsData([]);
-            //    return;
-            // }
+            if (selectedRoute === 'ALL') {
+                setPatternsData([]);
+                return;
+            }
             try {
-                const res = await axios.get(`http://localhost:8000/geo/patterns?rt=${selectedRoute}`);
-                if (res.data.patterns) {
-                    setPatternsData(res.data.patterns);
+                const res = await axios.get(`${API_BASE}/patterns?rt=${selectedRoute}`);
+                // Verify response structure matches (app.py: returns { "bustime-response": { "ptr": [...] } })
+                if (res.data['bustime-response']?.ptr) {
+                    // Need to flatten/process patterns for DeckGL if format differs
+                    // Assuming backend returns standard bustime format, we might need to parse 'pt' array
+                    const ptrs = res.data['bustime-response'].ptr;
+                    const list = Array.isArray(ptrs) ? ptrs : [ptrs];
+
+                    // Convert to DeckGL path format
+                    const formattedPatterns = list.map((p: any) => ({
+                        path: p.pt.map((pt: any) => [pt.lon, pt.lat]),
+                        color: [255, 255, 255]
+                    }));
+                    setPatternsData(formattedPatterns);
                 }
             } catch (e) {
                 console.error("Error fetching patterns", e);

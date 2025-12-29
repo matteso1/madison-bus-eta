@@ -1,215 +1,42 @@
-/* Professional, clean styles for the Data Science Dashboard */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  color: #0f172a;
-  line-height: 1.6;
-}
-
-.app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Header */
-.header {
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 1rem 0;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  backdrop-filter: blur(10px);
-}
-
-.header-content {
-  max-width: 1400px;
+#root {
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 0 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  padding: 2rem;
+  text-align: center;
 }
 
 .logo {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
-.logo-icon {
-  width: 2.25rem;
-  height: 2.25rem;
-  color: #0f172a;
-}
-
-.logo h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #0f172a;
-  letter-spacing: -0.02em;
-}
-
-.refresh-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1.2rem;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.9rem;
-  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.2);
-}
-
-.refresh-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);
-}
-
-.refresh-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-/* Navigation */
-.nav {
-  display: flex;
-  justify-content: center;
-  background-color: white;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 0.5rem 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-}
-
-.nav-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  border: none;
-  background: none;
-  color: #475569; /* Slate 600 */
-  font-weight: 600;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -3px; /* Align with border */
-}
-
-.nav-tab:hover {
-  color: #0f172a;
-}
-
-.nav-tab.active {
-  color: #0f172a;
-  border-bottom-color: #0f172a;
-}
-
-/* Main Content */
-.main-content {
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-@media (max-width: 768px) {
-  .main-content {
-    padding: 1rem;
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
   }
-  
-  .header-content {
-    padding: 0 1rem;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .logo h1 {
-    font-size: 1.25rem;
-  }
-  
-  .controls {
-    flex-direction: column;
-  }
-  
-  .control-group {
-    width: 100%;
-  }
-  
-  .select {
-    width: 100%;
-    min-width: auto;
+  to {
+    transform: rotate(360deg);
   }
 }
 
-/* Live Map Section */
-.map-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
 }
 
-.controls {
-  display: flex;
-  gap: 1.5rem;
-  background: white;
-  padding: 1.5rem;
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  flex-wrap: wrap;
+.card {
+  padding: 2em;
 }
 
-.control-group {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.read-the-docs {
+  color: #888;
 }
-
-.control-group label {
-  font-weight: 600;
-  color: #334155;
-}
-
-.select {
-  padding: 0.6rem 1rem;
-  border: 1px solid #cbd5e1; /* Slate 300 */
-  border-radius: 0.5rem;
-  font-size: 1rem;
-  font-weight: 500;
-  min-width: 250px;
-}
-
-.map-container {
-  height: 600px;
-  width: 100%;
-  border-radius: 0.75rem;
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-}
-
-.spinning {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
