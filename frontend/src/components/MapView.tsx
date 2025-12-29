@@ -38,9 +38,9 @@ export default function MapView() {
     const [isPlaying, setIsPlaying] = useState(true);
 
     // Layer Toggles
-    const [showHeatmap, setShowHeatmap] = useState(false);
-    const [showTrips, setShowTrips] = useState(true);
-    const [showLive, setShowLive] = useState(false);
+    const [showHeatmap, setShowHeatmap] = useState(true);
+    const [showTrips, setShowTrips] = useState(false);
+    const [showLive, setShowLive] = useState(true);
 
     // Animation loop
     useEffect(() => {
@@ -64,7 +64,7 @@ export default function MapView() {
             try {
                 // Mapping to available endpoints in app.py
                 const [heatmapRes, routesRes] = await Promise.all([
-                    axios.get(`${API_BASE}/viz/heatmap`),
+                    axios.get(`${API_BASE}/viz/geo-heatmap`),
                     axios.get(`${API_BASE}/routes`)
                 ]);
 
@@ -158,11 +158,11 @@ export default function MapView() {
         showHeatmap && heatmapData.length > 0 && new HexagonLayer({
             id: 'heatmap',
             data: heatmapData,
-            getPosition: (d: any) => d,
+            getPosition: (d: any) => [d.lon, d.lat],
             pickable: true,
             extruded: true,
             radius: 200,
-            elevationScale: 20, // Taller for drama
+            elevationScale: 50, // Taller for drama
             opacity: 0.6,
             colorRange: [
                 [0, 255, 255],   // Cyan
