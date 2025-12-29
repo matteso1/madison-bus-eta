@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:5000'; // or your Flask backend URL
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 export async function getRoutes() {
   const res = await fetch(`${API_BASE}/routes`);
