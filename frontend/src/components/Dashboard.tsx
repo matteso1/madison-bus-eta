@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Activity, Clock, AlertTriangle } from 'lucide-react';
+import { Clock, AlertTriangle } from 'lucide-react';
 
 interface OTPData {
     date: string;

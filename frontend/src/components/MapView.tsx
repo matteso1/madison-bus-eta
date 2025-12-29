@@ -1,14 +1,14 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import DeckGL from '@deck.gl/react';
-import { IconLayer, ColumnLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { HexagonLayer, ContourLayer } from '@deck.gl/aggregation-layers';
+import { ColumnLayer } from '@deck.gl/layers';
+import { HexagonLayer } from '@deck.gl/aggregation-layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
 import { PathLayer } from '@deck.gl/layers';
 import { Map } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import axios from 'axios';
-import { Play, Pause, FastForward, Layers, Bus } from 'lucide-react';
+import { Play, Pause, Layers } from 'lucide-react';
 
 // Madison, WI coordinates
 const INITIAL_VIEW_STATE = {

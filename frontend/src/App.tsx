@@ -1,4 +1,4 @@
-import React from 'react';
+
 import MapView from './components/MapView';
 import Dashboard from './components/Dashboard';
 
