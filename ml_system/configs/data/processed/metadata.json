@@ -1,0 +1,36 @@
+{
+  "feature_columns": [
+    "hour_sin",
+    "hour_cos",
+    "day_sin",
+    "day_cos",
+    "is_rush_hour",
+    "is_weekend",
+    "is_peak_morning",
+    "is_peak_evening",
+    "is_night",
+    "is_rapid_route",
+    "is_uw_route",
+    "is_major_local",
+    "rt_encoded",
+    "speed_kmh",
+    "is_moving",
+    "is_empty",
+    "is_half_empty",
+    "is_full",
+    "distance_from_center",
+    "is_downtown",
+    "is_uw_campus",
+    "is_east_side",
+    "is_west_side",
+    "avg_speed_1h",
+    "avg_delay_1h",
+    "avg_passengers_1h",
+    "historical_delay_rate"
+  ],
+  "target_columns": [
+    "is_delayed"
+  ],
+  "num_samples": 204380,
+  "processed_at": "2025-10-22T19:02:35.622996"
+}

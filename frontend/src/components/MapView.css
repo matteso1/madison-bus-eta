@@ -1,0 +1,118 @@
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #f8fafc; /* A very light grey */
+    font-family: 'Inter', sans-serif;
+}
+.map-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    background-color: #fff;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.map-view-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.map-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background-color: #f8fafc;
+    border-radius: 8px;
+}
+
+.map-controls .control-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.map-controls label {
+    font-size: 0.9rem;
+    color: #475569;
+}
+
+.last-update-notice {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.map-view {
+    position: relative;
+    height: 65vh;
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.leaflet-popup-content-wrapper {
+    background-color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.leaflet-popup-content {
+    font-family: 'Inter', sans-serif;
+    color: #0f172a;
+    margin: 13px 20px;
+    line-height: 1.5;
+}
+
+.leaflet-popup-content strong {
+    font-weight: 600;
+}
+
+.leaflet-popup-tip {
+    background: #fff;
+}
+
+/* Custom Icons */
+.custom-live-bus-icon, .custom-bus-stop-icon {
+    background: transparent !important;
+    border: none !important;
+}
+
+.live-bus-icon-wrapper {
+    background-color: #0f172a; /* Dark blue/black */
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    animation: pulse 2s infinite;
+}
+
+.live-bus-icon-wrapper.delayed {
+    background-color: #ef4444; /* Red */
+}
+
+.bus-svg {
+    width: 20px;
+    height: 20px;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    50% { transform: scale(1.1); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    100% { transform: scale(1); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+}
+
+.bus-stop-icon {
+    width: 12px;
+    height: 12px;
+    background-color: #fff;
+    border: 2px solid #0f172a;
+    border-radius: 50%;
+}

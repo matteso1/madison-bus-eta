@@ -62,6 +62,19 @@ class MetroDataProcessor:
         predictions_df = pd.concat(prediction_data, ignore_index=True) if prediction_data else pd.DataFrame()
         
         logger.info(f"Loaded {len(vehicles_df)} vehicle records and {len(predictions_df)} prediction records")
+
+        # Fallback: try consolidated dataset if nothing was found
+        if vehicles_df.empty and predictions_df.empty:
+            try:
+                project_root = Path(__file__).resolve().parents[3]
+                fallback_path = project_root / 'backend' / 'ml' / 'data' / 'consolidated_metro_data.csv'
+                if fallback_path.exists():
+                    logger.info(f"Falling back to consolidated dataset: {fallback_path}")
+                    vehicles_df = pd.read_csv(fallback_path)
+                    predictions_df = pd.DataFrame()
+                    logger.info(f"Loaded {len(vehicles_df)} rows from consolidated dataset")
+            except Exception as e:
+                logger.warning(f"Fallback load failed: {e}")
         return vehicles_df, predictions_df
     
     def create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -118,15 +131,24 @@ class MetroDataProcessor:
         """Create vehicle-specific features"""
         df = df.copy()
         
-        # Speed features
-        df['speed_kmh'] = df['spd'] * 1.60934  # Convert mph to km/h
-        df['is_moving'] = df['spd'] > 0
-        df['speed_category'] = pd.cut(df['spd'], bins=[0, 5, 15, 25, 50], labels=['stopped', 'slow', 'normal', 'fast'])
+        # Speed features (if available)
+        if 'spd' in df.columns:
+            df['speed_kmh'] = df['spd'] * 1.60934
+            df['is_moving'] = df['spd'] > 0
+            df['speed_category'] = pd.cut(df['spd'], bins=[0, 5, 15, 25, 50], labels=['stopped', 'slow', 'normal', 'fast'])
+        else:
+            df['speed_kmh'] = 0.0
+            df['is_moving'] = False
         
-        # Passenger load features
-        df['is_empty'] = df['psgld'] == 'EMPTY'
-        df['is_half_empty'] = df['psgld'] == 'HALF_EMPTY'
-        df['is_full'] = df['psgld'] == 'FULL'
+        # Passenger load features (if available)
+        if 'psgld' in df.columns:
+            df['is_empty'] = df['psgld'] == 'EMPTY'
+            df['is_half_empty'] = df['psgld'] == 'HALF_EMPTY'
+            df['is_full'] = df['psgld'] == 'FULL'
+        else:
+            df['is_empty'] = False
+            df['is_half_empty'] = False
+            df['is_full'] = False
         
         # Delay features
         df['is_delayed'] = df['dly'] == True
@@ -137,20 +159,23 @@ class MetroDataProcessor:
         """Create location-based features"""
         df = df.copy()
         
-        # Madison center coordinates
-        madison_center_lat = 43.0731
-        madison_center_lon = -89.4012
-        
-        # Distance from center
-        df['distance_from_center'] = np.sqrt(
-            (df['lat'] - madison_center_lat)**2 + (df['lon'] - madison_center_lon)**2
-        )
-        
-        # Geographic regions (simplified)
-        df['is_downtown'] = (df['lat'] >= 43.07) & (df['lat'] <= 43.08) & (df['lon'] >= -89.41) & (df['lon'] <= -89.39)
-        df['is_uw_campus'] = (df['lat'] >= 43.07) & (df['lat'] <= 43.08) & (df['lon'] >= -89.42) & (df['lon'] <= -89.40)
-        df['is_east_side'] = df['lon'] > -89.40
-        df['is_west_side'] = df['lon'] < -89.42
+        # Spatial features only if lat/lon available
+        if 'lat' in df.columns and 'lon' in df.columns:
+            madison_center_lat = 43.0731
+            madison_center_lon = -89.4012
+            df['distance_from_center'] = np.sqrt(
+                (df['lat'] - madison_center_lat)**2 + (df['lon'] - madison_center_lon)**2
+            )
+            df['is_downtown'] = (df['lat'] >= 43.07) & (df['lat'] <= 43.08) & (df['lon'] >= -89.41) & (df['lon'] <= -89.39)
+            df['is_uw_campus'] = (df['lat'] >= 43.07) & (df['lat'] <= 43.08) & (df['lon'] >= -89.42) & (df['lon'] <= -89.40)
+            df['is_east_side'] = df['lon'] > -89.40
+            df['is_west_side'] = df['lon'] < -89.42
+        else:
+            df['distance_from_center'] = 0.0
+            df['is_downtown'] = False
+            df['is_uw_campus'] = False
+            df['is_east_side'] = False
+            df['is_west_side'] = False
         
         return df
     
@@ -166,9 +191,12 @@ class MetroDataProcessor:
             group = group.sort_values('timestamp')
             
             # Rolling averages
-            group['avg_speed_1h'] = group['spd'].rolling(window=6, min_periods=1).mean()  # 6 * 10min = 1h
-            group['avg_delay_1h'] = group['dly'].rolling(window=6, min_periods=1).mean()
-            group['avg_passengers_1h'] = group['is_full'].rolling(window=6, min_periods=1).mean()
+            if 'spd' in group.columns:
+                group['avg_speed_1h'] = group['spd'].rolling(window=6, min_periods=1).mean()
+            else:
+                group['avg_speed_1h'] = 0.0
+            group['avg_delay_1h'] = group['dly'].rolling(window=6, min_periods=1).mean() if 'dly' in group.columns else 0.0
+            group['avg_passengers_1h'] = group['is_full'].rolling(window=6, min_periods=1).mean() if 'is_full' in group.columns else 0.0
             
             # Historical patterns for same time of day
             group['hour'] = group['timestamp'].dt.hour
@@ -298,9 +326,28 @@ class MetroDataset(Dataset):
         self.target_columns = target_columns
         self.sequence_length = sequence_length
         
-        # Prepare features and targets
-        self.features = torch.FloatTensor(df[feature_columns].values)
-        self.targets = torch.FloatTensor(df[target_columns].values) if target_columns else None
+        # Prepare features (coerce to numeric float32)
+        features_df = df[feature_columns].copy()
+        # Booleans -> ints
+        for col in features_df.columns:
+            if features_df[col].dtype == bool:
+                features_df[col] = features_df[col].astype(np.int8)
+        # Coerce objects to numeric, fill NaNs/Infs
+        features_df = features_df.apply(pd.to_numeric, errors='coerce')
+        features_df = features_df.replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
+        self.features = torch.from_numpy(features_df.values)
+
+        # Prepare targets (if present) as float32
+        if target_columns:
+            targets_df = df[target_columns].copy()
+            for col in targets_df.columns:
+                if targets_df[col].dtype == bool:
+                    targets_df[col] = targets_df[col].astype(np.int8)
+            targets_df = targets_df.apply(pd.to_numeric, errors='coerce')
+            targets_df = targets_df.replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
+            self.targets = torch.from_numpy(targets_df.values)
+        else:
+            self.targets = None
         
     def __len__(self):
         return len(self.df) - self.sequence_length + 1

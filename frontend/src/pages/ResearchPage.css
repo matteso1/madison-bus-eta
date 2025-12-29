@@ -1,0 +1,140 @@
+.research-page {
+    min-height: 100vh;
+    background: #f7fafc;
+}
+
+.research-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem 2rem 3rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.back-to-app {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    color: white;
+    padding: 0.5rem 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin-bottom: 2rem;
+    transition: all 0.2s ease;
+}
+
+.back-to-app:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateX(-2px);
+}
+
+.research-title-section {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.research-icon {
+    opacity: 0.95;
+}
+
+.research-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+}
+
+.research-subtitle {
+    font-size: 1.1rem;
+    opacity: 0.95;
+    margin: 0;
+}
+
+.research-info {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.info-badge {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+    backdrop-filter: blur(10px);
+}
+
+.info-badge strong {
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.research-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0;
+}
+
+.research-footer {
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    padding: 2rem;
+    text-align: center;
+    color: #718096;
+    margin-top: 3rem;
+}
+
+.research-footer p {
+    max-width: 800px;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .research-header {
+        padding: 1.5rem 1rem 2rem;
+    }
+
+    .research-title-section {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .research-icon {
+        display: none;
+    }
+
+    .research-title {
+        font-size: 1.75rem;
+    }
+
+    .research-subtitle {
+        font-size: 1rem;
+    }
+
+    .research-info {
+        gap: 0.5rem;
+    }
+
+    .info-badge {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    .info-badge strong {
+        font-size: 1rem;
+    }
+
+    .research-footer {
+        padding: 1.5rem 1rem;
+    }
+}

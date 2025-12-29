@@ -42,12 +42,23 @@ class DelayTrainer:
         }
         
         # Setup experiment tracking
-        if config.get('monitoring', {}).get('wandb', {}).get('project'):
-            wandb.init(
-                project=config['monitoring']['wandb']['project'],
-                entity=config['monitoring']['wandb'].get('entity'),
-                config=config
-            )
+        wandb_disabled = os.getenv('WANDB_DISABLED', '').lower() in ('true', '1', 'yes')
+        wandb_entity = config.get('monitoring', {}).get('wandb', {}).get('entity', '')
+        wandb_project = config.get('monitoring', {}).get('wandb', {}).get('project', '')
+        
+        # Skip wandb if disabled OR if entity is a placeholder
+        if not wandb_disabled and wandb_project and wandb_entity not in ('your-username', '', None):
+            try:
+                wandb.init(
+                    project=wandb_project,
+                    entity=wandb_entity,
+                    config=config
+                )
+                logger.info("W&B tracking enabled")
+            except Exception as e:
+                logger.warning(f"W&B init failed, continuing without tracking: {e}")
+        else:
+            logger.info("W&B tracking disabled")
     
     def create_data_loaders(self, dataset, batch_size: int = 64, 
                           train_split: float = 0.7, val_split: float = 0.2) -> Tuple[DataLoader, DataLoader, DataLoader]:
@@ -103,7 +114,33 @@ class DelayTrainer:
         from models.delay_prediction.transformer_model import create_model
         
         # Get model config
-        model_config = self.config['models']['delay_prediction']
+        base_config = self.config['models']['delay_prediction'].copy()
+        
+        # Remove training-specific keys
+        for key in ['architecture', 'learning_rate', 'batch_size', 'epochs', 'early_stopping_patience']:
+            base_config.pop(key, None)
+        
+        # Build model-specific params
+        model_config = {}
+        
+        if model_type.lower() == 'transformer':
+            model_config = {
+                'd_model': base_config.get('hidden_size', 256),
+                'nhead': base_config.get('num_heads', 8),
+                'num_layers': base_config.get('num_layers', 6),
+                'dropout': base_config.get('dropout', 0.1)
+            }
+        elif model_type.lower() == 'lstm':
+            model_config = {
+                'hidden_size': base_config.get('hidden_size', 128),
+                'num_layers': base_config.get('num_layers', 3),
+                'dropout': base_config.get('dropout', 0.2)
+            }
+        elif model_type.lower() == 'cnn':
+            model_config = {
+                'num_filters': base_config.get('hidden_size', 64),
+                'dropout': base_config.get('dropout', 0.2)
+            }
         
         # Create model
         model = create_model(
@@ -128,37 +165,42 @@ class DelayTrainer:
         """Setup optimizer and learning rate scheduler"""
         
         training_config = self.config['training']
+        model_config = self.config['models']['delay_prediction']
+        
+        # Get learning rate from model config or training config
+        learning_rate = model_config.get('learning_rate', training_config.get('learning_rate', 0.001))
         
         # Setup optimizer
         if training_config['optimizer'].lower() == 'adam':
             optimizer = optim.Adam(
                 model.parameters(),
-                lr=training_config['learning_rate'],
+                lr=learning_rate,
                 weight_decay=training_config.get('weight_decay', 0.01)
             )
         elif training_config['optimizer'].lower() == 'adamw':
             optimizer = optim.AdamW(
                 model.parameters(),
-                lr=training_config['learning_rate'],
+                lr=learning_rate,
                 weight_decay=training_config.get('weight_decay', 0.01)
             )
         else:
             optimizer = optim.SGD(
                 model.parameters(),
-                lr=training_config['learning_rate'],
+                lr=learning_rate,
                 weight_decay=training_config.get('weight_decay', 0.01),
                 momentum=0.9
             )
         
         # Setup scheduler
         scheduler = None
+        epochs_count = self.config['models']['delay_prediction'].get('epochs', self.config['training'].get('epochs', 100))
         if training_config.get('scheduler') == 'cosine':
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=training_config['epochs']
+                optimizer, T_max=epochs_count
             )
         elif training_config.get('scheduler') == 'step':
             scheduler = optim.lr_scheduler.StepLR(
-                optimizer, step_size=training_config['epochs'] // 3, gamma=0.1
+                optimizer, step_size=max(1, epochs_count // 3), gamma=0.1
             )
         elif training_config.get('scheduler') == 'plateau':
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -303,9 +345,10 @@ class DelayTrainer:
         # Mixed precision scaler
         scaler = torch.cuda.amp.GradScaler() if self.config['training'].get('mixed_precision', False) else None
         
-        # Training loop
-        epochs = self.config['training']['epochs']
-        patience = self.config['training'].get('early_stopping_patience', 10)
+        # Training loop - get epochs from model config or training config
+        model_config = self.config['models']['delay_prediction']
+        epochs = model_config.get('epochs', self.config['training'].get('epochs', 100))
+        patience = model_config.get('early_stopping_patience', self.config['training'].get('early_stopping_patience', 10))
         patience_counter = 0
         
         for epoch in range(epochs):

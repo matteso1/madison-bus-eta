@@ -197,10 +197,22 @@ def main():
     args = parser.parse_args()
     
     # Load configuration
-    with open(args.config, 'r') as f:
+    config_path = Path(args.config).resolve()
+    with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
+
+    # Resolve data paths relative to the config location
+    base_dir = config_path.parent
+    if 'data' in config:
+        for key in ['source_dir', 'processed_dir', 'features_dir', 'validation_dir']:
+            if key in config['data'] and isinstance(config['data'][key], str):
+                p = Path(config['data'][key])
+                if not p.is_absolute():
+                    config['data'][key] = str((base_dir / p).resolve())
     
     logger.info("🚀 Starting Madison Metro ML Training Pipeline")
+    logger.info(f"Data source_dir: {config['data'].get('source_dir','')}")
+    logger.info(f"Processed dir:  {config['data'].get('processed_dir','')}")
     
     # Check data sufficiency
     if not check_data_sufficiency(config) and not args.force:

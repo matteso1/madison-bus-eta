@@ -60,6 +60,8 @@ class SmartPredictionAPI:
                        route: str,
                        stop_id: str,
                        api_prediction: float,
+                       hour: int,
+                       day_of_week: int,
                        timestamp: Optional[datetime] = None) -> Dict:
         """
         Predict enhanced arrival time
@@ -83,8 +85,8 @@ class SmartPredictionAPI:
             timestamp = datetime.now()
             
         try:
-            # Create features
-            features = self._create_features(route, stop_id, api_prediction, timestamp)
+            # Create features, now passing hour and day_of_week
+            features = self._create_features(route, stop_id, api_prediction, timestamp, hour, day_of_week)
             
             # Make prediction
             prediction = self.model.predict(features)[0]
@@ -115,13 +117,11 @@ class SmartPredictionAPI:
             }
             
     def _create_features(self, route: str, stop_id: str, api_prediction: float, 
-                        timestamp: datetime) -> pd.DataFrame:
+                        timestamp: datetime, hour: int, day_of_week: int) -> pd.DataFrame:
         """Create feature vector for prediction"""
         
-        # Temporal features
-        hour = timestamp.hour
+        # Temporal features from provided context
         minute = timestamp.minute
-        day_of_week = timestamp.weekday()
         is_weekend = 1 if day_of_week >= 5 else 0
         
         is_morning_rush = 1 if 7 <= hour <= 9 else 0
