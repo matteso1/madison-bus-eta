@@ -654,8 +654,11 @@ def get_aggregator():
             if 'data_aggregator' in sys.modules:
                 importlib.reload(sys.modules['data_aggregator'])
             from data_aggregator import DataAggregator
-            _data_aggregator = DataAggregator()
-            print("✅ Data aggregator loaded (with reload)")
+            from data_aggregator import DataAggregator
+            # Fix: Use absolute path to ensure data is found regardless of CWD
+            csv_path = Path(__file__).parent / 'ml' / 'data' / 'consolidated_metro_data.csv'
+            _data_aggregator = DataAggregator(data_path=str(csv_path))
+            print(f"✅ Data aggregator loaded from {csv_path}")
         except Exception as e:
             print(f"❌ Failed to load data aggregator: {e}")
             return None
