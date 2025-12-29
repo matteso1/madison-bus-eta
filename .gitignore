@@ -37,7 +37,7 @@ frontend/.env.production.local
 # Data files (large)
 backend/collected_data/
 backend/kaggle_dataset/*.csv
-backend/ml/data/*.csv
+
 
 # IDE
 .vscode/
