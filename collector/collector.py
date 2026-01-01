@@ -191,13 +191,13 @@ def collect_vehicles() -> dict:
     stats['vehicles_collected'] += len(vehicles)
     stats['last_vehicle_fetch'] = timestamp
     
-    # Save to database if configured - DISABLED (Relies on Sentinel Consumer)
-    # db_count = 0
-    # if DB_AVAILABLE and DATABASE_URL:
-    #     db_count = save_vehicles_to_db(vehicles)
+    # Save to database (Dual-write for reliability)
+    # Deduplication handled by DB constraints (ON CONFLICT DO NOTHING)
+    db_count = 0
+    if DB_AVAILABLE and DATABASE_URL:
+        db_count = save_vehicles_to_db(vehicles)
     
-    # db_msg = f", {db_count} to DB" if db_count else ""
-    db_msg = " (DB via Sentinel)"
+    db_msg = f", {db_count} to DB" if db_count else ""
     
     # Send to Sentinel
     sentinel_msg = ""
@@ -233,13 +233,12 @@ def collect_predictions(routes: list) -> dict:
     stats['predictions_collected'] += len(all_predictions)
     stats['last_prediction_fetch'] = timestamp
     
-    # Save to database if configured - DISABLED (Relies on Sentinel Consumer)
-    # db_count = 0
-    # if DB_AVAILABLE and DATABASE_URL:
-    #     db_count = save_predictions_to_db(all_predictions)
+    # Save to database (Dual-write for reliability)
+    db_count = 0
+    if DB_AVAILABLE and DATABASE_URL:
+        db_count = save_predictions_to_db(all_predictions)
     
-    # db_msg = f", {db_count} to DB" if db_count else ""
-    db_msg = " (DB via Sentinel)"
+    db_msg = f", {db_count} to DB" if db_count else ""
 
     # Send to Sentinel
     sentinel_msg = ""
