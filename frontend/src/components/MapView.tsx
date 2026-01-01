@@ -49,6 +49,7 @@ export default function MapView() {
     const [routes, setRoutes] = useState<any[]>([]);
     const [patternsData, setPatternsData] = useState<any[]>([]);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+    const [isExpanded, setIsExpanded] = useState<boolean>(false); // Mobile bottom sheet state
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
@@ -205,38 +206,77 @@ export default function MapView() {
                 />
             </DeckGL>
 
-            {/* Simple Control Panel */}
-            <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-md p-4 rounded-xl border border-gray-700 text-white w-64">
-                <h2 className="font-bold text-lg mb-3">Madison Metro</h2>
-
-                {/* Route Filter */}
-                <label className="text-xs text-gray-400 block mb-1">Filter Route</label>
-                <select
-                    value={selectedRoute}
-                    onChange={e => setSelectedRoute(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-sm text-white mb-4"
+            {/* Mobile-First Control Panel - Bottom sheet on mobile, sidebar on desktop */}
+            <div className={`
+                fixed md:absolute
+                bottom-0 left-0 right-0
+                md:bottom-auto md:top-4 md:left-4 md:right-auto
+                bg-black/90 backdrop-blur-md
+                border-t md:border border-gray-700
+                text-white
+                w-full md:w-72
+                rounded-t-2xl md:rounded-xl
+                transition-transform duration-300 ease-out
+                z-50
+                ${isExpanded ? 'translate-y-0' : 'translate-y-[calc(100%-4rem)]'}
+                md:translate-y-0
+            `}>
+                {/* Mobile drag handle / expand toggle */}
+                <div
+                    className="md:hidden flex justify-center py-2 cursor-pointer"
+                    onClick={() => setIsExpanded(!isExpanded)}
                 >
-                    <option value="ALL">All Routes</option>
-                    {routes.map(r => (
-                        <option key={r.rt} value={r.rt}>{r.rt} - {r.rtnm}</option>
-                    ))}
-                </select>
+                    <div className="w-10 h-1 bg-gray-600 rounded-full" />
+                </div>
 
-                {/* Stats */}
-                <div className="text-sm space-y-2 border-t border-gray-700 pt-3">
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">Live Buses</span>
-                        <span className="font-mono text-green-400">{filteredLive.length}</span>
+                {/* Header - always visible */}
+                <div
+                    className="px-4 pb-2 md:pt-4 flex justify-between items-center cursor-pointer md:cursor-default"
+                    onClick={() => setIsExpanded(!isExpanded)}
+                >
+                    <h2 className="font-bold text-lg">Madison Metro</h2>
+                    <div className="flex items-center gap-3">
+                        <span className="text-green-400 font-mono text-sm">{filteredLive.length} 🚌</span>
+                        {filteredLive.filter(b => b.dly).length > 0 && (
+                            <span className="text-red-400 font-mono text-sm">
+                                {filteredLive.filter(b => b.dly).length} ⚠️
+                            </span>
+                        )}
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">Delayed</span>
-                        <span className="font-mono text-red-400">
-                            {filteredLive.filter(b => b.dly).length}
-                        </span>
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-500">
-                        <span>Updated</span>
-                        <span>{lastUpdate.toLocaleTimeString()}</span>
+                </div>
+
+                {/* Expandable content */}
+                <div className={`px-4 pb-4 ${isExpanded ? 'block' : 'hidden'} md:block`}>
+                    {/* Route Filter */}
+                    <label className="text-xs text-gray-400 block mb-1">Filter Route</label>
+                    <select
+                        value={selectedRoute}
+                        onChange={e => setSelectedRoute(e.target.value)}
+                        className="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-base text-white mb-4 appearance-none"
+                        style={{ fontSize: '16px' }} // Prevents iOS zoom on focus
+                    >
+                        <option value="ALL">All Routes</option>
+                        {routes.map(r => (
+                            <option key={r.rt} value={r.rt}>{r.rt} - {r.rtnm}</option>
+                        ))}
+                    </select>
+
+                    {/* Stats */}
+                    <div className="text-sm space-y-2 border-t border-gray-700 pt-3">
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Live Buses</span>
+                            <span className="font-mono text-green-400">{filteredLive.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Delayed</span>
+                            <span className="font-mono text-red-400">
+                                {filteredLive.filter(b => b.dly).length}
+                            </span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                            <span>Updated</span>
+                            <span>{lastUpdate.toLocaleTimeString()}</span>
+                        </div>
                     </div>
                 </div>
             </div>

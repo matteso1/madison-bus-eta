@@ -34,6 +34,13 @@ try:
 except ImportError:
     DB_AVAILABLE = False
 
+try:
+    from sentinel_client import SentinelClient
+    SENTINEL_CLIENT_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Sentinel Import Error: {e}")
+    SENTINEL_CLIENT_AVAILABLE = False
+
 load_dotenv()
 
 # Configuration
@@ -61,7 +68,11 @@ logging.basicConfig(
     format='%(asctime)s | %(levelname)s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+)
 logger = logging.getLogger(__name__)
+
+# Sentinel Client Instance
+sentinel_client: Optional['SentinelClient'] = None
 
 # Stats tracking
 stats = {
@@ -186,7 +197,14 @@ def collect_vehicles() -> dict:
         db_count = save_vehicles_to_db(vehicles)
     
     db_msg = f", {db_count} to DB" if db_count else ""
-    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}")
+    
+    # Send to Sentinel
+    sentinel_msg = ""
+    if sentinel_client:
+        success = sentinel_client.produce('madison-metro-vehicles', data)
+        sentinel_msg = ", ✓ Streamed" if success else ", ✗ Stream Fail"
+        
+    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}{sentinel_msg}")
     
     return data
 
@@ -220,7 +238,14 @@ def collect_predictions(routes: list) -> dict:
         db_count = save_predictions_to_db(all_predictions)
     
     db_msg = f", {db_count} to DB" if db_count else ""
-    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}{db_msg}")
+
+    # Send to Sentinel
+    sentinel_msg = ""
+    if sentinel_client:
+        success = sentinel_client.produce('madison-metro-predictions', data)
+        sentinel_msg = ", ✓ Streamed" if success else ", ✗ Stream Fail"
+
+    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}{db_msg}{sentinel_msg}")
     
     return data
 
@@ -248,8 +273,19 @@ def run_collector():
     logger.info(f"API Base: {API_BASE}")
     logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
     logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
+    logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
+    logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
     logger.info(f"Sentinel Enabled: {SENTINEL_ENABLED}")
     
+    # Initialize Sentinel Client
+    global sentinel_client
+    if SENTINEL_ENABLED:
+        if SENTINEL_CLIENT_AVAILABLE:
+            sentinel_client = SentinelClient(host=SENTINEL_HOST, port=SENTINEL_PORT)
+            logger.info(f"Sentinel: Initialized client for {SENTINEL_HOST}:{SENTINEL_PORT}")
+        else:
+            logger.error("Sentinel: Enabled but client library setup failed")
+        
     # Database status
     if DATABASE_URL and DB_AVAILABLE:
         try:

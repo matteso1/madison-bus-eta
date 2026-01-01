@@ -47,15 +47,15 @@ graph TB
 
 ### Current (Working)
 
-- **Frontend**: Live 2D map with 60+ buses, route filtering
+- **Frontend**: Mobile-first PWA, Live map with 60+ buses
 - **Backend**: Flask API, 29 routes, ML inference
 - **ML Model**: XGBoost, 21.3% improvement
+- **Data Pipeline**: 24/7 Collector -> Sentinel (Stream) -> Consumer -> Postgres
 
-### Planned (Building)
+### Planned (Future)
 
-- **Cloud Collector**: 24/7 data ingestion within API limits
-- **Sentinel Integration**: Stream bus data through custom message queue
 - **Auto-Retrain**: Daily model updates as data grows
+- **User Accounts**: Save favorite routes
 
 ---
 
@@ -63,23 +63,22 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant C as Collector (Cloud)
+    participant C as Collector
     participant API as Madison Metro API
     participant S as Sentinel
-    participant ML as ML Pipeline
-    participant DB as Database
+    participant W as Consumer Worker
+    participant DB as Postgres
 
-    loop Every 30s (within rate limits)
-        C->>API: GET /vehicles, /predictions
-        API-->>C: Bus positions, ETAs
-        C->>S: Produce to 'bus-updates' topic
+    loop Every 20s
+        C->>API: GET /vehicles
+        API-->>C: Live Bus Positions
+        C->>S: Produce to 'madison-metro-vehicles'
     end
 
-    S->>ML: Consume messages
-    ML->>DB: Store training data
-    
-    Note over ML: Daily retrain at 3am
-    ML->>ML: Retrain on new data
+    loop Async Stream
+        S->>W: Push new messages
+        W->>DB: Bulk insert to vehicle_observations
+    end
 ```
 
 ---
@@ -88,11 +87,12 @@ sequenceDiagram
 
 | Component | Platform | Status |
 |-----------|----------|--------|
-| Frontend | Vercel | Deploy |
-| Backend API | Railway | Deploy |
-| Data Collector | Railway Worker | Build |
-| Sentinel | Railway (or local) | Optional |
-| Database | Railway Postgres | Build |
+| Frontend | Vercel | **Deploying** |
+| Backend API | Railway | **Active** |
+| Data Collector | Railway Worker | **Active** |
+| Sentinel | Railway Docker | **Active** |
+| Consumer | Railway Worker | **Active** |
+| Database | Railway Postgres | **Active** |
 
 ---
 
