@@ -79,7 +79,7 @@ export default function PipelineStatsPanel({ isOpen, onClose }: PipelineStatsPan
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 20 }}
-                    className="fixed bottom-4 right-4 w-96 max-h-[80vh] overflow-y-auto bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl z-50"
+                    className="fixed bottom-4 right-4 w-96 max-h-[80vh] overflow-y-auto bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl z-[60]"
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between p-4 border-b border-zinc-700/50">
