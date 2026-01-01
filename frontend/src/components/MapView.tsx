@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import DeckGL from '@deck.gl/react';
 import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { Map } from '@vis.gl/react-maplibre';
@@ -50,21 +51,9 @@ export default function MapView() {
     const [patternsData, setPatternsData] = useState<any[]>([]);
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
     const [isExpanded, setIsExpanded] = useState<boolean>(false);
-    const [showPipelineStats, setShowPipelineStats] = useState<boolean>(false);
-    const [pipelineStats, setPipelineStats] = useState<any>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
-    const BACKEND_URL = 'https://madison-bus-eta-production.up.railway.app';
 
-    // Fetch pipeline stats
-    const fetchPipelineStats = async () => {
-        try {
-            const res = await axios.get(`${BACKEND_URL}/api/pipeline-stats`);
-            setPipelineStats(res.data);
-        } catch (e) {
-            console.error('Failed to fetch pipeline stats:', e);
-        }
-    };
 
     // Fetch routes and patterns on mount
     useEffect(() => {
@@ -291,50 +280,13 @@ export default function MapView() {
                             <span>{lastUpdate.toLocaleTimeString()}</span>
                         </div>
                     </div>
-
-                    {/* Pipeline Stats Button */}
-                    <button
-                        onClick={() => {
-                            setShowPipelineStats(!showPipelineStats);
-                            if (!showPipelineStats) fetchPipelineStats();
-                        }}
+                    {/* Analytics Page Link */}
+                    <Link
+                        to="/analytics"
                         className="w-full mt-3 py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg text-emerald-400 text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
-                        📊 {showPipelineStats ? 'Hide' : 'Show'} Pipeline Stats
-                    </button>
-
-                    {/* Pipeline Stats Display */}
-                    {showPipelineStats && pipelineStats && (
-                        <div className="mt-3 p-3 bg-gray-800/50 rounded-lg space-y-2 text-sm">
-                            <div className="text-emerald-400 font-medium mb-2">📡 Data Pipeline</div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-400">Total Observations</span>
-                                <span className="font-mono text-white">{pipelineStats.total_observations?.vehicles?.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-400">Last Hour</span>
-                                <span className="font-mono text-blue-400">{pipelineStats.collection_rate?.last_hour?.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-400">Per Minute</span>
-                                <span className="font-mono text-purple-400">{pipelineStats.collection_rate?.per_minute_avg}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-400">Uptime</span>
-                                <span className="font-mono text-yellow-400">{pipelineStats.timeline?.uptime_hours}h</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-400">Routes Tracked</span>
-                                <span className="font-mono text-cyan-400">{pipelineStats.routes_tracked}</span>
-                            </div>
-                            {pipelineStats.health?.is_collecting && (
-                                <div className="flex items-center gap-2 text-xs text-emerald-400 mt-2">
-                                    <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
-                                    Actively collecting
-                                </div>
-                            )}
-                        </div>
-                    )}
+                        📊 View Analytics Dashboard →
+                    </Link>
                 </div>
             </div>
         </div>
