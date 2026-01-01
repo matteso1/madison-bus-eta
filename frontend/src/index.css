@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
@@ -17,14 +15,9 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  /* Mobile optimizations */
   touch-action: manipulation;
-  /* Improves touch response */
   overscroll-behavior-y: none;
-  /* Prevents pull-to-refresh */
   -webkit-tap-highlight-color: transparent;
-
-  /* Support for iOS notches/safe areas */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
