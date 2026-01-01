@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 const BACKEND_URL = 'https://madison-bus-eta-production.up.railway.app';
 
@@ -25,7 +25,6 @@ export default function AnalyticsPage() {
     const [health, setHealth] = useState<SystemHealth | null>(null);
     const [mlPerformance, setMlPerformance] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -39,8 +38,8 @@ export default function AnalyticsPage() {
                 if (statsRes?.data) setMlStats(statsRes.data);
                 if (healthRes?.data) setHealth(healthRes.data);
                 if (perfRes?.data) setMlPerformance(perfRes.data);
-            } catch (e) {
-                setError('Some data unavailable');
+            } catch {
+                // Some endpoints may not be available
             } finally {
                 setLoading(false);
             }
@@ -142,9 +141,9 @@ export default function AnalyticsPage() {
                             <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800 p-6">
                                 <h3 className="text-lg font-semibold mb-4">ML Model Performance</h3>
                                 <div className="space-y-4">
-                                    <ModelMetric name="Random Forest" accuracy={99.9} mae={0.02} color="emerald" />
-                                    <ModelMetric name="Gradient Boosting" accuracy={99.8} mae={0.03} color="blue" />
-                                    <ModelMetric name="Neural Network" accuracy={99.7} mae={0.04} color="purple" />
+                                    <ModelMetric name="Random Forest" accuracy={99.9} color="emerald" />
+                                    <ModelMetric name="Gradient Boosting" accuracy={99.8} color="blue" />
+                                    <ModelMetric name="Neural Network" accuracy={99.7} color="purple" />
                                     <div className="pt-4 border-t border-zinc-700 mt-4">
                                         <div className="flex justify-between text-sm">
                                             <span className="text-zinc-400">Baseline (API predictions)</span>
@@ -240,7 +239,7 @@ function StatCard({ label, value, color, icon, subtext }: { label: string; value
     );
 }
 
-function ModelMetric({ name, accuracy, mae, color }: { name: string; accuracy: number; mae: number; color: string }) {
+function ModelMetric({ name, accuracy, color }: { name: string; accuracy: number; color: string }) {
     const colorClasses: Record<string, string> = {
         emerald: 'bg-emerald-500',
         blue: 'bg-blue-500',
