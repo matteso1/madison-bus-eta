@@ -23,7 +23,16 @@ class SentinelClient:
     def connect(self):
         """Establish gRPC connection."""
         try:
-            self.channel = grpc.insecure_channel(self.target)
+            # Channel options for TCP proxy compatibility
+            options = [
+                ('grpc.keepalive_time_ms', 10000),  # 10 sec keepalive
+                ('grpc.keepalive_timeout_ms', 5000),  # 5 sec timeout
+                ('grpc.keepalive_permit_without_calls', True),
+                ('grpc.http2.max_pings_without_data', 0),
+                ('grpc.max_receive_message_length', 10 * 1024 * 1024),  # 10MB
+                ('grpc.max_send_message_length', 10 * 1024 * 1024),
+            ]
+            self.channel = grpc.insecure_channel(self.target, options=options)
             self.stub = sentinel_pb2_grpc.SentinelStub(self.channel)
             logger.info(f"Sentinel: Connected to {self.target}")
         except Exception as e:
