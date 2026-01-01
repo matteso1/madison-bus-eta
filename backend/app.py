@@ -660,6 +660,112 @@ def get_route_analysis():
     except Exception as e:
         return jsonify({"error": str(e), "db_connected": False}), 500
 
+@app.route("/api/system-health")
+def get_system_health():
+    """Get comprehensive system health status for monitoring dashboard."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone, timedelta
+        
+        database_url = os.getenv('DATABASE_URL')
+        health = {
+            "status": "healthy",
+            "checks": {},
+            "metrics": {},
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Check 1: Database connection
+        if not database_url:
+            health["status"] = "degraded"
+            health["checks"]["database"] = {"status": "error", "message": "DATABASE_URL not configured"}
+        else:
+            try:
+                engine = create_engine(database_url, pool_pre_ping=True)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                    health["checks"]["database"] = {"status": "ok", "message": "Connected"}
+                    
+                    # Data quality metrics
+                    now = datetime.now(timezone.utc)
+                    last_hour = now - timedelta(hours=1)
+                    last_5min = now - timedelta(minutes=5)
+                    
+                    # Records in last hour and 5 minutes
+                    last_hour_count = conn.execute(text(
+                        "SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > :cutoff"
+                    ), {"cutoff": last_hour}).scalar() or 0
+                    
+                    last_5min_count = conn.execute(text(
+                        "SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > :cutoff"
+                    ), {"cutoff": last_5min}).scalar() or 0
+                    
+                    # Latest record timestamp
+                    latest = conn.execute(text(
+                        "SELECT collected_at FROM vehicle_observations ORDER BY collected_at DESC LIMIT 1"
+                    )).fetchone()
+                    latest_timestamp = latest[0].isoformat() if latest else None
+                    
+                    # Calculate data freshness
+                    if latest and latest[0]:
+                        age_seconds = (now - latest[0].replace(tzinfo=timezone.utc)).total_seconds()
+                        freshness = "stale" if age_seconds > 120 else "fresh"
+                    else:
+                        age_seconds = None
+                        freshness = "no_data"
+                    
+                    # Distinct routes and vehicles in last hour
+                    distinct_routes = conn.execute(text(
+                        "SELECT COUNT(DISTINCT rt) FROM vehicle_observations WHERE collected_at > :cutoff"
+                    ), {"cutoff": last_hour}).scalar() or 0
+                    
+                    distinct_vehicles = conn.execute(text(
+                        "SELECT COUNT(DISTINCT vid) FROM vehicle_observations WHERE collected_at > :cutoff"
+                    ), {"cutoff": last_hour}).scalar() or 0
+                    
+                    # Total records
+                    total_records = conn.execute(text("SELECT COUNT(*) FROM vehicle_observations")).scalar() or 0
+                    
+                    health["metrics"] = {
+                        "collection": {
+                            "last_hour": last_hour_count,
+                            "last_5min": last_5min_count,
+                            "rate_per_min": round(last_hour_count / 60, 1),
+                            "latest_record": latest_timestamp,
+                            "data_freshness": freshness,
+                            "age_seconds": round(age_seconds, 0) if age_seconds else None
+                        },
+                        "data_quality": {
+                            "distinct_routes_1h": distinct_routes,
+                            "distinct_vehicles_1h": distinct_vehicles,
+                            "total_records": total_records,
+                            "expected_rate_ok": last_5min_count > 0
+                        }
+                    }
+                    
+                    # Update status based on checks
+                    if freshness == "stale":
+                        health["status"] = "degraded"
+                        health["checks"]["collector"] = {"status": "warning", "message": "Data is stale (>2min old)"}
+                    elif freshness == "no_data":
+                        health["status"] = "degraded"
+                        health["checks"]["collector"] = {"status": "warning", "message": "No data collected yet"}
+                    else:
+                        health["checks"]["collector"] = {"status": "ok", "message": f"Collecting at {round(last_hour_count/60, 1)}/min"}
+                        
+            except Exception as db_error:
+                health["status"] = "unhealthy"
+                health["checks"]["database"] = {"status": "error", "message": str(db_error)}
+        
+        return jsonify(health)
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }), 500
+
 @app.route("/alerts/summary")
 def alerts_summary():
     """Expose summarized GTFS-RT alert data for the frontend."""
