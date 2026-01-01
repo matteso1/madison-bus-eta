@@ -27,6 +27,13 @@ from typing import Optional
 import requests
 from dotenv import load_dotenv
 
+# Import db module (only used if DATABASE_URL is set)
+try:
+    from db import save_vehicles_to_db, save_predictions_to_db, get_db_engine
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+
 load_dotenv()
 
 # Configuration
@@ -173,7 +180,13 @@ def collect_vehicles() -> dict:
     stats['vehicles_collected'] += len(vehicles)
     stats['last_vehicle_fetch'] = timestamp
     
-    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}")
+    # Save to database if configured
+    db_count = 0
+    if DB_AVAILABLE and DATABASE_URL:
+        db_count = save_vehicles_to_db(vehicles)
+    
+    db_msg = f", {db_count} to DB" if db_count else ""
+    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}")
     
     return data
 
@@ -201,7 +214,13 @@ def collect_predictions(routes: list) -> dict:
     stats['predictions_collected'] += len(all_predictions)
     stats['last_prediction_fetch'] = timestamp
     
-    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}")
+    # Save to database if configured
+    db_count = 0
+    if DB_AVAILABLE and DATABASE_URL:
+        db_count = save_predictions_to_db(all_predictions)
+    
+    db_msg = f", {db_count} to DB" if db_count else ""
+    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}{db_msg}")
     
     return data
 
@@ -230,7 +249,19 @@ def run_collector():
     logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
     logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
     logger.info(f"Sentinel Enabled: {SENTINEL_ENABLED}")
-    logger.info(f"Database: {'configured' if DATABASE_URL else 'not configured'}")
+    
+    # Database status
+    if DATABASE_URL and DB_AVAILABLE:
+        try:
+            engine = get_db_engine()
+            if engine:
+                logger.info("Database: ✓ PostgreSQL connected")
+            else:
+                logger.info("Database: ✗ Connection failed")
+        except Exception as e:
+            logger.warning(f"Database: ✗ Error: {e}")
+    else:
+        logger.info("Database: not configured (set DATABASE_URL)")
     
     if not API_KEY:
         logger.error("MADISON_METRO_API_KEY not set! Exiting.")
