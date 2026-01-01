@@ -1,0 +1,46 @@
+name: Nightly ML Training
+
+on:
+  schedule:
+    # Run at 3 AM CST (9 AM UTC) every day
+    - cron: '0 9 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv
+      
+      - name: Run ML Training
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cd ml/training
+          python train.py
+      
+      - name: Commit new model (if any)
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          if [[ `git status --porcelain ml/models/saved/` ]]; then
+            git add ml/models/saved/
+            git commit -m "chore: auto-deploy new ML model [skip ci]"
+            git push
+          else
+            echo "No new model to commit"
+          fi

@@ -155,8 +155,8 @@ export default function AnalyticsPage() {
                     <div className="mb-8 p-4 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <span className={`px-3 py-1 rounded-full text-sm font-medium ${health.status === 'healthy' ? 'bg-emerald-500/20 text-emerald-400' :
-                                    health.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' :
-                                        'bg-red-500/20 text-red-400'
+                                health.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' :
+                                    'bg-red-500/20 text-red-400'
                                 }`}>
                                 {health.status.toUpperCase()}
                             </span>
@@ -274,6 +274,45 @@ export default function AnalyticsPage() {
                                 </div>
                                 <div className="text-right text-sm text-zinc-500 mt-1">{charts?.storage.free_tier_pct?.toFixed(2) || 0}% of 1GB</div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ML Performance Section */}
+                <div className="mt-8 bg-gradient-to-br from-purple-900/20 to-indigo-900/20 backdrop-blur-xl border border-purple-500/20 rounded-3xl p-6">
+                    <h3 className="text-xl font-bold mb-4 flex items-center gap-3">
+                        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">🤖</span>
+                        Autonomous ML Pipeline
+                        <span className="ml-auto px-3 py-1 rounded-full text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                            Self-Improving
+                        </span>
+                    </h3>
+                    <div className="grid md:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-sm text-zinc-400 mb-1">Training Schedule</div>
+                            <div className="text-lg font-bold text-purple-400">3 AM CST Daily</div>
+                            <div className="text-xs text-zinc-500 mt-1">GitHub Actions</div>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-sm text-zinc-400 mb-1">Model Type</div>
+                            <div className="text-lg font-bold text-indigo-400">XGBoost</div>
+                            <div className="text-xs text-zinc-500 mt-1">Delay Classifier</div>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-sm text-zinc-400 mb-1">Features</div>
+                            <div className="text-lg font-bold text-cyan-400">14</div>
+                            <div className="text-xs text-zinc-500 mt-1">Temporal + Spatial + Route</div>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+                            <div className="text-sm text-zinc-400 mb-1">Auto-Deploy</div>
+                            <div className="text-lg font-bold text-emerald-400">If Improved</div>
+                            <div className="text-xs text-zinc-500 mt-1">+1% F1 threshold</div>
+                        </div>
+                    </div>
+                    <div className="mt-4 p-4 rounded-xl bg-black/20 border border-white/5">
+                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                            Collecting training data... First model training will run at 3 AM after 7 days of data.
                         </div>
                     </div>
                 </div>

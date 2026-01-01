@@ -56,6 +56,33 @@ class Prediction(Base):
     collected_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class MLTrainingRun(Base):
+    """Tracks ML model training runs for autonomous retraining."""
+    __tablename__ = 'ml_training_runs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(String(50), unique=True, index=True)  # Model version (timestamp)
+    trained_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    
+    # Training data info
+    samples_used = Column(Integer)
+    days_of_data = Column(Integer, default=7)
+    
+    # Model metrics
+    accuracy = Column(Float)
+    precision = Column(Float)
+    recall = Column(Float)
+    f1_score = Column(Float)
+    
+    # Comparison with previous
+    previous_f1 = Column(Float, nullable=True)
+    improvement_pct = Column(Float, nullable=True)
+    
+    # Deployment status
+    deployed = Column(Boolean, default=False)
+    deployment_reason = Column(String(200), nullable=True)  # "improved" / "first_model" / "not_deployed"
+
+
 # Database connection
 _engine = None
 _SessionLocal = None

@@ -865,6 +865,86 @@ def get_analytics_charts():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/ml-training-history")
+def get_ml_training_history():
+    """Get ML model training history for dashboard."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured", "runs": []}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Check if table exists
+            table_exists = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'ml_training_runs'
+                )
+            """)).scalar()
+            
+            if not table_exists:
+                return jsonify({
+                    "runs": [],
+                    "latest_model": None,
+                    "total_runs": 0,
+                    "message": "No training runs yet. First training will run at 3 AM."
+                })
+            
+            # Fetch training runs (last 30)
+            runs_data = conn.execute(text("""
+                SELECT version, trained_at, samples_used, accuracy, precision, 
+                       recall, f1_score, previous_f1, improvement_pct, deployed, deployment_reason
+                FROM ml_training_runs
+                ORDER BY trained_at DESC
+                LIMIT 30
+            """)).fetchall()
+            
+            runs = [{
+                "version": row[0],
+                "trained_at": row[1].isoformat() if row[1] else None,
+                "samples_used": row[2],
+                "accuracy": round(row[3], 4) if row[3] else None,
+                "precision": round(row[4], 4) if row[4] else None,
+                "recall": round(row[5], 4) if row[5] else None,
+                "f1_score": round(row[6], 4) if row[6] else None,
+                "previous_f1": round(row[7], 4) if row[7] else None,
+                "improvement_pct": round(row[8], 2) if row[8] else None,
+                "deployed": row[9],
+                "deployment_reason": row[10]
+            } for row in runs_data]
+            
+            # Get latest deployed model
+            latest_deployed = conn.execute(text("""
+                SELECT version, f1_score, trained_at
+                FROM ml_training_runs
+                WHERE deployed = true
+                ORDER BY trained_at DESC
+                LIMIT 1
+            """)).fetchone()
+            
+            latest_model = None
+            if latest_deployed:
+                latest_model = {
+                    "version": latest_deployed[0],
+                    "f1_score": round(latest_deployed[1], 4) if latest_deployed[1] else None,
+                    "trained_at": latest_deployed[2].isoformat() if latest_deployed[2] else None
+                }
+        
+        return jsonify({
+            "runs": runs,
+            "latest_model": latest_model,
+            "total_runs": len(runs),
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "runs": []}), 500
+
 @app.route("/alerts/summary")
 def alerts_summary():
     """Expose summarized GTFS-RT alert data for the frontend."""
