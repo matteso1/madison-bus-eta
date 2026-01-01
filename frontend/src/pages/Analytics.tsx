@@ -14,20 +14,49 @@ interface PipelineStats {
     health: { delayed_buses_24h_pct: number; is_collecting: boolean };
 }
 
+interface SystemHealth {
+    status: 'healthy' | 'degraded' | 'unhealthy' | 'error';
+    checks: {
+        database?: { status: string; message: string };
+        collector?: { status: string; message: string };
+    };
+    metrics?: {
+        collection: {
+            last_hour: number;
+            last_5min: number;
+            rate_per_min: number;
+            latest_record: string | null;
+            data_freshness: string;
+            age_seconds: number | null;
+        };
+        data_quality: {
+            distinct_routes_1h: number;
+            distinct_vehicles_1h: number;
+            total_records: number;
+            expected_rate_ok: boolean;
+        };
+    };
+}
+
 export default function AnalyticsPage() {
     const [stats, setStats] = useState<PipelineStats | null>(null);
+    const [health, setHealth] = useState<SystemHealth | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await axios.get(`${BACKEND_URL}/api/pipeline-stats`);
-                if (res.data.db_connected) {
-                    setStats(res.data);
+                const [statsRes, healthRes] = await Promise.all([
+                    axios.get(`${BACKEND_URL}/api/pipeline-stats`),
+                    axios.get(`${BACKEND_URL}/api/system-health`)
+                ]);
+                if (statsRes.data.db_connected) {
+                    setStats(statsRes.data);
                 } else {
-                    setError(res.data.error || 'Database not connected');
+                    setError(statsRes.data.error || 'Database not connected');
                 }
+                setHealth(healthRes.data);
             } catch {
                 setError('Failed to fetch data');
             } finally {
@@ -35,7 +64,7 @@ export default function AnalyticsPage() {
             }
         };
         fetchData();
-        const interval = setInterval(fetchData, 30000);
+        const interval = setInterval(fetchData, 15000); // Faster refresh for health
         return () => clearInterval(interval);
     }, []);
 
@@ -129,6 +158,63 @@ export default function AnalyticsPage() {
                                 gradient="from-amber-500 to-orange-500"
                             />
                         </div>
+
+                        {/* System Health Panel */}
+                        {health && (
+                            <div className="mb-12 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
+                                <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">🏥</span>
+                                    System Health
+                                    <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium ${health.status === 'healthy' ? 'bg-emerald-500/20 text-emerald-400' :
+                                            health.status === 'degraded' ? 'bg-amber-500/20 text-amber-400' :
+                                                'bg-red-500/20 text-red-400'
+                                        }`}>
+                                        {health.status.toUpperCase()}
+                                    </span>
+                                </h2>
+                                <div className="grid md:grid-cols-4 gap-4">
+                                    {/* Database Status */}
+                                    <div className={`p-4 rounded-2xl border ${health.checks.database?.status === 'ok' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'
+                                        }`}>
+                                        <div className="text-sm text-zinc-400 mb-1">Database</div>
+                                        <div className={`font-bold ${health.checks.database?.status === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {health.checks.database?.status === 'ok' ? '✓ Connected' : '✗ Error'}
+                                        </div>
+                                    </div>
+                                    {/* Data Freshness */}
+                                    <div className={`p-4 rounded-2xl border ${health.metrics?.collection.data_freshness === 'fresh' ? 'bg-emerald-500/10 border-emerald-500/20' :
+                                            health.metrics?.collection.data_freshness === 'stale' ? 'bg-amber-500/10 border-amber-500/20' :
+                                                'bg-zinc-500/10 border-zinc-500/20'
+                                        }`}>
+                                        <div className="text-sm text-zinc-400 mb-1">Data Freshness</div>
+                                        <div className={`font-bold ${health.metrics?.collection.data_freshness === 'fresh' ? 'text-emerald-400' :
+                                                health.metrics?.collection.data_freshness === 'stale' ? 'text-amber-400' :
+                                                    'text-zinc-400'
+                                            }`}>
+                                            {health.metrics?.collection.data_freshness === 'fresh' ? '🟢 Fresh' :
+                                                health.metrics?.collection.data_freshness === 'stale' ? '🟡 Stale' : '⚪ No Data'}
+                                            {health.metrics?.collection.age_seconds && (
+                                                <span className="text-xs ml-2">({health.metrics.collection.age_seconds}s ago)</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {/* Collection Rate */}
+                                    <div className="p-4 rounded-2xl border bg-blue-500/10 border-blue-500/20">
+                                        <div className="text-sm text-zinc-400 mb-1">Rate (5min)</div>
+                                        <div className="font-bold text-blue-400">
+                                            {health.metrics?.collection.last_5min || 0} records
+                                        </div>
+                                    </div>
+                                    {/* Active Routes */}
+                                    <div className="p-4 rounded-2xl border bg-purple-500/10 border-purple-500/20">
+                                        <div className="text-sm text-zinc-400 mb-1">Active (1h)</div>
+                                        <div className="font-bold text-purple-400">
+                                            {health.metrics?.data_quality.distinct_routes_1h} routes, {health.metrics?.data_quality.distinct_vehicles_1h} buses
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Main Content Grid */}
                         <div className="grid lg:grid-cols-3 gap-8">
