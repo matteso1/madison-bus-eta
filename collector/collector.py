@@ -1,12 +1,20 @@
 """
-Madison Metro Data Collector
+Madison Metro Data Collector - OPTIMIZED
 
-Runs 24/7 on Railway, collecting bus data within API rate limits.
-Stores data for ML training and can optionally stream to Sentinel.
+Runs 24/7 on Railway, collecting maximum bus data within API rate limits.
 
-Rate Limits (Madison Metro API):
-- 10,000 requests/day = ~7 req/min = 1 req every 8.5 seconds
-- We'll use 30s intervals to be safe (2880 req/day)
+RATE LIMIT STRATEGY:
+- Madison Metro: ~10,000 requests/day = 417 req/hour = 6.9 req/min
+- We collect: vehicles (1 req) + predictions per route batch (varies)
+
+COLLECTION STRATEGY:
+- Vehicles: Every 20 seconds (4320 req/day base)
+- Predictions: Batch routes, cycle through all stops
+- This leaves room for ~5680 prediction requests/day
+
+With 29 routes and batching 10 at a time = 3 batches
+Every 5 minutes = 288 prediction batches/day = ~864 requests
+Total: 4320 + 864 = ~5200 req/day (well under 10k, room to grow)
 """
 
 import os
@@ -15,6 +23,7 @@ import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 import requests
 from dotenv import load_dotenv
 
@@ -23,13 +32,21 @@ load_dotenv()
 # Configuration
 API_KEY = os.getenv('MADISON_METRO_API_KEY')
 API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.com/bustime/api/v3')
-COLLECTION_INTERVAL_SECONDS = 30  # Safe rate: 2880 req/day
-DATA_DIR = Path(__file__).parent / 'data'
 
-# Optional Sentinel config (for streaming to message queue)
+# Collection intervals (in seconds)
+VEHICLE_INTERVAL = 20      # Get all vehicles every 20s = 4320 req/day
+PREDICTION_INTERVAL = 300  # Get predictions every 5 min = ~864 req/day
+
+DATA_DIR = Path(__file__).parent / 'data'
+DATA_DIR.mkdir(exist_ok=True)
+
+# Optional Sentinel config
 SENTINEL_ENABLED = os.getenv('SENTINEL_ENABLED', 'false').lower() == 'true'
 SENTINEL_HOST = os.getenv('SENTINEL_HOST', 'localhost')
 SENTINEL_PORT = int(os.getenv('SENTINEL_PORT', '9092'))
+
+# Database config (optional - for persistent storage)
+DATABASE_URL = os.getenv('DATABASE_URL')
 
 # Logging
 logging.basicConfig(
@@ -39,24 +56,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Stats tracking
+stats = {
+    'vehicles_collected': 0,
+    'predictions_collected': 0,
+    'requests_today': 0,
+    'started_at': None,
+    'last_vehicle_fetch': None,
+    'last_prediction_fetch': None
+}
+
 
 def api_get(endpoint: str, **params) -> dict:
-    """Make API request with rate limiting."""
+    """Make API request with error handling."""
     params['key'] = API_KEY
     params['format'] = 'json'
     url = f"{API_BASE}/{endpoint}"
     
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
+        stats['requests_today'] += 1
         return response.json()
     except requests.RequestException as e:
-        logger.error(f"API error: {e}")
+        logger.error(f"API error on {endpoint}: {e}")
         return {}
 
 
-def fetch_vehicles() -> list:
-    """Fetch all vehicle positions."""
+def fetch_all_vehicles() -> list:
+    """Fetch all vehicle positions across all routes."""
     data = api_get('getvehicles', tmres='s')
     vehicles = data.get('bustime-response', {}).get('vehicle', [])
     if not isinstance(vehicles, list):
@@ -64,113 +92,155 @@ def fetch_vehicles() -> list:
     return vehicles
 
 
-def fetch_predictions_for_routes(routes: list) -> list:
-    """Fetch predictions for multiple routes (batch to limit requests)."""
-    # API allows up to 10 routes per request
-    all_predictions = []
-    for i in range(0, len(routes), 10):
-        batch = routes[i:i+10]
-        rt_param = ','.join(batch)
-        data = api_get('getpredictions', rt=rt_param, top=50)
-        preds = data.get('bustime-response', {}).get('prd', [])
-        if not isinstance(preds, list):
-            preds = [preds] if preds else []
-        all_predictions.extend(preds)
-        time.sleep(0.5)  # Small delay between batches
-    return all_predictions
+def fetch_predictions_batch(routes: list) -> list:
+    """Fetch predictions for a batch of routes (up to 10)."""
+    if not routes:
+        return []
+    rt_param = ','.join(routes[:10])
+    data = api_get('getpredictions', rt=rt_param, top=100)
+    preds = data.get('bustime-response', {}).get('prd', [])
+    if not isinstance(preds, list):
+        preds = [preds] if preds else []
+    return preds
 
 
-def save_to_file(data: dict, prefix: str):
-    """Save data to JSON file with timestamp."""
-    DATA_DIR.mkdir(exist_ok=True)
+def save_data(data: dict, prefix: str) -> Path:
+    """Save data to JSON file."""
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-    filename = DATA_DIR / f"{prefix}_{timestamp}.json"
+    date_dir = DATA_DIR / datetime.now(timezone.utc).strftime('%Y%m%d')
+    date_dir.mkdir(exist_ok=True)
     
+    filename = date_dir / f"{prefix}_{timestamp}.json"
     with open(filename, 'w') as f:
-        json.dump(data, f)
-    
+        json.dump(data, f, indent=2)
     return filename
 
 
-def send_to_sentinel(topic: str, messages: list):
-    """Send messages to Sentinel (if enabled)."""
-    if not SENTINEL_ENABLED:
-        return
-    
-    # TODO: Implement proper gRPC client
-    # For now, log that we would send
-    logger.info(f"Would send {len(messages)} messages to Sentinel topic: {topic}")
-
-
-def collect_once() -> dict:
-    """Single collection cycle."""
+def collect_vehicles() -> dict:
+    """Collect all vehicle positions."""
     timestamp = datetime.now(timezone.utc).isoformat()
+    vehicles = fetch_all_vehicles()
     
-    # Fetch vehicles
-    vehicles = fetch_vehicles()
-    logger.info(f"Fetched {len(vehicles)} vehicles")
+    # Extract unique routes for later prediction fetches
+    active_routes = sorted(set(v.get('rt', '') for v in vehicles if v.get('rt')))
     
-    # Extract active routes
-    active_routes = list(set(v.get('rt', '') for v in vehicles if v.get('rt')))
+    # Calculate stats
+    delayed_count = sum(1 for v in vehicles if v.get('dly'))
     
-    # Package data
     data = {
         'timestamp': timestamp,
         'vehicle_count': len(vehicles),
-        'vehicles': vehicles,
-        'active_routes': active_routes
+        'delayed_count': delayed_count,
+        'active_routes': active_routes,
+        'vehicles': vehicles
     }
     
-    # Save locally
-    filename = save_to_file(data, 'vehicles')
-    logger.info(f"Saved to {filename}")
+    filename = save_data(data, 'vehicles')
+    stats['vehicles_collected'] += len(vehicles)
+    stats['last_vehicle_fetch'] = timestamp
     
-    # Stream to Sentinel if enabled
-    if SENTINEL_ENABLED:
-        messages = [{
-            'vid': v.get('vid'),
-            'rt': v.get('rt'),
-            'lat': v.get('lat'),
-            'lon': v.get('lon'),
-            'hdg': v.get('hdg'),
-            'dly': v.get('dly', False),
-            'timestamp': timestamp
-        } for v in vehicles]
-        send_to_sentinel('bus-positions', messages)
+    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}")
     
     return data
 
 
+def collect_predictions(routes: list) -> dict:
+    """Collect predictions for all routes in batches."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    all_predictions = []
+    
+    # Batch routes (API allows 10 per request)
+    for i in range(0, len(routes), 10):
+        batch = routes[i:i+10]
+        preds = fetch_predictions_batch(batch)
+        all_predictions.extend(preds)
+        time.sleep(0.5)  # Small delay between batches
+    
+    data = {
+        'timestamp': timestamp,
+        'prediction_count': len(all_predictions),
+        'routes_queried': routes,
+        'predictions': all_predictions
+    }
+    
+    filename = save_data(data, 'predictions')
+    stats['predictions_collected'] += len(all_predictions)
+    stats['last_prediction_fetch'] = timestamp
+    
+    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}")
+    
+    return data
+
+
+def log_stats():
+    """Log collection statistics."""
+    runtime = datetime.now(timezone.utc) - datetime.fromisoformat(stats['started_at'])
+    hours = runtime.total_seconds() / 3600
+    
+    logger.info("=" * 50)
+    logger.info("COLLECTION STATS")
+    logger.info(f"  Runtime: {hours:.1f} hours")
+    logger.info(f"  Vehicles collected: {stats['vehicles_collected']}")
+    logger.info(f"  Predictions collected: {stats['predictions_collected']}")
+    logger.info(f"  API requests today: {stats['requests_today']}")
+    logger.info(f"  Rate: {stats['requests_today']/max(hours,0.1):.1f} req/hour")
+    logger.info("=" * 50)
+
+
 def run_collector():
-    """Main collection loop."""
-    logger.info("=" * 50)
-    logger.info("Madison Metro Data Collector")
-    logger.info("=" * 50)
+    """Main collection loop with optimized intervals."""
+    logger.info("=" * 60)
+    logger.info("MADISON METRO DATA COLLECTOR - OPTIMIZED")
+    logger.info("=" * 60)
     logger.info(f"API Base: {API_BASE}")
-    logger.info(f"Collection Interval: {COLLECTION_INTERVAL_SECONDS}s")
-    logger.info(f"Data Directory: {DATA_DIR}")
+    logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
+    logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
     logger.info(f"Sentinel Enabled: {SENTINEL_ENABLED}")
+    logger.info(f"Database: {'configured' if DATABASE_URL else 'not configured'}")
     
     if not API_KEY:
-        logger.error("MADISON_METRO_API_KEY not set!")
+        logger.error("MADISON_METRO_API_KEY not set! Exiting.")
         return
     
-    logger.info("Starting collection loop...")
+    logger.info("Starting optimized collection loop...")
+    stats['started_at'] = datetime.now(timezone.utc).isoformat()
     
-    collection_count = 0
+    last_vehicle_time = 0
+    last_prediction_time = 0
+    last_stats_time = 0
+    active_routes = []
+    
     while True:
         try:
-            data = collect_once()
-            collection_count += 1
+            current_time = time.time()
             
-            # Log stats every 10 collections
-            if collection_count % 10 == 0:
-                logger.info(f"Total collections: {collection_count}")
+            # Collect vehicles on interval
+            if current_time - last_vehicle_time >= VEHICLE_INTERVAL:
+                vehicle_data = collect_vehicles()
+                active_routes = vehicle_data.get('active_routes', active_routes)
+                last_vehicle_time = current_time
             
+            # Collect predictions on interval (less frequently)
+            if current_time - last_prediction_time >= PREDICTION_INTERVAL:
+                if active_routes:
+                    collect_predictions(active_routes)
+                last_prediction_time = current_time
+            
+            # Log stats every hour
+            if current_time - last_stats_time >= 3600:
+                log_stats()
+                last_stats_time = current_time
+            
+            # Short sleep to prevent CPU spin
+            time.sleep(1)
+            
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
+            log_stats()
+            break
         except Exception as e:
             logger.error(f"Collection error: {e}")
-        
-        time.sleep(COLLECTION_INTERVAL_SECONDS)
+            time.sleep(30)  # Back off on error
 
 
 if __name__ == '__main__':
