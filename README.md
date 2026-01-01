@@ -2,13 +2,14 @@
 
 A graduate school-ready portfolio project demonstrating end-to-end transit analytics, geospatial analysis, and machine learning for Madison Metro. Features production-style live map UI, schedule-aware analysis, and ML-enhanced arrival predictions that improve upon the official API by 21.3%.
 
-**Live Demo:** [https://madison-bus-eta.vercel.app/](https://madison-bus-eta.vercel.app/)
+**🎬 Demo Video:** [Watch on YouTube](https://youtu.be/nZdzqDuCDaw)
 
 This project unites theory (schedule-aware network analysis, ML-based ETA prediction) with production engineering and thoughtful UX, delivering a coherent narrative about urban mobility, access, and reliability supported by rigorous evaluation.
 
 ---
 
 ## Table of Contents
+
 - [Problem Framing](#problem-framing)
 - [Key Features](#key-features)
 - [Data Sources](#data-sources)
@@ -35,6 +36,7 @@ Reliable public transit is critical for urban mobility, yet arrival time predict
 ## Key Features
 
 ### 1. Live Transit Map
+
 - Real-time bus tracking with 10-second polling and thin server-side caching
 - Route geometry rendering with direction filtering (filterable patterns from Bustime API)
 - Stop markers snapped to route geometry (40m threshold)
@@ -42,6 +44,7 @@ Reliable public transit is critical for urban mobility, yet arrival time predict
 - **Schedule-aware isochrone overlays:** Walk vs. walk+transit reachability with optional time-of-day wait estimation
 
 ### 2. Advanced Analytics Dashboard
+
 Comprehensive exploratory data analysis with 204K+ records, featuring:
 
 - **System Overview:** Total routes (60+), 204K+ predictions analyzed, system reliability metrics
@@ -64,6 +67,7 @@ Comprehensive exploratory data analysis with 204K+ records, featuring:
 - **Actionable Insights:** AI-generated recommendations based on data patterns
 
 ### 3. Machine Learning Analysis
+
 Based on methodologies from [arXiv: Real-Time Bus Arrival Prediction (Transformers)](https://arxiv.org/html/2303.15495v3):
 
 - **XGBoost Baseline Model:** 21.3% improvement over official Madison Metro API
@@ -94,6 +98,7 @@ Based on methodologies from [arXiv: Real-Time Bus Arrival Prediction (Transforme
 ## Methodology
 
 ### Geospatial Analysis
+
 Following best practices from [Kaggle transit EDA workflows](https://www.kaggle.com/code/virajkadam/geospatial-analysis-of-bus-routes):
 
 - **Stop Snapping Algorithm:** Projects stops onto nearest route segment within 40m threshold using Haversine-based distance
@@ -101,6 +106,7 @@ Following best practices from [Kaggle transit EDA workflows](https://www.kaggle.
 - **Corridor Analysis:** Route × hour heatmaps reveal persistent bottlenecks (e.g., Route 2 during evening rush)
 
 ### Schedule-Aware Network Analysis
+
 Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/pro-app/latest/help/analysis/networks/network-analysis-with-public-transit-data.htm):
 
 - **Frequency-Based Isochrones (current):** Approximates reachability using walk speed (80 m/min) and bus speed (350 m/min) with expected wait time
@@ -110,6 +116,7 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 ### Machine Learning Pipeline
 
 **Feature Engineering (28 features):**
+
 - **Temporal:** hour, minute, day_of_week, is_weekend, is_rush_hour, cyclical encodings (sin/cos)
 - **Route Features:** is_brt, route_encoded, route_avg_wait, route_reliability
 - **Stop Features:** stop_encoded, stop_avg_wait, stop_frequency, stop_reliability
@@ -117,12 +124,14 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 - **Interactions:** route_hour_interaction, weekday_rush, brt_rush
 
 **Model Training:**
+
 - XGBoost regressor with 100 estimators, max_depth=5
 - Train/test split: 80/20 stratified by route
 - Target variable: `minutes_until_arrival` (actual arrival time)
 - Evaluation: MAE, MAPE, RMSE, R² on held-out test set
 
 **Calibration Analysis:**
+
 - Buckets predictions by horizon (5-min intervals)
 - Computes mean absolute error per bucket
 - Identifies degradation in longer-range predictions (as expected per literature)
@@ -132,11 +141,13 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 ## Results
 
 ### Model Performance
+
 - **Overall MAE:** 0.292 minutes (21.3% better than official API's 0.371 min baseline)
 - **R² Score:** 1.000 on test set (204K records)
 - **Calibration:** Errors remain < 0.5 min for 0-30 min horizons, increase to ~1.0 min for 45-60 min predictions
 
 ### Key Insights
+
 1. **Rush Hour Impact:** Statistical tests confirm significantly higher prediction errors during rush hours (p < 0.05)
 2. **BRT Reliability:** Bus Rapid Transit routes (A, B, C) show 15% better prediction reliability than local routes, validated through hypothesis testing
 3. **Weekend Performance:** 18% more accurate due to lower traffic variability, with statistically significant differences from weekdays
@@ -145,6 +156,7 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 6. **Feature Correlations:** Strong correlations between prediction horizon, hour of day, and error magnitude inform model improvements
 
 ### Geospatial Findings
+
 - **Delay Hotspots:** Concentrated in campus area (routes 80, 81, 82) and isthmus corridors (routes 2, 6, 11)
 - **Peak-Period Bottlenecks:** Route 2 shows 2x higher errors 16:00-18:00 vs. off-peak
 - **Reliability Leaders:** Routes A, B (BRT) maintain <0.2 min mean error across all hours
@@ -154,18 +166,21 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 ## Technical Stack
 
 ### Backend
+
 - **Framework:** Flask 3.1.2 with Flask-CORS
 - **ML Libraries:** Scikit-learn 1.7.1, XGBoost 1.7.6, LightGBM 4.1.0
 - **Data Processing:** Pandas 2.3.2, NumPy 2.3.2
 - **Deployment:** Python 3.10+, Gunicorn WSGI server
 
 ### Frontend
+
 - **Framework:** React 18.3.1 with Hooks
 - **Visualization:** Recharts 2.12.7 (analytics), React-Leaflet 4.2.1 (maps)
 - **UI:** Framer Motion 11.0.0 (animations), Lucide React (icons)
 - **Build:** React Scripts 5.0.1
 
 ### Data Pipeline
+
 - **Caching:** In-memory TTL cache (15s for live data, 6h for routes)
 - **Storage:** CSV-based historical dataset, JSON stop cache
 - **Serialization:** Joblib for model/encoder persistence
@@ -175,11 +190,13 @@ Informed by [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/p
 ## Installation
 
 ### Prerequisites
+
 - Python 3.10+
 - Node.js 18+
 - Madison Metro API Key (optional - [request here](https://www.cityofmadison.com/metro/developers))
 
 ### Backend Setup
+
 ```bash
 cd backend
 python -m venv venv
@@ -192,9 +209,11 @@ echo "MADISON_METRO_API_KEY='your_key'" > .env
 # Run server
 python app.py
 ```
+
 Backend runs at `http://localhost:5000`
 
 ### Frontend Setup
+
 ```bash
 cd frontend
 npm install
@@ -205,9 +224,11 @@ echo "REACT_APP_API_URL=http://localhost:5000" > .env.local
 # Run development server
 npm start
 ```
+
 Frontend runs at `http://localhost:3000`
 
 ### Offline Mode
+
 Without an API key, the system falls back to historical data from `consolidated_metro_data.csv`. Live vehicle tracking will be unavailable, but all analytics and ML features work.
 
 ---
@@ -215,6 +236,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 ## API Endpoints
 
 ### Transit Data
+
 - `GET /routes` - List all routes
 - `GET /directions?rt={route}` - Directions for route
 - `GET /stops?rt={route}&dir={direction}` - Stops for route/direction
@@ -223,6 +245,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 - `GET /predictions?stpid={stop_id}` - Arrival predictions (15s cache)
 
 ### Analytics
+
 - `GET /viz/system-overview` - System-wide statistics
 - `GET /viz/route-stats` - Per-route performance metrics
 - `GET /viz/heatmap` - Route × hour delay heatmap
@@ -234,7 +257,9 @@ Without an API key, the system falls back to historical data from `consolidated_
 - `GET /viz/isochrone?lat={lat}&lon={lon}&minutes={min}&when={datetime}` - Reachability polygons
 
 ### Machine Learning
+
 - `POST /predict/enhanced` - ML-enhanced prediction
+
   ```json
   {
     "route": "A",
@@ -244,6 +269,7 @@ Without an API key, the system falls back to historical data from `consolidated_
     "day_of_week": 1
   }
   ```
+
 - `GET /ml/status` - Model availability and performance
 - `GET /ml/features` - Feature importance rankings
 - `GET /ml/model-info` - Model metadata (type, metrics, improvement %)
@@ -253,6 +279,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 ## Limitations & Future Work
 
 ### Current Limitations
+
 1. **Isochrones are frequency-based approximations:** Do not account for exact schedule times or transfer wait times. For production use, implement time-expanded graph with GTFS schedule data.
 2. **ML model is XGBoost baseline:** A transformer-based sequence model (as proposed in [arXiv:2303.15495](https://arxiv.org/html/2303.15495v3)) would better capture stop sequence dependencies and long-range temporal patterns.
 3. **No real-time anomaly detection:** Dwell-time spikes and unusual delay patterns are not flagged in real-time (see [Medium: Bus Timing Anomalies](https://medium.com/@willyeahyeah/analyzing-bus-timing-anomalies-using-data-science-techniques-f8214a3d2d0e) for methodology).
@@ -260,6 +287,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 5. **No mobile optimization:** UI is desktop-first; responsive design for mobile devices needed.
 
 ### Planned Enhancements
+
 - **Transformer ETA Model:** Attention-based sequence model with stop embeddings and residual learning
 - **Ablation Studies:** Quantify impact of topology features, temporal encodings, and API ETA context
 - **Time-Expanded Isochrones:** Schedule-aware reachability using GTFS-based Dijkstra search
@@ -271,6 +299,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 ## References
 
 ### Academic & Industry Resources
+
 1. **Transformer-based ETA Prediction:** [Real-Time Bus Arrival Prediction using Transformers (arXiv:2303.15495)](https://arxiv.org/html/2303.15495v3)
 2. **Schedule-Aware Network Analysis:** [ArcGIS Public Transit Network Analysis](https://pro.arcgis.com/en/pro-app/latest/help/analysis/networks/network-analysis-with-public-transit-data.htm)
 3. **Geospatial Transit EDA:** [Kaggle: Geospatial Analysis of Bus Routes](https://www.kaggle.com/code/virajkadam/geospatial-analysis-of-bus-routes)
@@ -280,6 +309,7 @@ Without an API key, the system falls back to historical data from `consolidated_
 7. **Exploratory Data Analysis:** [IBM EDA Primer](https://www.ibm.com/think/topics/exploratory-data-analysis), [R4DS: EDA Chapter](https://r4ds.had.co.nz/exploratory-data-analysis.html)
 
 ### Data Sources
+
 - Madison Metro Transit Bustime API
 - General Transit Feed Specification (GTFS)
 
@@ -294,6 +324,7 @@ MIT License - see LICENSE file for details.
 ## Acknowledgments
 
 Built as a graduate school portfolio project demonstrating applied data science, geospatial analysis, and ML engineering. Special thanks to:
+
 - Madison Metro Transit for providing open API access
 - Academic researchers cited above for methodological guidance
 - Open-source communities (React, Scikit-learn, Leaflet, Recharts)

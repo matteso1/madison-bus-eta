@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    
+        <script>
+            L_NO_TOUCH = false;
+            L_DISABLE_3D = false;
+        </script>
+    
+    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
+    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_f66e8db4b2f862bbe49ae293363abc08 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+        
+</head>
+<body>
+    
+    
+        <h3 align="center" style="font-size:20px"><b>Madison Metro Route Analysis</b></h3>
+        
+    
+            <div class="folium-map" id="map_f66e8db4b2f862bbe49ae293363abc08" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_f66e8db4b2f862bbe49ae293363abc08 = L.map(
+                "map_f66e8db4b2f862bbe49ae293363abc08",
+                {
+                    center: [43.0731, -89.4012],
+                    crs: L.CRS.EPSG3857,
+                    zoom: 12,
+                    zoomControl: true,
+                    preferCanvas: false,
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_a52839d247ea95189d1710b674878666 = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            );
+        
+    
+            tile_layer_a52839d247ea95189d1710b674878666.addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+            var circle_marker_e63baf199f2d93546c5fcc1581c373a5 = L.circleMarker(
+                [43.077144722960256, -89.40924108856086],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF8C00", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_3441bda4701627f8b5770efffd2d27fc = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_883f5719a9d96f7470d0a4451ae50051 = $(`<div id="html_883f5719a9d96f7470d0a4451ae50051" style="width: 100.0%; height: 100.0%;">             <b>Route 28 Statistics</b><br>             Vehicles: 4.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 10.25 mph<br>             Empty Vehicles: 4.0             </div>`)[0];
+                popup_3441bda4701627f8b5770efffd2d27fc.setContent(html_883f5719a9d96f7470d0a4451ae50051);
+            
+        
+
+        circle_marker_e63baf199f2d93546c5fcc1581c373a5.bindPopup(popup_3441bda4701627f8b5770efffd2d27fc)
+        ;
+
+        
+    
+    
+            circle_marker_e63baf199f2d93546c5fcc1581c373a5.bindTooltip(
+                `<div>
+                     Route 28 - 4.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_a5487332737a3aa9b42f7f6206a11fc1 = L.circleMarker(
+                [43.07739532188831, -89.40607209866523],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF7F50", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_ba931bb76aba64ffc57c844cc73afa84 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_24dc098b563c9c100f5cbbff3f948564 = $(`<div id="html_24dc098b563c9c100f5cbbff3f948564" style="width: 100.0%; height: 100.0%;">             <b>Route 38 Statistics</b><br>             Vehicles: 5.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 5.6 mph<br>             Empty Vehicles: 5.0             </div>`)[0];
+                popup_ba931bb76aba64ffc57c844cc73afa84.setContent(html_24dc098b563c9c100f5cbbff3f948564);
+            
+        
+
+        circle_marker_a5487332737a3aa9b42f7f6206a11fc1.bindPopup(popup_ba931bb76aba64ffc57c844cc73afa84)
+        ;
+
+        
+    
+    
+            circle_marker_a5487332737a3aa9b42f7f6206a11fc1.bindTooltip(
+                `<div>
+                     Route 38 - 5.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_2be9ae0d23f8ad847d9cad9e04707561 = L.circleMarker(
+                [43.02441970607863, -89.54100729716848],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#808080", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_050b8ff489db17b4ed969eff8f3eeb5b = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_ce6194a079dbeb472e924975b9c595d5 = $(`<div id="html_ce6194a079dbeb472e924975b9c595d5" style="width: 100.0%; height: 100.0%;">             <b>Route 55 Statistics</b><br>             Vehicles: 2.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 0.0 mph<br>             Empty Vehicles: 2.0             </div>`)[0];
+                popup_050b8ff489db17b4ed969eff8f3eeb5b.setContent(html_ce6194a079dbeb472e924975b9c595d5);
+            
+        
+
+        circle_marker_2be9ae0d23f8ad847d9cad9e04707561.bindPopup(popup_050b8ff489db17b4ed969eff8f3eeb5b)
+        ;
+
+        
+    
+    
+            circle_marker_2be9ae0d23f8ad847d9cad9e04707561.bindTooltip(
+                `<div>
+                     Route 55 - 2.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e300ace5d4d275cb875ff30fa303513c = L.circleMarker(
+                [43.00930472108715, -89.38548725924115],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#808080", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_b414a00a49017e7f4de9d324f5097d41 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_65f1883ab3a47e22f972a01919ad0d07 = $(`<div id="html_65f1883ab3a47e22f972a01919ad0d07" style="width: 100.0%; height: 100.0%;">             <b>Route 65 Statistics</b><br>             Vehicles: 2.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 11.0 mph<br>             Empty Vehicles: 2.0             </div>`)[0];
+                popup_b414a00a49017e7f4de9d324f5097d41.setContent(html_65f1883ab3a47e22f972a01919ad0d07);
+            
+        
+
+        circle_marker_e300ace5d4d275cb875ff30fa303513c.bindPopup(popup_b414a00a49017e7f4de9d324f5097d41)
+        ;
+
+        
+    
+    
+            circle_marker_e300ace5d4d275cb875ff30fa303513c.bindTooltip(
+                `<div>
+                     Route 65 - 2.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_6129e669390cad180c7436d1a9e871eb = L.circleMarker(
+                [43.01402422234626, -89.47644422340375],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#808080", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_8504731a008b78adc5ff8abd4441de0d = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_be3539fdc4bc3c5bf1c741578fc5be2f = $(`<div id="html_be3539fdc4bc3c5bf1c741578fc5be2f" style="width: 100.0%; height: 100.0%;">             <b>Route 75 Statistics</b><br>             Vehicles: 3.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 13.67 mph<br>             Empty Vehicles: 3.0             </div>`)[0];
+                popup_8504731a008b78adc5ff8abd4441de0d.setContent(html_be3539fdc4bc3c5bf1c741578fc5be2f);
+            
+        
+
+        circle_marker_6129e669390cad180c7436d1a9e871eb.bindPopup(popup_8504731a008b78adc5ff8abd4441de0d)
+        ;
+
+        
+    
+    
+            circle_marker_6129e669390cad180c7436d1a9e871eb.bindTooltip(
+                `<div>
+                     Route 75 - 3.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_2a8b5864346878ddb52e60d7c7753639 = L.circleMarker(
+                [43.07765267387185, -89.41392670519448],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#800080", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_4a7621b68a3ad3fbe12ccd4b33dba4b4 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_52bcd456cf4ea81551daddf9385f7370 = $(`<div id="html_52bcd456cf4ea81551daddf9385f7370" style="width: 100.0%; height: 100.0%;">             <b>Route 80 Statistics</b><br>             Vehicles: 10.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 16.4 mph<br>             Empty Vehicles: 9.0             </div>`)[0];
+                popup_4a7621b68a3ad3fbe12ccd4b33dba4b4.setContent(html_52bcd456cf4ea81551daddf9385f7370);
+            
+        
+
+        circle_marker_2a8b5864346878ddb52e60d7c7753639.bindPopup(popup_4a7621b68a3ad3fbe12ccd4b33dba4b4)
+        ;
+
+        
+    
+    
+            circle_marker_2a8b5864346878ddb52e60d7c7753639.bindTooltip(
+                `<div>
+                     Route 80 - 10.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_249b2b871d7aa16d3c56312c43d58b2c = L.circleMarker(
+                [43.084837824205465, -89.43363089191877],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#9400D3", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_97bac96b16400a819d3bf768c585bab4 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_d0b3a6982a5dcbc9b65a9cb48f8a160b = $(`<div id="html_d0b3a6982a5dcbc9b65a9cb48f8a160b" style="width: 100.0%; height: 100.0%;">             <b>Route 84 Statistics</b><br>             Vehicles: 1.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 20.0 mph<br>             Empty Vehicles: 1.0             </div>`)[0];
+                popup_97bac96b16400a819d3bf768c585bab4.setContent(html_d0b3a6982a5dcbc9b65a9cb48f8a160b);
+            
+        
+
+        circle_marker_249b2b871d7aa16d3c56312c43d58b2c.bindPopup(popup_97bac96b16400a819d3bf768c585bab4)
+        ;
+
+        
+    
+    
+            circle_marker_249b2b871d7aa16d3c56312c43d58b2c.bindTooltip(
+                `<div>
+                     Route 84 - 1.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_91ab245acba49aa464bde0562c0da447 = L.circleMarker(
+                [43.09462074312301, -89.37983089517435],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF0000", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_0ec5f3e71fe882c1dbe9c7577bda659c = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_9805a0a197383a856c9424774f93799f = $(`<div id="html_9805a0a197383a856c9424774f93799f" style="width: 100.0%; height: 100.0%;">             <b>Route A Statistics</b><br>             Vehicles: 11.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 13.55 mph<br>             Empty Vehicles: 9.0             </div>`)[0];
+                popup_0ec5f3e71fe882c1dbe9c7577bda659c.setContent(html_9805a0a197383a856c9424774f93799f);
+            
+        
+
+        circle_marker_91ab245acba49aa464bde0562c0da447.bindPopup(popup_0ec5f3e71fe882c1dbe9c7577bda659c)
+        ;
+
+        
+    
+    
+            circle_marker_91ab245acba49aa464bde0562c0da447.bindTooltip(
+                `<div>
+                     Route A - 11.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e5d7f64900b0095d2d4f0bf42a59a763 = L.circleMarker(
+                [43.08182836524374, -89.38103689738816],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#00FF00", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_7958d5566a8ce4e7f13b24e699e38439 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_3bf68c69430c1c7198c6f6f0b0f65d0d = $(`<div id="html_3bf68c69430c1c7198c6f6f0b0f65d0d" style="width: 100.0%; height: 100.0%;">             <b>Route B Statistics</b><br>             Vehicles: 8.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 9.62 mph<br>             Empty Vehicles: 8.0             </div>`)[0];
+                popup_7958d5566a8ce4e7f13b24e699e38439.setContent(html_3bf68c69430c1c7198c6f6f0b0f65d0d);
+            
+        
+
+        circle_marker_e5d7f64900b0095d2d4f0bf42a59a763.bindPopup(popup_7958d5566a8ce4e7f13b24e699e38439)
+        ;
+
+        
+    
+    
+            circle_marker_e5d7f64900b0095d2d4f0bf42a59a763.bindTooltip(
+                `<div>
+                     Route B - 8.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_9fb6b1c233b264cde0938087b73bfabd = L.circleMarker(
+                [43.08044636345118, -89.36222440930116],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#0000FF", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_f4b5fe119cf890680776e3ed2948b049 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_6d890ecd2a2294d0720a5813d15a9e1f = $(`<div id="html_6d890ecd2a2294d0720a5813d15a9e1f" style="width: 100.0%; height: 100.0%;">             <b>Route C Statistics</b><br>             Vehicles: 9.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 12.0 mph<br>             Empty Vehicles: 9.0             </div>`)[0];
+                popup_f4b5fe119cf890680776e3ed2948b049.setContent(html_6d890ecd2a2294d0720a5813d15a9e1f);
+            
+        
+
+        circle_marker_9fb6b1c233b264cde0938087b73bfabd.bindPopup(popup_f4b5fe119cf890680776e3ed2948b049)
+        ;
+
+        
+    
+    
+            circle_marker_9fb6b1c233b264cde0938087b73bfabd.bindTooltip(
+                `<div>
+                     Route C - 9.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_2d58a914a9bd79da81db7c17cda677c1 = L.circleMarker(
+                [43.066504082032864, -89.40739459075478],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF00FF", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_b3eb880469f870981788b9b6f47e62bf = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_7f502246a4258def26f5bce748a54de9 = $(`<div id="html_7f502246a4258def26f5bce748a54de9" style="width: 100.0%; height: 100.0%;">             <b>Route D Statistics</b><br>             Vehicles: 13.0<br>             Delayed: 1.0 (7.7%)<br>             Avg Speed: 17.92 mph<br>             Empty Vehicles: 13.0             </div>`)[0];
+                popup_b3eb880469f870981788b9b6f47e62bf.setContent(html_7f502246a4258def26f5bce748a54de9);
+            
+        
+
+        circle_marker_2d58a914a9bd79da81db7c17cda677c1.bindPopup(popup_b3eb880469f870981788b9b6f47e62bf)
+        ;
+
+        
+    
+    
+            circle_marker_2d58a914a9bd79da81db7c17cda677c1.bindTooltip(
+                `<div>
+                     Route D - 13.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_da47caea22432fd35d522bdf5dc5922e = L.circleMarker(
+                [43.05109431599783, -89.44565540143822],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#00FFFF", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_8d660e97e2accb4cfef4ed1250e5291b = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_b22cf70cbe15c0aa43dab1e8d7a7de09 = $(`<div id="html_b22cf70cbe15c0aa43dab1e8d7a7de09" style="width: 100.0%; height: 100.0%;">             <b>Route E Statistics</b><br>             Vehicles: 3.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 12.67 mph<br>             Empty Vehicles: 3.0             </div>`)[0];
+                popup_8d660e97e2accb4cfef4ed1250e5291b.setContent(html_b22cf70cbe15c0aa43dab1e8d7a7de09);
+            
+        
+
+        circle_marker_da47caea22432fd35d522bdf5dc5922e.bindPopup(popup_8d660e97e2accb4cfef4ed1250e5291b)
+        ;
+
+        
+    
+    
+            circle_marker_da47caea22432fd35d522bdf5dc5922e.bindTooltip(
+                `<div>
+                     Route E - 3.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_789e0ac6ebd256436d831f95d418d056 = L.circleMarker(
+                [43.077268970536, -89.49304202934485],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FFFF00", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_1cf6287b41d58251eed2b60ae0cabd61 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_4ade8eb4b964d0df5265935143bf96fe = $(`<div id="html_4ade8eb4b964d0df5265935143bf96fe" style="width: 100.0%; height: 100.0%;">             <b>Route F Statistics</b><br>             Vehicles: 4.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 24.25 mph<br>             Empty Vehicles: 3.0             </div>`)[0];
+                popup_1cf6287b41d58251eed2b60ae0cabd61.setContent(html_4ade8eb4b964d0df5265935143bf96fe);
+            
+        
+
+        circle_marker_789e0ac6ebd256436d831f95d418d056.bindPopup(popup_1cf6287b41d58251eed2b60ae0cabd61)
+        ;
+
+        
+    
+    
+            circle_marker_789e0ac6ebd256436d831f95d418d056.bindTooltip(
+                `<div>
+                     Route F - 4.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e80f0d77b8539029ee919f93db4227e8 = L.circleMarker(
+                [43.06471465423787, -89.35032088035709],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#32CD32", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_296530eae2dcabcc9b1f119bdb8bf9d1 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_e6c4ea4640aca168321383897ebc4255 = $(`<div id="html_e6c4ea4640aca168321383897ebc4255" style="width: 100.0%; height: 100.0%;">             <b>Route G Statistics</b><br>             Vehicles: 4.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 12.5 mph<br>             Empty Vehicles: 4.0             </div>`)[0];
+                popup_296530eae2dcabcc9b1f119bdb8bf9d1.setContent(html_e6c4ea4640aca168321383897ebc4255);
+            
+        
+
+        circle_marker_e80f0d77b8539029ee919f93db4227e8.bindPopup(popup_296530eae2dcabcc9b1f119bdb8bf9d1)
+        ;
+
+        
+    
+    
+            circle_marker_e80f0d77b8539029ee919f93db4227e8.bindTooltip(
+                `<div>
+                     Route G - 4.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_a0d94bffbaa730c3c4bd4c938483a1db = L.circleMarker(
+                [43.04253930411096, -89.46285472473323],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF1493", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_9f7fde645a51b552a0c9bd7345d72361 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_8a902fad9cf8111da366523f6cf7df1b = $(`<div id="html_8a902fad9cf8111da366523f6cf7df1b" style="width: 100.0%; height: 100.0%;">             <b>Route H Statistics</b><br>             Vehicles: 3.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 16.0 mph<br>             Empty Vehicles: 3.0             </div>`)[0];
+                popup_9f7fde645a51b552a0c9bd7345d72361.setContent(html_8a902fad9cf8111da366523f6cf7df1b);
+            
+        
+
+        circle_marker_a0d94bffbaa730c3c4bd4c938483a1db.bindPopup(popup_9f7fde645a51b552a0c9bd7345d72361)
+        ;
+
+        
+    
+    
+            circle_marker_a0d94bffbaa730c3c4bd4c938483a1db.bindTooltip(
+                `<div>
+                     Route H - 3.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e82fa61e261be1474048e076cc68c91b = L.circleMarker(
+                [43.07286878900036, -89.45629319549964],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#1E90FF", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_139cdc7fb13ee2b2125c4dd5a73a5a0a = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_8baa23e1d5fd074ee7b2cb971c7e4bd2 = $(`<div id="html_8baa23e1d5fd074ee7b2cb971c7e4bd2" style="width: 100.0%; height: 100.0%;">             <b>Route J Statistics</b><br>             Vehicles: 3.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 8.33 mph<br>             Empty Vehicles: 3.0             </div>`)[0];
+                popup_139cdc7fb13ee2b2125c4dd5a73a5a0a.setContent(html_8baa23e1d5fd074ee7b2cb971c7e4bd2);
+            
+        
+
+        circle_marker_e82fa61e261be1474048e076cc68c91b.bindPopup(popup_139cdc7fb13ee2b2125c4dd5a73a5a0a)
+        ;
+
+        
+    
+    
+            circle_marker_e82fa61e261be1474048e076cc68c91b.bindTooltip(
+                `<div>
+                     Route J - 3.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_90994927762cde87f087435ce10daca2 = L.circleMarker(
+                [43.088389902028965, -89.33681602438135],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FFD700", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_1749249cc340f5eedb1a860f3334d383 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_2f0d78a346ac9c9c3fa48779ae18cc52 = $(`<div id="html_2f0d78a346ac9c9c3fa48779ae18cc52" style="width: 100.0%; height: 100.0%;">             <b>Route L Statistics</b><br>             Vehicles: 2.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 13.5 mph<br>             Empty Vehicles: 2.0             </div>`)[0];
+                popup_1749249cc340f5eedb1a860f3334d383.setContent(html_2f0d78a346ac9c9c3fa48779ae18cc52);
+            
+        
+
+        circle_marker_90994927762cde87f087435ce10daca2.bindPopup(popup_1749249cc340f5eedb1a860f3334d383)
+        ;
+
+        
+    
+    
+            circle_marker_90994927762cde87f087435ce10daca2.bindTooltip(
+                `<div>
+                     Route L - 2.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e614510c16a4e62f61415d75265f432d = L.circleMarker(
+                [43.067310833492556, -89.40486996289386],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF69B4", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_a50adde09178edd3363f62012b274ad2 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_c6d9c2b92d81c9658e7ecff6c69d187e = $(`<div id="html_c6d9c2b92d81c9658e7ecff6c69d187e" style="width: 100.0%; height: 100.0%;">             <b>Route O Statistics</b><br>             Vehicles: 2.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 12.0 mph<br>             Empty Vehicles: 2.0             </div>`)[0];
+                popup_a50adde09178edd3363f62012b274ad2.setContent(html_c6d9c2b92d81c9658e7ecff6c69d187e);
+            
+        
+
+        circle_marker_e614510c16a4e62f61415d75265f432d.bindPopup(popup_a50adde09178edd3363f62012b274ad2)
+        ;
+
+        
+    
+    
+            circle_marker_e614510c16a4e62f61415d75265f432d.bindTooltip(
+                `<div>
+                     Route O - 2.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_3789ebf7cf2926116c0503dc8c0fde9f = L.circleMarker(
+                [43.13598440267051, -89.31561464019101],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#00CED1", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_8282dffeb9562a9de67fcef389fd66c4 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_6a3950e373204936911372bc32e6b2a6 = $(`<div id="html_6a3950e373204936911372bc32e6b2a6" style="width: 100.0%; height: 100.0%;">             <b>Route P Statistics</b><br>             Vehicles: 1.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 18.0 mph<br>             Empty Vehicles: 1.0             </div>`)[0];
+                popup_8282dffeb9562a9de67fcef389fd66c4.setContent(html_6a3950e373204936911372bc32e6b2a6);
+            
+        
+
+        circle_marker_3789ebf7cf2926116c0503dc8c0fde9f.bindPopup(popup_8282dffeb9562a9de67fcef389fd66c4)
+        ;
+
+        
+    
+    
+            circle_marker_3789ebf7cf2926116c0503dc8c0fde9f.bindTooltip(
+                `<div>
+                     Route P - 1.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_760037dbd3d88be76f5b515a7c8c7959 = L.circleMarker(
+                [43.072806928014856, -89.4513089148812],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#FF4500", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_24961f58d909153b4d7456b203cb35ea = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_3f817075565cde33b94c9efa8a04c2ed = $(`<div id="html_3f817075565cde33b94c9efa8a04c2ed" style="width: 100.0%; height: 100.0%;">             <b>Route R Statistics</b><br>             Vehicles: 5.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 11.6 mph<br>             Empty Vehicles: 5.0             </div>`)[0];
+                popup_24961f58d909153b4d7456b203cb35ea.setContent(html_3f817075565cde33b94c9efa8a04c2ed);
+            
+        
+
+        circle_marker_760037dbd3d88be76f5b515a7c8c7959.bindPopup(popup_24961f58d909153b4d7456b203cb35ea)
+        ;
+
+        
+    
+    
+            circle_marker_760037dbd3d88be76f5b515a7c8c7959.bindTooltip(
+                `<div>
+                     Route R - 5.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_59574f7cb6e2cf9ee0194f7e27724e37 = L.circleMarker(
+                [43.19244041054571, -89.21112514078729],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#9370DB", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_6802ffdd4742998b8e7ea79155e95b59 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_a6c1001c19bd0444c7d575464b60a46b = $(`<div id="html_a6c1001c19bd0444c7d575464b60a46b" style="width: 100.0%; height: 100.0%;">             <b>Route S Statistics</b><br>             Vehicles: 1.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 7.0 mph<br>             Empty Vehicles: 1.0             </div>`)[0];
+                popup_6802ffdd4742998b8e7ea79155e95b59.setContent(html_a6c1001c19bd0444c7d575464b60a46b);
+            
+        
+
+        circle_marker_59574f7cb6e2cf9ee0194f7e27724e37.bindPopup(popup_6802ffdd4742998b8e7ea79155e95b59)
+        ;
+
+        
+    
+    
+            circle_marker_59574f7cb6e2cf9ee0194f7e27724e37.bindTooltip(
+                `<div>
+                     Route S - 1.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var circle_marker_e9534c603f4e4129943408dce5e54ae2 = L.circleMarker(
+                [43.15687, -89.26725333333334],
+                {"bubblingMouseEvents": true, "color": "black", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#20B2AA", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 10, "stroke": true, "weight": 2}
+            ).addTo(map_f66e8db4b2f862bbe49ae293363abc08);
+        
+    
+        var popup_6c7ce8688b8c86ea73e5beb88045116f = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_d876722fac5a37eeb86339249542947b = $(`<div id="html_d876722fac5a37eeb86339249542947b" style="width: 100.0%; height: 100.0%;">             <b>Route W Statistics</b><br>             Vehicles: 1.0<br>             Delayed: 0.0 (0.0%)<br>             Avg Speed: 0.0 mph<br>             Empty Vehicles: 1.0             </div>`)[0];
+                popup_6c7ce8688b8c86ea73e5beb88045116f.setContent(html_d876722fac5a37eeb86339249542947b);
+            
+        
+
+        circle_marker_e9534c603f4e4129943408dce5e54ae2.bindPopup(popup_6c7ce8688b8c86ea73e5beb88045116f)
+        ;
+
+        
+    
+    
+            circle_marker_e9534c603f4e4129943408dce5e54ae2.bindTooltip(
+                `<div>
+                     Route W - 1.0 vehicles
+                 </div>`,
+                {"sticky": true}
+            );
+        
+</script>
+</html>

@@ -326,26 +326,88 @@ def get_nearby_stops():
 
 @app.route("/vehicles")
 def get_vehicles():
+    import concurrent.futures
+
     rt = request.args.get("rt")
     vid = request.args.get("vid")
     p = {}
+    
     if rt:
         p['rt'] = rt
     if vid:
         p['vid'] = vid
-    if not (rt or vid):
-        return jsonify({"error": "Specify rt OR vid param"}), 400
-    cache_key = f"vehicles:{rt or ''}:{vid or ''}"
+        
+    # If explicit route/vehicle requested, use standard path
+    if rt or vid:
+        cache_key = f"vehicles:{rt or ''}:{vid or ''}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+            
+        if OFFLINE_MODE:
+            data = fallback_empty('vehicle')
+        else:
+            data = api_get("getvehicles", **p)
+            
+        cache_set(cache_key, data, 15)
+        return jsonify(data)
+
+    # FIX: Fetch ALL routes if no params provided (Batching to avoid API limits)
+    cache_key = "vehicles:ALL"
     cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
+
     if OFFLINE_MODE:
-        data = fallback_empty('vehicle')
-    else:
-        data = api_get("getvehicles", **p)
-    # Short TTL for live data
-    cache_set(cache_key, data, 15)
-    return jsonify(data)
+        return jsonify(fallback_empty('vehicle'))
+
+    # 1. Get Routes
+    routes_key = "routes"
+    routes_data = cache_get(routes_key) or api_get("getroutes")
+    # Quick cache update if we fetched it
+    if not cache_get(routes_key):
+         cache_set(routes_key, routes_data, 6 * 3600)
+
+    if not routes_data or "bustime-response" not in routes_data:
+         return jsonify({"error": "Failed to get route list"}), 503
+
+    rts = routes_data["bustime-response"].get("routes", [])
+    if isinstance(rts, dict): rts = [rts]
+    all_ids = [str(r["rt"]) for r in rts if "rt" in r]
+
+    if not all_ids:
+         return jsonify({"bustime-response": {"vehicle": []}})
+
+    # 2. Chunk routes (max 10 per request to be safe)
+    CHUNK_SIZE = 10
+    chunks = [all_ids[i:i + CHUNK_SIZE] for i in range(0, len(all_ids), CHUNK_SIZE)]
+    
+    all_vehicles = []
+    
+    def fetch_chunk(chunk):
+        try:
+            rt_str = ",".join(chunk)
+            # Short timeout to fail fast on individual chunks
+            res = api_get("getvehicles", rt=rt_str)
+            if "bustime-response" in res and "vehicle" in res["bustime-response"]:
+                v = res["bustime-response"]["vehicle"]
+                return v if isinstance(v, list) else [v]
+            return []
+        except:
+            return []
+
+    # 3. Parallel Fetch
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(fetch_chunk, chunk) for chunk in chunks]
+        for f in concurrent.futures.as_completed(futures):
+            all_vehicles.extend(f.result())
+
+    # 4. Construct Response
+    result = {"bustime-response": {"vehicle": all_vehicles}}
+    
+    # Short TTL
+    cache_set(cache_key, result, 15)
+    return jsonify(result)
 
 @app.route("/predictions")
 def get_predictions():
@@ -822,14 +884,46 @@ def get_rush_hour():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/viz/geo-heatmap")
-def get_geo_heatmap():
-    """Get geospatial heatmap data (lat, lon, weight)"""
+@app.route("/viz/trips")
+def get_historical_trips():
+    """Get historical trip trajectories for animation"""
     try:
         agg = get_aggregator()
         if agg is None:
             return jsonify({"error": "Data aggregator not available"}), 503
-        return jsonify(agg.get_geospatial_heatmap_data())
+        
+        limit = request.args.get('limit', default=2000, type=int)
+        trips = agg.get_historical_trips(limit=limit)
+        
+        # Manually strictly sanitize float values to ensure JSON compliance
+        # (Standard Flask jsonify allows NaN which crashes JS JSON.parse)
+        import math
+        def clean_floats(obj):
+            if isinstance(obj, float):
+                if math.isnan(obj) or math.isinf(obj):
+                    return None
+                return obj
+            elif isinstance(obj, list):
+                return [clean_floats(x) for x in obj]
+            elif isinstance(obj, dict):
+                return {k: clean_floats(v) for k, v in obj.items()}
+            return obj
+            
+        return jsonify(clean_floats(trips))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/viz/geo-heatmap")
+def get_geo_heatmap():
+    """Get geospatial heatmap data (raw [lon, lat] points for aggregation)"""
+    try:
+        agg = get_aggregator()
+        if agg is None:
+            return jsonify({"error": "Data aggregator not available"}), 503
+        
+        # Returns list of [lon, lat] pairs
+        data = agg.get_geospatial_heatmap_data()
+        return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

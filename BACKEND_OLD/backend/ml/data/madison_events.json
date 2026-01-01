@@ -1,0 +1,169 @@
+{
+  "annual_events": [
+    {
+      "name": "UW Football Home Games",
+      "type": "sports",
+      "location": "Camp Randall Stadium",
+      "impact": "high",
+      "affected_routes": [
+        "80",
+        "81",
+        "82",
+        "84",
+        "A",
+        "B"
+      ],
+      "pattern": "saturday_fall",
+      "dates": [
+        "2025-09-06",
+        "2025-09-13",
+        "2025-09-20",
+        "2025-09-27",
+        "2025-10-04",
+        "2025-10-11"
+      ],
+      "description": "UW Badgers home football games cause major delays on campus routes"
+    },
+    {
+      "name": "Art Fair on the Square",
+      "type": "festival",
+      "location": "Capitol Square",
+      "impact": "high",
+      "affected_routes": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "2",
+        "6",
+        "11"
+      ],
+      "pattern": "second_weekend_july",
+      "dates": [
+        "2025-07-13",
+        "2025-07-14"
+      ],
+      "description": "200,000+ attendees, major impact on downtown routes"
+    },
+    {
+      "name": "Dane County Farmers' Market",
+      "type": "market",
+      "location": "Capitol Square",
+      "impact": "medium",
+      "affected_routes": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F"
+      ],
+      "pattern": "saturday_april_november",
+      "dates": [
+        "2025-04-05",
+        "2025-04-12",
+        "2025-04-19",
+        "2025-04-26",
+        "2025-05-03",
+        "2025-05-10",
+        "2025-05-17",
+        "2025-05-24",
+        "2025-05-31",
+        "2025-06-07",
+        "2025-06-14",
+        "2025-06-21",
+        "2025-06-28",
+        "2025-07-05",
+        "2025-07-12",
+        "2025-07-19",
+        "2025-07-26",
+        "2025-08-02",
+        "2025-08-09",
+        "2025-08-16",
+        "2025-08-23",
+        "2025-08-30",
+        "2025-09-06",
+        "2025-09-13",
+        "2025-09-20",
+        "2025-09-27",
+        "2025-10-04",
+        "2025-10-11",
+        "2025-10-18",
+        "2025-10-25",
+        "2025-11-01",
+        "2025-11-08",
+        "2025-11-15",
+        "2025-11-22",
+        "2025-11-29"
+      ],
+      "description": "Every Saturday morning, April-November"
+    },
+    {
+      "name": "Mifflin Street Block Party",
+      "type": "student_event",
+      "location": "Mifflin Street",
+      "impact": "high",
+      "affected_routes": [
+        "80",
+        "81",
+        "82",
+        "84"
+      ],
+      "pattern": "last_saturday_april",
+      "dates": [
+        "2025-04-26"
+      ],
+      "description": "Large student gathering, major delays on campus routes"
+    },
+    {
+      "name": "La F\u00eate de Marquette",
+      "type": "festival",
+      "location": "McPike Park",
+      "impact": "medium",
+      "affected_routes": [
+        "A",
+        "B",
+        "C",
+        "28",
+        "38"
+      ],
+      "pattern": "july",
+      "dates": [],
+      "description": "French-themed festival, 40,000+ attendees"
+    },
+    {
+      "name": "Wisconsin Film Festival",
+      "type": "cultural",
+      "location": "Multiple venues",
+      "impact": "medium",
+      "affected_routes": [
+        "A",
+        "B",
+        "C",
+        "80",
+        "81",
+        "82"
+      ],
+      "pattern": "april",
+      "dates": [],
+      "description": "8-day film festival in April"
+    },
+    {
+      "name": "Great Midwest Marijuana Harvest Festival",
+      "type": "festival",
+      "location": "Library Mall",
+      "impact": "low",
+      "affected_routes": [
+        "80",
+        "81",
+        "82"
+      ],
+      "pattern": "october",
+      "dates": [],
+      "description": "Annual festival since 1971"
+    }
+  ],
+  "special_events": []
+}

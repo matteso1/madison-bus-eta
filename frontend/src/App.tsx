@@ -1,12 +1,12 @@
 
 import MapView from './components/MapView';
-import Dashboard from './components/Dashboard';
+// import Dashboard from './components/Dashboard';  // Temporarily disabled
 
 function App() {
   return (
     <div className="w-full h-screen bg-black overflow-hidden relative">
       <MapView />
-      <Dashboard />
+      {/* <Dashboard /> */}
     </div>
   );
 }

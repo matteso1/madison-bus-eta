@@ -162,22 +162,124 @@ class DataAggregator:
         }
 
     def get_geospatial_heatmap_data(self):
-        """Aggregate data by lat/lon for geospatial heatmap."""
-        # Check if lat/lon columns exist
+        """
+        Return raw [lon, lat] positions for the frontend to aggregate via HexagonLayer.
+        Limited to 20k points for performance.
+        """
         if 'lat' not in self.df.columns or 'lon' not in self.df.columns:
             print("⚠️  Lat/Lon columns not available in dataset. Geospatial heatmap disabled.")
             return []
         
-        # We need to calculate average error per stop location
-        # Group by stop coordinates and calculate the mean error and the count of predictions
-        stop_data = self.df.groupby(['lat', 'lon'])['api_prediction_error'].agg(['mean', 'count']).reset_index()
-        stop_data.rename(columns={'mean': 'avg_error', 'count': 'prediction_count'}, inplace=True)
+        # Filter out NaN values and sample for performance
+        valid_df = self.df[['lat', 'lon']].dropna()
         
-        # Filter out stops with very few data points to reduce noise
-        # Relaxed filter for visibility
-        stop_data = stop_data[stop_data['prediction_count'] > 0]
+        # Limit to 20k points for performance
+        if len(valid_df) > 20000:
+            valid_df = valid_df.sample(n=20000, random_state=42)
+        
+        return valid_df[['lon', 'lat']].values.tolist()
 
-        return stop_data[['lat', 'lon', 'avg_error']].to_dict(orient='records')
+    def get_historical_trips(self, limit=2000):
+        """
+        Generate historical trip paths for Deck.gl TripsLayer.
+        Returns: [ { vendor, route, path, timestamps, color } ]
+        
+        This replicates the original BACKEND_OLD/geo.py logic:
+        1. Group by (vid, date) to create separate paths for each vehicle-day
+        2. Split trips when there's a gap > 15 minutes (to avoid lines across map)
+        3. Convert timestamps to seconds-of-day for 24h animation loop
+        """
+        import hashlib
+        
+        def get_route_color(route_id: str):
+            """Generate a deterministic bright color for a route ID."""
+            hash_object = hashlib.md5(str(route_id).encode())
+            hex_hash = hash_object.hexdigest()
+            r = int(hex_hash[0:2], 16)
+            g = int(hex_hash[2:4], 16)
+            b = int(hex_hash[4:6], 16)
+            # Boost brightness
+            if max(r, g, b) < 150:
+                r = min(255, r + 100)
+                g = min(255, g + 100)
+                b = min(255, b + 100)
+            return [r, g, b]
+        
+        if 'vid' not in self.df.columns or 'tmstmp' not in self.df.columns:
+            return []
+        
+        # Work with the full dataset, not just one day
+        df = self.df.copy()
+        
+        # Filter NaNs
+        df = df.dropna(subset=['lat', 'lon', 'tmstmp'])
+        
+        if df.empty:
+            return []
+        
+        # Ensure datetime
+        if not pd.api.types.is_datetime64_any_dtype(df['tmstmp']):
+            df['tmstmp'] = pd.to_datetime(df['tmstmp'])
+        
+        df = df.sort_values(['vid', 'tmstmp'])
+        
+        # Convert to seconds-of-day (0-86400)
+        df['seconds_of_day'] = df['tmstmp'].dt.hour * 3600 + df['tmstmp'].dt.minute * 60 + df['tmstmp'].dt.second
+        df['date_str'] = df['tmstmp'].dt.strftime('%Y-%m-%d')
+        
+        # Group by vehicle + date
+        GAP_THRESHOLD = 900  # 15 minutes
+        processed_trips = []
+        
+        for (vid, date_str), group in df.groupby(['vid', 'date_str']):
+            if len(group) < 2:
+                continue
+                
+            route = str(group.iloc[0]['rt'])
+            color = get_route_color(route)
+            
+            raw_lons = group['lon'].values
+            raw_lats = group['lat'].values
+            raw_times = group['seconds_of_day'].values
+            
+            # Split by gaps
+            current_path = [[raw_lons[0], raw_lats[0]]]
+            current_timestamps = [raw_times[0]]
+            
+            for i in range(1, len(raw_times)):
+                t_diff = raw_times[i] - raw_times[i-1]
+                
+                if t_diff > GAP_THRESHOLD:
+                    # Gap detected - save segment and start new one
+                    if len(current_path) > 1:
+                        processed_trips.append({
+                            "vendor": 0,
+                            "route": route,
+                            "path": current_path,
+                            "timestamps": [int(t) for t in current_timestamps],
+                            "color": color
+                        })
+                    current_path = [[raw_lons[i], raw_lats[i]]]
+                    current_timestamps = [raw_times[i]]
+                else:
+                    current_path.append([raw_lons[i], raw_lats[i]])
+                    current_timestamps.append(raw_times[i])
+            
+            # Append final segment
+            if len(current_path) > 1:
+                processed_trips.append({
+                    "vendor": 0,
+                    "route": route,
+                    "path": current_path,
+                    "timestamps": [int(t) for t in current_timestamps],
+                    "color": color
+                })
+            
+            if len(processed_trips) >= limit:
+                break
+        
+        return processed_trips
+
 
     # -------------------- Internal helpers --------------------
     def _try_merge_stop_cache(self):
