@@ -4,31 +4,40 @@ import axios from 'axios';
 
 const BACKEND_URL = 'https://madison-bus-eta-production.up.railway.app';
 
+interface PipelineStats {
+    db_connected: boolean;
+    total_observations: { vehicles: number; predictions: number };
+    routes_tracked: number;
+    vehicles_tracked: number;
+    collection_rate: { last_hour: number; last_24h: number; per_minute_avg: number };
+    timeline: { first_collection: string | null; last_collection: string | null; uptime_hours: number };
+    health: { delayed_buses_24h_pct: number; is_collecting: boolean };
+}
+
 export default function AnalyticsPage() {
-    const [mlStats, setMlStats] = useState<any>(null);
-    const [health, setHealth] = useState<any>(null);
+    const [stats, setStats] = useState<PipelineStats | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [statsRes, healthRes] = await Promise.all([
-                    axios.get(`${BACKEND_URL}/ml/data-stats`).catch(() => null),
-                    axios.get(`${BACKEND_URL}/health`).catch(() => null),
-                ]);
-                if (statsRes?.data) setMlStats(statsRes.data);
-                if (healthRes?.data) setHealth(healthRes.data);
+                const res = await axios.get(`${BACKEND_URL}/api/pipeline-stats`);
+                if (res.data.db_connected) {
+                    setStats(res.data);
+                } else {
+                    setError(res.data.error || 'Database not connected');
+                }
             } catch {
-                // Some endpoints may fail
+                setError('Failed to fetch data');
             } finally {
                 setLoading(false);
             }
         };
         fetchData();
+        const interval = setInterval(fetchData, 30000);
+        return () => clearInterval(interval);
     }, []);
-
-    const totalSamples = mlStats?.ml_dataset?.total_samples || 0;
-    const routeCount = Object.keys(mlStats?.ml_dataset?.route_distribution || {}).length;
 
     return (
         <div className="min-h-screen bg-[#0a0a0f] text-white">
@@ -51,10 +60,10 @@ export default function AnalyticsPage() {
                         </Link>
                     </div>
                     <div className="flex items-center gap-4">
-                        {health?.status === 'ok' && (
+                        {stats?.health?.is_collecting && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                                 <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                                <span className="text-sm text-emerald-400">Online</span>
+                                <span className="text-sm text-emerald-400">Collecting</span>
                             </div>
                         )}
                         <Link
@@ -72,17 +81,24 @@ export default function AnalyticsPage() {
                     <div className="flex items-center justify-center h-64">
                         <div className="w-10 h-10 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
                     </div>
-                ) : (
+                ) : error ? (
+                    <div className="text-center py-20">
+                        <div className="text-6xl mb-4">⚠️</div>
+                        <h2 className="text-2xl font-bold text-red-400 mb-2">Database Connection Error</h2>
+                        <p className="text-zinc-400">{error}</p>
+                        <p className="text-zinc-500 text-sm mt-4">Make sure DATABASE_URL is configured and the backend is redeployed.</p>
+                    </div>
+                ) : stats && (
                     <>
                         {/* Hero Section */}
                         <div className="text-center mb-16">
                             <h1 className="text-5xl md:text-6xl font-bold mb-4">
                                 <span className="bg-gradient-to-r from-emerald-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent">
-                                    Analytics Dashboard
+                                    Live Pipeline Analytics
                                 </span>
                             </h1>
                             <p className="text-xl text-zinc-400 max-w-2xl mx-auto">
-                                Real-time insights from our ML-powered bus prediction system
+                                Real-time statistics from PostgreSQL • Powered by Sentinel
                             </p>
                         </div>
 
@@ -90,55 +106,67 @@ export default function AnalyticsPage() {
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                             <StatCard
                                 icon="📊"
-                                value={totalSamples.toLocaleString()}
-                                label="Training Samples"
+                                value={stats.total_observations.vehicles.toLocaleString()}
+                                label="Vehicle Observations"
                                 gradient="from-emerald-500 to-teal-500"
                             />
                             <StatCard
-                                icon="🎯"
-                                value="99.9%"
-                                label="Model Accuracy"
+                                icon="⚡"
+                                value={`${stats.collection_rate.per_minute_avg}/min`}
+                                label="Collection Rate"
                                 gradient="from-blue-500 to-indigo-500"
                             />
                             <StatCard
                                 icon="🚌"
-                                value={String(routeCount)}
-                                label="Routes Analyzed"
+                                value={String(stats.routes_tracked)}
+                                label="Routes Tracked"
                                 gradient="from-purple-500 to-pink-500"
                             />
                             <StatCard
-                                icon="⚡"
-                                value="21.3%"
-                                label="Better than API"
+                                icon="⏱️"
+                                value={`${stats.timeline.uptime_hours}h`}
+                                label="Pipeline Uptime"
                                 gradient="from-amber-500 to-orange-500"
                             />
                         </div>
 
                         {/* Main Content Grid */}
                         <div className="grid lg:grid-cols-3 gap-8">
-                            {/* ML Performance Card */}
+                            {/* Collection Metrics */}
                             <div className="lg:col-span-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
                                 <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">🧠</span>
-                                    ML Model Performance
+                                    <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 flex items-center justify-center">📈</span>
+                                    Collection Metrics
                                 </h2>
-                                <div className="space-y-6">
-                                    <PerformanceBar name="Random Forest" accuracy={99.9} color="emerald" />
-                                    <PerformanceBar name="Gradient Boosting" accuracy={99.8} color="blue" />
-                                    <PerformanceBar name="Neural Network" accuracy={99.7} color="purple" />
-                                    <div className="mt-8 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-amber-400 font-medium">Baseline (Madison Metro API)</span>
-                                            <span className="text-amber-400 font-mono">36% error rate</span>
-                                        </div>
-                                        <p className="text-sm text-zinc-400 mt-2">
-                                            Our models reduce prediction error by 21.3% compared to official estimates
-                                        </p>
-                                    </div>
+                                <div className="grid md:grid-cols-2 gap-6">
+                                    <MetricCard
+                                        label="Last Hour"
+                                        value={stats.collection_rate.last_hour.toLocaleString()}
+                                        unit="records"
+                                        color="emerald"
+                                    />
+                                    <MetricCard
+                                        label="Last 24 Hours"
+                                        value={stats.collection_rate.last_24h.toLocaleString()}
+                                        unit="records"
+                                        color="blue"
+                                    />
+                                    <MetricCard
+                                        label="Vehicles Tracked"
+                                        value={String(stats.vehicles_tracked)}
+                                        unit="unique"
+                                        color="purple"
+                                    />
+                                    <MetricCard
+                                        label="Delayed Buses (24h)"
+                                        value={`${stats.health.delayed_buses_24h_pct.toFixed(1)}%`}
+                                        unit="of fleet"
+                                        color={stats.health.delayed_buses_24h_pct < 10 ? 'emerald' : 'amber'}
+                                    />
                                 </div>
                             </div>
 
-                            {/* Tech Stack Card */}
+                            {/* Tech Stack */}
                             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
                                 <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
                                     <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">🔧</span>
@@ -146,67 +174,34 @@ export default function AnalyticsPage() {
                                 </h2>
                                 <div className="space-y-4">
                                     <TechRow icon="📡" name="Sentinel" desc="Custom Message Queue" />
-                                    <TechRow icon="🗄️" name="PostgreSQL" desc="Time-series Data" />
-                                    <TechRow icon="🤖" name="scikit-learn" desc="ML Models" />
+                                    <TechRow icon="🗄️" name="PostgreSQL" desc="Time-series Storage" />
                                     <TechRow icon="🐍" name="Flask" desc="API Backend" />
                                     <TechRow icon="⚛️" name="React" desc="Frontend" />
-                                    <TechRow icon="🚂" name="Railway" desc="Deployment" />
+                                    <TechRow icon="🚂" name="Railway" desc="Cloud Platform" />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Insights Row */}
-                        <div className="grid md:grid-cols-3 gap-6 mt-8">
-                            <InsightCard
-                                icon="🌅"
-                                title="Rush Hour Accuracy"
-                                value="99.9%"
-                                description="During 7-9 AM peak hours"
-                                color="emerald"
-                            />
-                            <InsightCard
-                                icon="🚍"
-                                title="BRT Routes"
-                                value="+15%"
-                                description="More reliable than local"
-                                color="blue"
-                            />
-                            <InsightCard
-                                icon="📅"
-                                title="Weekend Predictions"
-                                value="+18%"
-                                description="More accurate predictions"
-                                color="purple"
-                            />
-                        </div>
-
-                        {/* Data Pipeline Card */}
+                        {/* Timeline */}
                         <div className="mt-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
                             <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">📈</span>
-                                Data Pipeline
+                                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center">🕐</span>
+                                Pipeline Timeline
                             </h2>
-                            <div className="grid md:grid-cols-4 gap-6">
-                                <div className="text-center p-6 bg-white/5 rounded-2xl">
-                                    <div className="text-3xl mb-2">📡</div>
-                                    <div className="text-2xl font-bold text-white">20s</div>
-                                    <div className="text-sm text-zinc-400">Collection Interval</div>
-                                </div>
-                                <div className="text-center p-6 bg-white/5 rounded-2xl">
-                                    <div className="text-3xl mb-2">🗃️</div>
-                                    <div className="text-2xl font-bold text-white">{totalSamples.toLocaleString()}</div>
-                                    <div className="text-sm text-zinc-400">Total Records</div>
-                                </div>
-                                <div className="text-center p-6 bg-white/5 rounded-2xl">
-                                    <div className="text-3xl mb-2">🚌</div>
-                                    <div className="text-2xl font-bold text-white">{routeCount}</div>
-                                    <div className="text-sm text-zinc-400">Routes Tracked</div>
-                                </div>
-                                <div className="text-center p-6 bg-white/5 rounded-2xl">
-                                    <div className="text-3xl mb-2">⚡</div>
-                                    <div className="text-2xl font-bold text-emerald-400">Live</div>
-                                    <div className="text-sm text-zinc-400">24/7 Collection</div>
-                                </div>
+                            <div className="grid md:grid-cols-3 gap-6">
+                                <TimelineCard
+                                    label="First Collection"
+                                    value={stats.timeline.first_collection ? new Date(stats.timeline.first_collection).toLocaleString() : 'N/A'}
+                                />
+                                <TimelineCard
+                                    label="Latest Collection"
+                                    value={stats.timeline.last_collection ? new Date(stats.timeline.last_collection).toLocaleString() : 'N/A'}
+                                />
+                                <TimelineCard
+                                    label="Total Uptime"
+                                    value={`${stats.timeline.uptime_hours} hours`}
+                                    highlight
+                                />
                             </div>
                         </div>
                     </>
@@ -216,7 +211,7 @@ export default function AnalyticsPage() {
             {/* Footer */}
             <footer className="relative z-10 border-t border-white/5 mt-16">
                 <div className="max-w-7xl mx-auto px-6 py-8 text-center text-zinc-500 text-sm">
-                    Built with Sentinel (Custom Kafka) • PostgreSQL • scikit-learn • React
+                    Data collected via Sentinel → PostgreSQL • Auto-refreshes every 30 seconds
                 </div>
             </footer>
         </div>
@@ -236,25 +231,19 @@ function StatCard({ icon, value, label, gradient }: { icon: string; value: strin
     );
 }
 
-function PerformanceBar({ name, accuracy, color }: { name: string; accuracy: number; color: string }) {
+function MetricCard({ label, value, unit, color }: { label: string; value: string; unit: string; color: string }) {
     const colors: Record<string, string> = {
-        emerald: 'from-emerald-500 to-teal-500',
-        blue: 'from-blue-500 to-indigo-500',
-        purple: 'from-purple-500 to-pink-500',
+        emerald: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
+        blue: 'bg-blue-500/10 border-blue-500/20 text-blue-400',
+        purple: 'bg-purple-500/10 border-purple-500/20 text-purple-400',
+        amber: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
     };
 
     return (
-        <div>
-            <div className="flex justify-between mb-2">
-                <span className="font-medium">{name}</span>
-                <span className="text-zinc-400">{accuracy}%</span>
-            </div>
-            <div className="h-3 bg-white/5 rounded-full overflow-hidden">
-                <div
-                    className={`h-full bg-gradient-to-r ${colors[color]} rounded-full transition-all duration-1000`}
-                    style={{ width: `${accuracy}%` }}
-                />
-            </div>
+        <div className={`p-6 rounded-2xl border ${colors[color]}`}>
+            <div className="text-sm text-zinc-400 mb-2">{label}</div>
+            <div className="text-3xl font-bold">{value}</div>
+            <div className="text-xs text-zinc-500 mt-1">{unit}</div>
         </div>
     );
 }
@@ -271,26 +260,11 @@ function TechRow({ icon, name, desc }: { icon: string; name: string; desc: strin
     );
 }
 
-function InsightCard({ icon, title, value, description, color }: { icon: string; title: string; value: string; description: string; color: string }) {
-    const colors: Record<string, string> = {
-        emerald: 'from-emerald-500/20 to-emerald-500/5 border-emerald-500/20',
-        blue: 'from-blue-500/20 to-blue-500/5 border-blue-500/20',
-        purple: 'from-purple-500/20 to-purple-500/5 border-purple-500/20',
-    };
-    const textColors: Record<string, string> = {
-        emerald: 'text-emerald-400',
-        blue: 'text-blue-400',
-        purple: 'text-purple-400',
-    };
-
+function TimelineCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
     return (
-        <div className={`bg-gradient-to-br ${colors[color]} border rounded-2xl p-6`}>
-            <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">{icon}</span>
-                <span className="font-medium">{title}</span>
-            </div>
-            <div className={`text-3xl font-bold ${textColors[color]} mb-1`}>{value}</div>
-            <div className="text-sm text-zinc-400">{description}</div>
+        <div className={`p-6 rounded-2xl text-center ${highlight ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-white/5'}`}>
+            <div className="text-sm text-zinc-400 mb-2">{label}</div>
+            <div className={`text-lg font-mono ${highlight ? 'text-emerald-400' : 'text-white'}`}>{value}</div>
         </div>
     );
 }
