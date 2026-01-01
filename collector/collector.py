@@ -83,13 +83,47 @@ def api_get(endpoint: str, **params) -> dict:
         return {}
 
 
+def fetch_routes() -> list:
+    """Fetch all active routes."""
+    data = api_get('getroutes')
+    routes = data.get('bustime-response', {}).get('routes', [])
+    if not isinstance(routes, list):
+        routes = [routes] if routes else []
+    return [r.get('rt') for r in routes if r.get('rt')]
+
+
 def fetch_all_vehicles() -> list:
-    """Fetch all vehicle positions across all routes."""
-    data = api_get('getvehicles', tmres='s')
-    vehicles = data.get('bustime-response', {}).get('vehicle', [])
-    if not isinstance(vehicles, list):
-        vehicles = [vehicles] if vehicles else []
-    return vehicles
+    """Fetch all vehicle positions across all routes.
+    
+    The Madison Metro API requires the rt (route) parameter to return vehicles.
+    We first fetch all routes, then batch requests (max 10 routes per call).
+    """
+    # First, get all active routes
+    routes = fetch_routes()
+    if not routes:
+        logger.warning("No routes found - buses may not be running")
+        return []
+    
+    logger.info(f"Found {len(routes)} routes: {routes}")
+    
+    all_vehicles = []
+    # Batch routes (API allows up to 10 per request)
+    for i in range(0, len(routes), 10):
+        batch = routes[i:i+10]
+        rt_param = ','.join(batch)
+        data = api_get('getvehicles', rt=rt_param, tmres='s')
+        
+        vehicles = data.get('bustime-response', {}).get('vehicle', [])
+        if vehicles:
+            if not isinstance(vehicles, list):
+                vehicles = [vehicles]
+            all_vehicles.extend(vehicles)
+        
+        # Small delay between batches to be nice to API
+        if i + 10 < len(routes):
+            time.sleep(0.2)
+    
+    return all_vehicles
 
 
 def fetch_predictions_batch(routes: list) -> list:
