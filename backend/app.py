@@ -499,6 +499,90 @@ def collector_status():
     status = _read_collector_status()
     return jsonify(status)
 
+@app.route("/api/pipeline-stats")
+def get_pipeline_stats():
+    """Get comprehensive real-time data pipeline statistics from database."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone, timedelta
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured", "db_connected": False}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Total observations
+            total_vehicles = conn.execute(text("SELECT COUNT(*) FROM vehicle_observations")).scalar() or 0
+            total_predictions = conn.execute(text("SELECT COUNT(*) FROM predictions")).scalar() or 0
+            
+            # Distinct routes and vehicles tracked
+            distinct_routes = conn.execute(text("SELECT COUNT(DISTINCT rt) FROM vehicle_observations")).scalar() or 0
+            distinct_vehicles = conn.execute(text("SELECT COUNT(DISTINCT vid) FROM vehicle_observations")).scalar() or 0
+            
+            # Latest and earliest collection times
+            latest_row = conn.execute(text("SELECT collected_at FROM vehicle_observations ORDER BY collected_at DESC LIMIT 1")).fetchone()
+            earliest_row = conn.execute(text("SELECT collected_at FROM vehicle_observations ORDER BY collected_at ASC LIMIT 1")).fetchone()
+            
+            latest_collection = latest_row[0].isoformat() if latest_row and latest_row[0] else None
+            earliest_collection = earliest_row[0].isoformat() if earliest_row and earliest_row[0] else None
+            
+            # Last hour stats
+            one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+            last_hour_vehicles = conn.execute(
+                text("SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > :cutoff"),
+                {"cutoff": one_hour_ago}
+            ).scalar() or 0
+            
+            # Last 24 hours stats
+            one_day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+            last_day_vehicles = conn.execute(
+                text("SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > :cutoff"),
+                {"cutoff": one_day_ago}
+            ).scalar() or 0
+            
+            # Calculate uptime (time between first and last collection)
+            uptime_hours = 0
+            if earliest_row and earliest_row[0] and latest_row and latest_row[0]:
+                uptime_delta = latest_row[0] - earliest_row[0]
+                uptime_hours = round(uptime_delta.total_seconds() / 3600, 1)
+            
+            # Delayed bus percentage (last 24h)
+            delayed_count = conn.execute(
+                text("SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > :cutoff AND dly = true"),
+                {"cutoff": one_day_ago}
+            ).scalar() or 0
+            delayed_pct = round((delayed_count / last_day_vehicles * 100), 1) if last_day_vehicles > 0 else 0
+        
+        return jsonify({
+            "db_connected": True,
+            "total_observations": {
+                "vehicles": total_vehicles,
+                "predictions": total_predictions
+            },
+            "routes_tracked": distinct_routes,
+            "vehicles_tracked": distinct_vehicles,
+            "collection_rate": {
+                "last_hour": last_hour_vehicles,
+                "last_24h": last_day_vehicles,
+                "per_minute_avg": round(last_hour_vehicles / 60, 1) if last_hour_vehicles > 0 else 0
+            },
+            "timeline": {
+                "first_collection": earliest_collection,
+                "last_collection": latest_collection,
+                "uptime_hours": uptime_hours
+            },
+            "health": {
+                "delayed_buses_24h_pct": delayed_pct,
+                "is_collecting": latest_collection is not None and (datetime.now(timezone.utc) - datetime.fromisoformat(latest_collection.replace('Z', '+00:00'))).seconds < 120 if latest_collection else False
+            },
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "db_connected": False}), 500
+
 @app.route("/alerts/summary")
 def alerts_summary():
     """Expose summarized GTFS-RT alert data for the frontend."""
