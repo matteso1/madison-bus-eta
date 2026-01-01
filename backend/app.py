@@ -583,6 +583,83 @@ def get_pipeline_stats():
     except Exception as e:
         return jsonify({"error": str(e), "db_connected": False}), 500
 
+@app.route("/api/route-analysis")
+def get_route_analysis():
+    """Get per-route breakdown and analysis of collected data."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone, timedelta
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured", "db_connected": False}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Per-route breakdown
+            route_stats = conn.execute(text("""
+                SELECT 
+                    rt,
+                    COUNT(*) as total_observations,
+                    COUNT(DISTINCT vid) as unique_vehicles,
+                    SUM(CASE WHEN dly = true THEN 1 ELSE 0 END) as delayed_count,
+                    ROUND(100.0 * SUM(CASE WHEN dly = true THEN 1 ELSE 0 END) / COUNT(*), 2) as delay_pct
+                FROM vehicle_observations
+                GROUP BY rt
+                ORDER BY total_observations DESC
+            """)).fetchall()
+            
+            routes = []
+            total_records = 0
+            for row in route_stats:
+                routes.append({
+                    "route": row[0],
+                    "observations": row[1],
+                    "unique_vehicles": row[2],
+                    "delayed_count": row[3],
+                    "delay_pct": float(row[4]) if row[4] else 0
+                })
+                total_records += row[1]
+            
+            # Storage estimate (roughly 200 bytes per row)
+            estimated_size_mb = round((total_records * 200) / (1024 * 1024), 1)
+            storage_pct = round((estimated_size_mb / 1024) * 100, 1)  # 1GB free tier
+            
+            # Hourly collection rate (last 24 hours)
+            hourly_stats = conn.execute(text("""
+                SELECT 
+                    DATE_TRUNC('hour', collected_at) as hour,
+                    COUNT(*) as count
+                FROM vehicle_observations
+                WHERE collected_at > NOW() - INTERVAL '24 hours'
+                GROUP BY DATE_TRUNC('hour', collected_at)
+                ORDER BY hour DESC
+                LIMIT 24
+            """)).fetchall()
+            
+            hourly = [{"hour": row[0].isoformat(), "count": row[1]} for row in hourly_stats]
+            
+            # Delay patterns by route (top 5 most delayed)
+            most_delayed = sorted(routes, key=lambda x: x['delay_pct'], reverse=True)[:5]
+            
+        return jsonify({
+            "db_connected": True,
+            "routes": routes,
+            "total_records": total_records,
+            "storage": {
+                "estimated_mb": estimated_size_mb,
+                "free_tier_pct": storage_pct,
+                "recommendation": "Consider data retention" if storage_pct > 70 else "OK"
+            },
+            "hourly_collection": hourly,
+            "most_delayed_routes": most_delayed,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "db_connected": False}), 500
+
 @app.route("/alerts/summary")
 def alerts_summary():
     """Expose summarized GTFS-RT alert data for the frontend."""
