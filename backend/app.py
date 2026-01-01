@@ -766,6 +766,105 @@ def get_system_health():
             "generated_at": datetime.now(timezone.utc).isoformat()
         }), 500
 
+@app.route("/api/analytics-charts")
+def get_analytics_charts():
+    """Get time-series data for analytics charts."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone, timedelta
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            now = datetime.now(timezone.utc)
+            
+            # 1. Hourly collection trend (last 24 hours)
+            hourly_data = conn.execute(text("""
+                SELECT 
+                    DATE_TRUNC('hour', collected_at) as hour,
+                    COUNT(*) as count,
+                    COUNT(DISTINCT vid) as unique_vehicles,
+                    COUNT(DISTINCT rt) as unique_routes,
+                    ROUND(100.0 * SUM(CASE WHEN dly THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as delay_pct
+                FROM vehicle_observations
+                WHERE collected_at > NOW() - INTERVAL '24 hours'
+                GROUP BY DATE_TRUNC('hour', collected_at)
+                ORDER BY hour ASC
+            """)).fetchall()
+            
+            hourly_chart = [{
+                "hour": row[0].strftime('%H:%M') if row[0] else 'N/A',
+                "timestamp": row[0].isoformat() if row[0] else None,
+                "records": row[1],
+                "vehicles": row[2],
+                "routes": row[3],
+                "delay_pct": float(row[4]) if row[4] else 0
+            } for row in hourly_data]
+            
+            # 2. Route distribution (top 10 by observation count)
+            route_data = conn.execute(text("""
+                SELECT 
+                    rt,
+                    COUNT(*) as count,
+                    ROUND(100.0 * SUM(CASE WHEN dly THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as delay_pct
+                FROM vehicle_observations
+                WHERE collected_at > NOW() - INTERVAL '24 hours'
+                GROUP BY rt
+                ORDER BY count DESC
+                LIMIT 10
+            """)).fetchall()
+            
+            route_chart = [{
+                "route": row[0],
+                "observations": row[1],
+                "delay_pct": float(row[2]) if row[2] else 0
+            } for row in route_data]
+            
+            # 3. Data quality score (0-100)
+            # Based on: collection rate stability, route coverage, data freshness
+            total_last_hour = conn.execute(text(
+                "SELECT COUNT(*) FROM vehicle_observations WHERE collected_at > NOW() - INTERVAL '1 hour'"
+            )).scalar() or 0
+            
+            distinct_routes_1h = conn.execute(text(
+                "SELECT COUNT(DISTINCT rt) FROM vehicle_observations WHERE collected_at > NOW() - INTERVAL '1 hour'"
+            )).scalar() or 0
+            
+            # Score calculation
+            rate_score = min(100, (total_last_hour / 600) * 100)  # Expect ~600/hour at 60s interval
+            route_score = (distinct_routes_1h / 29) * 100  # 29 total routes in Madison
+            
+            data_quality_score = round((rate_score * 0.6 + route_score * 0.4), 0)
+            
+            # 4. Storage growth (estimated)
+            total_records = conn.execute(text("SELECT COUNT(*) FROM vehicle_observations")).scalar() or 0
+            estimated_mb = round((total_records * 200) / (1024 * 1024), 2)
+            
+        return jsonify({
+            "hourly_trend": hourly_chart,
+            "route_distribution": route_chart,
+            "data_quality": {
+                "score": int(data_quality_score),
+                "rate_score": round(rate_score, 1),
+                "route_score": round(route_score, 1),
+                "records_last_hour": total_last_hour,
+                "routes_covered": distinct_routes_1h
+            },
+            "storage": {
+                "total_records": total_records,
+                "estimated_mb": estimated_mb,
+                "free_tier_pct": round((estimated_mb / 1024) * 100, 2)
+            },
+            "generated_at": now.isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/alerts/summary")
 def alerts_summary():
     """Expose summarized GTFS-RT alert data for the frontend."""
