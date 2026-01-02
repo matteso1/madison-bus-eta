@@ -2,17 +2,25 @@
 Feature Engineering Module for Madison Bus ETA ML Pipeline.
 
 Transforms raw vehicle observations into features for delay prediction.
+
+NOTE: Historical features (route_avg_delay_rate, hr_route_delay_rate) must be
+computed ONLY from training data to avoid data leakage. Use prepare_training_data()
+which handles this correctly via train/test split before computing aggregates.
 """
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict, Tuple
+from sklearn.model_selection import train_test_split
 
 
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+def engineer_base_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Transform raw vehicle observations into ML-ready features.
+    Transform raw vehicle observations into base ML features.
+    
+    NOTE: This does NOT include historical/aggregate features that depend on
+    the target variable. Those are added separately to avoid data leakage.
     
     Input columns expected:
         - vid: Vehicle ID
@@ -23,7 +31,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         - tmstmp: API timestamp string
         - collected_at: Collection timestamp
     
-    Output: DataFrame with engineered features + target column.
+    Output: DataFrame with base engineered features + target column.
     """
     df = df.copy()
     
@@ -49,15 +57,13 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     
     # ====== ROUTE FEATURES ======
-    # One-hot encode routes (will be done in training, store route as category)
     df['route_cat'] = df['rt'].astype('category')
     
-    # Route frequency (how many observations per route in dataset)
+    # Route frequency (observation count - this is safe, doesn't use target)
     route_counts = df['rt'].value_counts().to_dict()
     df['route_frequency'] = df['rt'].map(route_counts)
     
     # ====== SPATIAL FEATURES ======
-    # Normalize position (center around Madison downtown)
     MADISON_CENTER_LAT = 43.0731
     MADISON_CENTER_LON = -89.4012
     
@@ -69,20 +75,86 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df['hdg_sin'] = np.sin(np.radians(df['hdg']))
     df['hdg_cos'] = np.cos(np.radians(df['hdg']))
     
-    # ====== HISTORICAL FEATURES ======
-    # These would require aggregation from past data
-    # For now, we compute route-level delay rate from training data
+    # ====== TARGET ======
+    df['is_delayed'] = df['dly'].astype(int)
+    
+    return df
+
+
+def compute_historical_aggregates(train_df: pd.DataFrame) -> Dict[str, dict]:
+    """
+    Compute historical aggregate features from TRAINING DATA ONLY.
+    
+    This prevents data leakage by ensuring we don't use test set information
+    when computing features like route-level delay rates.
+    
+    Args:
+        train_df: Training DataFrame with 'rt', 'hour', and 'dly' columns
+        
+    Returns:
+        Dictionary containing lookup tables for historical features
+    """
+    aggregates = {}
+    
+    # Route-level average delay rate (from training data only)
+    aggregates['route_delay_rate'] = train_df.groupby('rt')['dly'].mean().to_dict()
+    
+    # Hour-route delay pattern (from training data only)
+    aggregates['hour_route_delay'] = train_df.groupby(['rt', 'hour'])['dly'].mean().to_dict()
+    
+    # Global fallback for unseen routes/combinations
+    aggregates['global_delay_rate'] = train_df['dly'].mean()
+    
+    return aggregates
+
+
+def apply_historical_features(df: pd.DataFrame, aggregates: Dict[str, dict]) -> pd.DataFrame:
+    """
+    Apply pre-computed historical aggregates to a DataFrame.
+    
+    Args:
+        df: DataFrame with 'rt' and 'hour' columns
+        aggregates: Dictionary from compute_historical_aggregates()
+        
+    Returns:
+        DataFrame with historical features added
+    """
+    df = df.copy()
+    
+    # Route average delay rate (with fallback)
+    global_rate = aggregates.get('global_delay_rate', 0)
+    route_delay = aggregates.get('route_delay_rate', {})
+    df['route_avg_delay_rate'] = df['rt'].map(route_delay).fillna(global_rate)
+    
+    # Hour-route delay rate (with fallback)
+    hour_route_delay = aggregates.get('hour_route_delay', {})
+    df['hr_route_delay_rate'] = df.apply(
+        lambda x: hour_route_delay.get((x['rt'], x['hour']), 
+                  route_delay.get(x['rt'], global_rate)), axis=1
+    )
+    
+    return df
+
+
+# Keep legacy function name for backwards compatibility
+def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    DEPRECATED: Use prepare_training_data() for proper train/test handling.
+    
+    This function has data leakage - historical features are computed from ALL data.
+    Only use for inference on single samples where you provide external aggregates.
+    """
+    df = engineer_base_features(df)
+    
+    # WARNING: This causes data leakage in train/test scenarios!
+    # Only use for backwards compatibility or single-sample inference
     route_delay_rate = df.groupby('rt')['dly'].mean().to_dict()
     df['route_avg_delay_rate'] = df['rt'].map(route_delay_rate)
     
-    # Hour-route delay pattern
     hour_route_delay = df.groupby(['rt', 'hour'])['dly'].mean().to_dict()
     df['hr_route_delay_rate'] = df.apply(
         lambda x: hour_route_delay.get((x['rt'], x['hour']), 0), axis=1
     )
-    
-    # ====== TARGET ======
-    df['is_delayed'] = df['dly'].astype(int)
     
     return df
 
@@ -98,7 +170,7 @@ def get_feature_columns() -> list:
         'hdg_sin', 'hdg_cos',
         # Route
         'route_frequency',
-        # Historical
+        # Historical (computed from training data only)
         'route_avg_delay_rate', 'hr_route_delay_rate',
     ]
 
@@ -108,21 +180,53 @@ def get_target_column() -> str:
     return 'is_delayed'
 
 
-def prepare_training_data(df: pd.DataFrame) -> tuple:
+def prepare_training_data(df: pd.DataFrame, test_size: float = 0.2, 
+                          random_state: int = 42) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
     """
-    Prepare X (features) and y (target) for model training.
+    Prepare train/test splits for model training WITHOUT data leakage.
     
-    Returns: (X, y) tuple of numpy arrays.
+    This function properly handles the train/test split BEFORE computing
+    historical aggregate features, ensuring no target leakage.
+    
+    Args:
+        df: Raw DataFrame with vehicle observations
+        test_size: Fraction of data to use for testing (default 0.2)
+        random_state: Random seed for reproducibility
+    
+    Returns:
+        (X_train, X_test, y_train, y_test, feature_cols) tuple
     """
-    df_features = engineer_features(df)
+    # Step 1: Apply base features (no target leakage)
+    df_base = engineer_base_features(df)
     
     feature_cols = get_feature_columns()
     target_col = get_target_column()
     
-    # Drop rows with missing features
-    df_clean = df_features[feature_cols + [target_col]].dropna()
+    # Step 2: Split BEFORE computing historical features
+    train_idx, test_idx = train_test_split(
+        df_base.index, 
+        test_size=test_size, 
+        random_state=random_state,
+        stratify=df_base['is_delayed']
+    )
     
-    X = df_clean[feature_cols].values
-    y = df_clean[target_col].values
+    train_df = df_base.loc[train_idx].copy()
+    test_df = df_base.loc[test_idx].copy()
     
-    return X, y, feature_cols
+    # Step 3: Compute historical aggregates from TRAINING DATA ONLY
+    aggregates = compute_historical_aggregates(train_df)
+    
+    # Step 4: Apply aggregates to both train and test
+    train_df = apply_historical_features(train_df, aggregates)
+    test_df = apply_historical_features(test_df, aggregates)
+    
+    # Step 5: Extract features and target
+    train_clean = train_df[feature_cols + [target_col]].dropna()
+    test_clean = test_df[feature_cols + [target_col]].dropna()
+    
+    X_train = train_clean[feature_cols].values
+    y_train = train_clean[target_col].values
+    X_test = test_clean[feature_cols].values
+    y_test = test_clean[target_col].values
+    
+    return X_train, X_test, y_train, y_test, feature_cols

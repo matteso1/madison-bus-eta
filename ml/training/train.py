@@ -63,18 +63,22 @@ def fetch_training_data(days: int = 7) -> pd.DataFrame:
     return df
 
 
-def train_model(X: np.ndarray, y: np.ndarray, feature_names: list) -> dict:
-    """Train XGBoost classifier and return model + metrics."""
+def train_model(X_train: np.ndarray, X_test: np.ndarray, 
+                y_train: np.ndarray, y_test: np.ndarray, 
+                feature_names: list) -> dict:
+    """
+    Train XGBoost classifier and return model + metrics.
+    
+    Args:
+        X_train, X_test: Pre-split feature arrays
+        y_train, y_test: Pre-split target arrays
+        feature_names: List of feature column names
+    """
     try:
         import xgboost as xgb
     except ImportError:
         logger.error("XGBoost not installed. Run: pip install xgboost")
         raise
-    
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
     
     logger.info(f"Training set: {len(X_train)}, Test set: {len(X_test)}")
     logger.info(f"Delay rate: train={y_train.mean():.2%}, test={y_test.mean():.2%}")
@@ -196,20 +200,22 @@ def main():
         logger.warning(f"Not enough data for training ({len(df)} records, need 100+)")
         return False
     
-    # Step 2: Feature engineering
+    # Step 2: Feature engineering (with proper train/test split to avoid leakage)
     logger.info("Step 2: Engineering features...")
     try:
-        X, y, feature_names = prepare_training_data(df)
+        X_train, X_test, y_train, y_test, feature_names = prepare_training_data(df)
     except Exception as e:
         logger.error(f"Feature engineering failed: {e}")
         return False
     
-    logger.info(f"Feature matrix: {X.shape}, Delay rate: {y.mean():.2%}")
+    total_samples = len(y_train) + len(y_test)
+    delay_rate = (y_train.sum() + y_test.sum()) / total_samples
+    logger.info(f"Feature matrix: ({total_samples}, {len(feature_names)}), Delay rate: {delay_rate:.2%}")
     
     # Step 3: Train new model
     logger.info("Step 3: Training XGBoost model...")
     try:
-        result = train_model(X, y, feature_names)
+        result = train_model(X_train, X_test, y_train, y_test, feature_names)
     except Exception as e:
         logger.error(f"Training failed: {e}")
         return False
@@ -270,7 +276,7 @@ def main():
             metrics=new_metrics,
             deployed=should_deploy,
             reason=deploy_reason,
-            samples=len(X),
+            samples=total_samples,
             days=days,
             previous_f1=previous_f1
         )
