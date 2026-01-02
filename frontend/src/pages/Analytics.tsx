@@ -50,6 +50,18 @@ interface ChartData {
     storage: { total_records: number; estimated_mb: number; free_tier_pct: number };
 }
 
+interface MLTrainingData {
+    runs: Array<{
+        version: string;
+        accuracy: number;
+        f1_score: number;
+        samples_used: number;
+        deployed: boolean;
+        deployment_reason: string;
+    }>;
+    latest_model: { version: string; f1_score: number } | null;
+    total_runs: number;
+}
 // Color palette
 const COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#84cc16'];
 
@@ -57,16 +69,18 @@ export default function AnalyticsPage() {
     const [stats, setStats] = useState<PipelineStats | null>(null);
     const [health, setHealth] = useState<SystemHealth | null>(null);
     const [charts, setCharts] = useState<ChartData | null>(null);
+    const [mlData, setMlData] = useState<MLTrainingData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [statsRes, healthRes, chartsRes] = await Promise.all([
+                const [statsRes, healthRes, chartsRes, mlRes] = await Promise.all([
                     axios.get(`${BACKEND_URL}/api/pipeline-stats`),
                     axios.get(`${BACKEND_URL}/api/system-health`),
-                    axios.get(`${BACKEND_URL}/api/analytics-charts`)
+                    axios.get(`${BACKEND_URL}/api/analytics-charts`),
+                    axios.get(`${BACKEND_URL}/api/ml-training-history`).catch(() => ({ data: null }))
                 ]);
                 if (statsRes.data.db_connected) {
                     setStats(statsRes.data);
@@ -75,6 +89,7 @@ export default function AnalyticsPage() {
                 }
                 setHealth(healthRes.data);
                 setCharts(chartsRes.data);
+                if (mlRes.data) setMlData(mlRes.data);
             } catch {
                 setError('Failed to fetch data');
             } finally {
@@ -283,36 +298,51 @@ export default function AnalyticsPage() {
                     <h3 className="text-xl font-bold mb-4 flex items-center gap-3">
                         <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">🤖</span>
                         Autonomous ML Pipeline
-                        <span className="ml-auto px-3 py-1 rounded-full text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                            Self-Improving
+                        <span className={`ml-auto px-3 py-1 rounded-full text-xs border ${mlData?.latest_model ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
+                            {mlData?.latest_model ? '✓ Model Active' : 'Collecting Data'}
                         </span>
                     </h3>
                     <div className="grid md:grid-cols-4 gap-4">
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">Training Schedule</div>
-                            <div className="text-lg font-bold text-purple-400">3 AM CST Daily</div>
-                            <div className="text-xs text-zinc-500 mt-1">GitHub Actions</div>
+                            <div className="text-sm text-zinc-400 mb-1">Current Model</div>
+                            <div className="text-lg font-bold text-purple-400">
+                                {mlData?.latest_model ? `v${mlData.latest_model.version.slice(0, 8)}` : 'None yet'}
+                            </div>
+                            <div className="text-xs text-zinc-500 mt-1">
+                                {mlData?.total_runs || 0} training runs
+                            </div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">Model Type</div>
-                            <div className="text-lg font-bold text-indigo-400">XGBoost</div>
-                            <div className="text-xs text-zinc-500 mt-1">Delay Classifier</div>
+                            <div className="text-sm text-zinc-400 mb-1">Accuracy</div>
+                            <div className="text-lg font-bold text-indigo-400">
+                                {mlData?.runs?.[0]?.accuracy ? `${(mlData.runs[0].accuracy * 100).toFixed(1)}%` : 'N/A'}
+                            </div>
+                            <div className="text-xs text-zinc-500 mt-1">XGBoost Classifier</div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">Features</div>
-                            <div className="text-lg font-bold text-cyan-400">14</div>
-                            <div className="text-xs text-zinc-500 mt-1">Temporal + Spatial + Route</div>
+                            <div className="text-sm text-zinc-400 mb-1">F1 Score</div>
+                            <div className="text-lg font-bold text-cyan-400">
+                                {mlData?.latest_model?.f1_score ? mlData.latest_model.f1_score.toFixed(3) : 'N/A'}
+                            </div>
+                            <div className="text-xs text-zinc-500 mt-1">Delay prediction</div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">Auto-Deploy</div>
-                            <div className="text-lg font-bold text-emerald-400">If Improved</div>
-                            <div className="text-xs text-zinc-500 mt-1">+1% F1 threshold</div>
+                            <div className="text-sm text-zinc-400 mb-1">Samples</div>
+                            <div className="text-lg font-bold text-emerald-400">
+                                {mlData?.runs?.[0]?.samples_used?.toLocaleString() || 'N/A'}
+                            </div>
+                            <div className="text-xs text-zinc-500 mt-1">Training records</div>
                         </div>
                     </div>
                     <div className="mt-4 p-4 rounded-xl bg-black/20 border border-white/5">
                         <div className="flex items-center gap-2 text-sm text-zinc-400">
-                            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
-                            Collecting training data... First model training will run at 3 AM after 7 days of data.
+                            {mlData?.latest_model ? (
+                                <><span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
+                                    Model deployed: {mlData.runs?.[0]?.deployment_reason || 'first_model'} • Next training: 3 AM CST</>
+                            ) : (
+                                <><span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                                    Collecting training data... First model training will run at 3 AM.</>
+                            )}
                         </div>
                     </div>
                 </div>
