@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { TrendingUp, Bus, CheckCircle, HardDrive, BarChart3, Clock, Cpu, Activity } from 'lucide-react';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer, Cell, ReferenceLine, ScatterChart, Scatter
@@ -162,11 +163,11 @@ export default function AnalyticsPage() {
 
                 {/* Quick Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-                    <QuickStat label="Total Records" value={charts?.storage.total_records?.toLocaleString() || '0'} icon="📊" />
-                    <QuickStat label="Rate/min" value={stats?.collection_rate.per_minute_avg?.toFixed(1) || '0'} icon="⚡" />
-                    <QuickStat label="Routes Active" value={String(health?.metrics?.data_quality.distinct_routes_1h || 0)} icon="🚌" />
-                    <QuickStat label="Data Quality" value={`${charts?.data_quality.score || 0}%`} icon="✅" color={charts?.data_quality.score && charts.data_quality.score > 80 ? 'emerald' : 'amber'} />
-                    <QuickStat label="Storage" value={`${charts?.storage.estimated_mb?.toFixed(1) || 0} MB`} icon="💾" />
+                    <QuickStat label="Total Records" value={charts?.storage.total_records?.toLocaleString() || '0'} icon={<BarChart3 className="w-6 h-6" />} />
+                    <QuickStat label="Rate/min" value={stats?.collection_rate.per_minute_avg?.toFixed(1) || '0'} icon={<Activity className="w-6 h-6" />} />
+                    <QuickStat label="Routes Active" value={String(health?.metrics?.data_quality.distinct_routes_1h || 0)} icon={<Bus className="w-6 h-6" />} />
+                    <QuickStat label="Data Quality" value={`${charts?.data_quality.score || 0}%`} icon={<CheckCircle className="w-6 h-6" />} color={charts?.data_quality.score && charts.data_quality.score > 80 ? 'emerald' : 'amber'} />
+                    <QuickStat label="Storage" value={`${charts?.storage.estimated_mb?.toFixed(1) || 0} MB`} icon={<HardDrive className="w-6 h-6" />} />
                 </div>
 
                 {/* System Health Bar */}
@@ -193,7 +194,8 @@ export default function AnalyticsPage() {
                     {/* Hourly Trend Chart */}
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                            📈 Hourly Collection Trend
+                            <TrendingUp className="w-5 h-5 text-emerald-400" />
+                            Hourly Collection Trend
                             <span className="text-xs text-zinc-500 font-normal ml-auto">Last 24h</span>
                         </h3>
                         <div className="h-64">
@@ -221,7 +223,8 @@ export default function AnalyticsPage() {
                     {/* Route Distribution Chart */}
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                            🚌 Route Distribution
+                            <Bus className="w-5 h-5 text-cyan-400" />
+                            Route Distribution
                             <span className="text-xs text-zinc-500 font-normal ml-auto">Top 10 routes</span>
                         </h3>
                         <div className="h-64">
@@ -250,7 +253,10 @@ export default function AnalyticsPage() {
                 <div className="grid md:grid-cols-3 gap-6">
                     {/* Data Quality Breakdown */}
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
-                        <h3 className="text-lg font-bold mb-4">📊 Data Quality</h3>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                            <BarChart3 className="w-5 h-5 text-purple-400" />
+                            Data Quality
+                        </h3>
                         <div className="space-y-4">
                             <QualityBar label="Collection Rate" value={charts?.data_quality.rate_score || 0} />
                             <QualityBar label="Route Coverage" value={charts?.data_quality.route_score || 0} />
@@ -263,7 +269,10 @@ export default function AnalyticsPage() {
 
                     {/* Pipeline Timeline */}
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
-                        <h3 className="text-lg font-bold mb-4">🕐 Pipeline Timeline</h3>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                            <Clock className="w-5 h-5 text-blue-400" />
+                            Pipeline Timeline
+                        </h3>
                         <div className="space-y-4">
                             <TimelineItem label="First Record" value={stats?.timeline.first_collection ? new Date(stats.timeline.first_collection).toLocaleString() : 'N/A'} />
                             <TimelineItem label="Latest Record" value={stats?.timeline.last_collection ? new Date(stats.timeline.last_collection).toLocaleString() : 'N/A'} />
@@ -273,7 +282,10 @@ export default function AnalyticsPage() {
 
                     {/* Storage Info */}
                     <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
-                        <h3 className="text-lg font-bold mb-4">💾 Storage</h3>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                            <HardDrive className="w-5 h-5 text-amber-400" />
+                            Storage
+                        </h3>
                         <div className="space-y-4">
                             <div className="flex justify-between">
                                 <span className="text-zinc-400">Total Records</span>
@@ -300,10 +312,12 @@ export default function AnalyticsPage() {
                 {/* ML Performance Section */}
                 <div className="mt-8 bg-gradient-to-br from-purple-900/20 to-indigo-900/20 backdrop-blur-xl border border-purple-500/20 rounded-3xl p-6">
                     <h3 className="text-xl font-bold mb-6 flex items-center gap-3">
-                        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">🤖</span>
+                        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center">
+                            <Cpu className="w-5 h-5 text-white" />
+                        </span>
                         Autonomous ML Pipeline
                         <span className={`ml-auto px-3 py-1 rounded-full text-xs border ${mlData?.latest_model ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border-amber-500/30'}`}>
-                            {mlData?.latest_model ? '✓ Model Active' : 'Collecting Data'}
+                            {mlData?.latest_model ? 'Model Active' : 'Collecting Data'}
                         </span>
                     </h3>
 
@@ -351,7 +365,8 @@ export default function AnalyticsPage() {
                         {/* F1 Score History Chart */}
                         <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                             <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
-                                📈 F1 Score History
+                                <TrendingUp className="w-4 h-4 text-purple-400" />
+                                F1 Score History
                                 <span className="text-xs text-zinc-500 ml-auto">Last {mlData?.runs?.length || 0} runs</span>
                             </h4>
                             <div className="h-48">
@@ -391,7 +406,8 @@ export default function AnalyticsPage() {
                         {/* Training Runs Detail */}
                         <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                             <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
-                                📊 Training Run Details
+                                <BarChart3 className="w-4 h-4 text-indigo-400" />
+                                Training Run Details
                                 <span className="text-xs text-zinc-500 ml-auto">Precision vs Recall</span>
                             </h4>
                             <div className="h-48">
@@ -448,7 +464,10 @@ export default function AnalyticsPage() {
 
                     {/* Training Run History Table */}
                     <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-                        <h4 className="text-sm font-medium text-zinc-300 mb-3">📋 Recent Training Runs</h4>
+                        <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-cyan-400" />
+                            Recent Training Runs
+                        </h4>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
@@ -506,10 +525,10 @@ export default function AnalyticsPage() {
 }
 
 // Sub-components
-function QuickStat({ label, value, icon, color = 'white' }: { label: string; value: string; icon: string; color?: string }) {
+function QuickStat({ label, value, icon, color = 'white' }: { label: string; value: string; icon: React.ReactNode; color?: string }) {
     return (
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4 text-center">
-            <div className="text-2xl mb-1">{icon}</div>
+            <div className="flex justify-center text-zinc-400 mb-1">{icon}</div>
             <div className={`text-2xl font-bold ${color === 'emerald' ? 'text-emerald-400' : color === 'amber' ? 'text-amber-400' : 'text-white'}`}>{value}</div>
             <div className="text-xs text-zinc-400">{label}</div>
         </div>
