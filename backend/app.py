@@ -21,14 +21,7 @@ except ImportError:
     ML_AVAILABLE = False
     print("ML components not available")
 
-# Import Smart Prediction API
-try:
-    from ml.smart_prediction_api import smart_api
-    SMART_ML_AVAILABLE = True
-    print("✅ Smart ML API loaded - 21.3% better than Madison Metro API!")
-except ImportError as e:
-    SMART_ML_AVAILABLE = False
-    print(f"Smart ML components not available: {e}")
+# Note: Legacy Smart ML API removed - using new autonomous ML pipeline in ml/training/
 
 # Optional GTFS-RT alerts client
 try:
@@ -1735,81 +1728,7 @@ def get_isochrone():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ==================== Smart ML Prediction API ====================
-
-@app.route("/predict/enhanced", methods=['POST'])
-def predict_enhanced():
-    """Predicts bus arrival time with an enhanced feature set."""
-    try:
-        data = request.get_json()
-        logging.info(f"Received data for prediction: {data}")
-
-        # Required fields
-        route = data.get('route')
-        stop_id = data.get('stop_id')
-        api_prediction = data.get('api_prediction')
-
-        if not all([route, stop_id, api_prediction is not None]):
-            return jsonify({"error": "Missing required fields: route, stop_id, api_prediction"}), 400
-
-        # Optional temporal fields - derive from current time if not provided
-        timestamp = datetime.now()
-        hour = data.get('hour')
-        day_of_week = data.get('day_of_week')
-
-        if hour is None:
-            hour = timestamp.hour
-        if day_of_week is None:
-            day_of_week = timestamp.weekday()
-
-        # The smart_api now needs the additional context
-        result = smart_api.predict_arrival(
-            route=route,
-            stop_id=stop_id,
-            api_prediction=float(api_prediction),
-            hour=int(hour),
-            day_of_week=int(day_of_week),
-            timestamp=timestamp
-        )
-
-        return jsonify(result)
-    except Exception as e:
-        logging.error(f"Error in /predict/enhanced: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/predict/enhanced/batch", methods=["POST"])
-def predict_enhanced_batch():
-    """Batch enhanced predictions"""
-    if not SMART_ML_AVAILABLE:
-        return jsonify({"error": "Smart ML model not available"}), 503
-    
-    try:
-        data = request.get_json()
-        predictions_list = data.get('predictions', [])
-        
-        if not predictions_list:
-            return jsonify({"error": "No predictions provided"}), 400
-        
-        results = smart_api.predict_batch(predictions_list)
-        
-        return jsonify({
-            "predictions": results,
-            "count": len(results),
-            "model": "XGBoost",
-            "improvement_over_api": "21.3%"
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/ml/model-info")
-def get_model_info():
-    """Get information about the ML model"""
-    if not SMART_ML_AVAILABLE:
-        return jsonify({"error": "Smart ML model not available"}), 503
-    
-    info = smart_api.get_model_info()
-    return jsonify(info)
+# Legacy Smart ML endpoints removed - see /api/ml-training-history for new ML pipeline status
 
 @app.route('/generate-maps', methods=['POST'])
 def generate_maps():
