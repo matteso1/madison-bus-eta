@@ -287,7 +287,7 @@ def main():
     logger.info("=" * 60)
     logger.info("TRAINING COMPLETE")
     logger.info(f"  Version: {version}")
-    logger.info(f"  Samples: {len(X)}")
+    logger.info(f"  Samples: {total_samples}")
     logger.info(f"  F1 Score: {new_metrics['f1']:.4f}")
     logger.info(f"  Deployed: {'✅ Yes' if should_deploy else '⏸️ No'}")
     logger.info(f"  Reason: {deploy_reason}")
