@@ -70,6 +70,18 @@ interface MLTrainingData {
 // Color palette
 const COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#84cc16'];
 
+// Format version string (20260102_210437) to readable format
+function formatVersion(version: string, short = false): string {
+    if (!version || version.length < 15) return version;
+    // Parse: YYYYMMDD_HHMMSS
+    const month = parseInt(version.slice(4, 6));
+    const day = parseInt(version.slice(6, 8));
+    const hour = version.slice(9, 11);
+    const min = version.slice(11, 13);
+    if (short) return `${month}/${day} ${hour}:${min}`;
+    return `${month}/${day} ${hour}:${min}`;
+}
+
 export default function AnalyticsPage() {
     const [stats, setStats] = useState<PipelineStats | null>(null);
     const [health, setHealth] = useState<SystemHealth | null>(null);
@@ -326,7 +338,7 @@ export default function AnalyticsPage() {
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
                             <div className="text-sm text-zinc-400 mb-1">Current Model</div>
                             <div className="text-lg font-bold text-purple-400">
-                                {mlData?.latest_model ? `v${mlData.latest_model.version.slice(0, 8)}` : 'None'}
+                                {mlData?.latest_model ? formatVersion(mlData.latest_model.version) : 'None'}
                             </div>
                             <div className="text-xs text-zinc-500 mt-1">{mlData?.total_runs || 0} runs total</div>
                         </div>
@@ -375,7 +387,7 @@ export default function AnalyticsPage() {
                                         run: idx + 1,
                                         f1: run.f1_score,
                                         deployed: run.deployed,
-                                        version: run.version.slice(0, 8)
+                                        version: formatVersion(run.version, true)
                                     }))}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                         <XAxis dataKey="run" stroke="#666" tick={{ fill: '#888', fontSize: 10 }} label={{ value: 'Run #', position: 'bottom', fill: '#666', fontSize: 10 }} />
@@ -442,7 +454,7 @@ export default function AnalyticsPage() {
                                                 recall: run.recall,
                                                 f1: run.f1_score,
                                                 deployed: run.deployed,
-                                                version: run.version.slice(0, 8)
+                                                version: formatVersion(run.version, true)
                                             }))}
                                             fill="#8b5cf6"
                                         >
@@ -482,7 +494,7 @@ export default function AnalyticsPage() {
                                 <tbody>
                                     {(mlData?.runs || []).slice(0, 5).map((run, idx) => (
                                         <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
-                                            <td className="py-2 px-2 font-mono text-purple-400">v{run.version.slice(0, 8)}</td>
+                                            <td className="py-2 px-2 font-mono text-purple-400">{formatVersion(run.version)}</td>
                                             <td className="py-2 px-2 text-right text-cyan-400">{run.f1_score?.toFixed(3)}</td>
                                             <td className={`py-2 px-2 text-right ${(run.improvement_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {run.improvement_pct != null ? `${run.improvement_pct > 0 ? '+' : ''}${run.improvement_pct.toFixed(1)}%` : '—'}
