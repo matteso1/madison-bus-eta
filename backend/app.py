@@ -941,8 +941,9 @@ def get_ml_training_history():
 @app.route("/api/predict-arrival", methods=["POST"])
 def predict_arrival():
     """
-    ML-enhanced arrival prediction.
+    ML-enhanced arrival prediction using trained XGBoost model.
     Takes API prediction and returns ML-adjusted prediction based on historical patterns.
+    Logs all predictions for accuracy tracking.
     """
     try:
         import sys
@@ -950,11 +951,15 @@ def predict_arrival():
         from datetime import datetime, timezone
         import pickle
         import json
+        import numpy as np
         
         data = request.get_json() or {}
         route = data.get('route')
         stop_id = data.get('stop_id')
         api_prediction = data.get('api_prediction')  # API countdown in minutes
+        lat = data.get('lat', 43.0731)  # Default to Madison center
+        lon = data.get('lon', -89.4012)
+        hdg = data.get('hdg', 0)
         
         if not route or api_prediction is None:
             return jsonify({"error": "Missing required fields: route, api_prediction"}), 400
@@ -963,11 +968,20 @@ def predict_arrival():
         ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
         registry_file = ml_path / 'registry.json'
         
+        now = datetime.now(timezone.utc)
+        hour = now.hour
+        day_of_week = now.weekday()
+        is_weekend = 1 if day_of_week >= 5 else 0
+        is_morning_rush = 1 if 7 <= hour <= 9 else 0
+        is_evening_rush = 1 if 16 <= hour <= 18 else 0
+        is_rush_hour = 1 if is_morning_rush or is_evening_rush else 0
+        
         if not registry_file.exists():
             # No model trained yet - return API prediction as-is
             return jsonify({
                 "api_prediction": api_prediction,
                 "ml_prediction": api_prediction,
+                "delay_probability": 0.5,
                 "adjustment": 0,
                 "confidence": 0.5,
                 "model_available": False,
@@ -982,68 +996,117 @@ def predict_arrival():
             return jsonify({
                 "api_prediction": api_prediction,
                 "ml_prediction": api_prediction,
+                "delay_probability": 0.5,
                 "adjustment": 0,
                 "confidence": 0.5,
                 "model_available": False
             })
         
-        # Find model info
+        # Find model file and load it
+        model_file = ml_path / f'model_{latest_version}.pkl'
+        model = None
+        if model_file.exists():
+            with open(model_file, 'rb') as f:
+                model = pickle.load(f)
+        
+        # Get model metrics for confidence
         model_info = None
         for entry in registry.get('models', []):
             if entry['version'] == latest_version:
                 model_info = entry
                 break
         
-        # For this initial version, use historical delay patterns
-        # Our model predicts whether a bus will be delayed (binary classification)
-        # We'll translate that into an arrival time adjustment
+        # Feature engineering at inference time
+        # Must match features used in training (see ml/features/feature_engineering.py)
+        MADISON_CENTER_LAT = 43.0731
+        MADISON_CENTER_LON = -89.4012
         
-        now = datetime.now()
-        hour = now.hour
-        day_of_week = now.weekday()
+        lat_offset = lat - MADISON_CENTER_LAT
+        lon_offset = lon - MADISON_CENTER_LON
+        distance_from_center = np.sqrt(lat_offset**2 + lon_offset**2)
+        hdg_sin = np.sin(np.radians(hdg))
+        hdg_cos = np.cos(np.radians(hdg))
         
-        # Historical patterns based on our data:
-        # - Rush hour (7-9am, 5-7pm): higher delay probability
-        # - Rapid routes (A-F): generally more reliable
-        # - Weekends: fewer delays
+        # Route-level features (approximate from model info or use defaults)
+        # In production, these would be loaded from a feature store
+        route_frequency = 1000  # Default frequency
+        route_avg_delay_rate = 0.3  # Default delay rate
+        hr_route_delay_rate = 0.4 if is_rush_hour else 0.2  # Time-based estimate
         
-        is_rush_hour = (7 <= hour <= 9) or (17 <= hour <= 19)
-        is_weekend = day_of_week >= 5
-        is_rapid = route in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+        # Build feature vector - MUST match get_feature_columns() order
+        # ['hour', 'day_of_week', 'is_weekend', 'is_rush_hour', 'is_morning_rush', 
+        #  'is_evening_rush', 'lat_offset', 'lon_offset', 'distance_from_center',
+        #  'hdg_sin', 'hdg_cos', 'route_frequency', 'route_avg_delay_rate', 'hr_route_delay_rate']
+        features = np.array([[
+            hour,
+            day_of_week,
+            is_weekend,
+            is_rush_hour,
+            is_morning_rush,
+            is_evening_rush,
+            lat_offset,
+            lon_offset,
+            distance_from_center,
+            hdg_sin,
+            hdg_cos,
+            route_frequency,
+            route_avg_delay_rate,
+            hr_route_delay_rate
+        ]])
         
-        # Base adjustment calculation (simplified - would use model in production)
-        base_delay_rate = model_info.get('metrics', {}).get('recall', 0.5) if model_info else 0.5
+        # Make prediction with model
+        delay_probability = 0.5
+        if model is not None:
+            try:
+                # Get probability of delay (class 1)
+                proba = model.predict_proba(features)
+                delay_probability = float(proba[0][1])
+            except Exception as e:
+                logging.warning(f"Model prediction failed: {e}")
+                delay_probability = 0.5
         
-        adjustment = 0
-        confidence = 0.85
-        
-        if is_rush_hour and not is_weekend:
-            adjustment = round(api_prediction * 0.15, 1)  # 15% delay during rush
-            confidence = 0.78
-        elif is_rush_hour:
-            adjustment = round(api_prediction * 0.08, 1)  # 8% on weekend rush
-            confidence = 0.82
-        elif not is_rapid:
-            adjustment = round(api_prediction * 0.05, 1)  # 5% for local routes
-            confidence = 0.88
-        
-        # Cap adjustment
-        adjustment = min(adjustment, 5.0)
+        # Translate probability to time adjustment
+        # Higher probability = more expected delay
+        # Scale: 0.5 prob = no adjustment, 1.0 prob = +3 min adjustment
+        adjustment = round((delay_probability - 0.5) * 6, 1)  # -3 to +3 min range
+        adjustment = max(-2, min(adjustment, 5))  # Clamp to reasonable range
         
         ml_prediction = round(api_prediction + adjustment, 1)
+        
+        # Confidence based on model F1 score
+        model_f1 = model_info.get('metrics', {}).get('f1', 0.5) if model_info else 0.5
+        confidence = round(0.5 + (model_f1 * 0.4), 2)  # Scale F1 to 0.5-0.9 range
+        
+        # Log prediction for accuracy tracking
+        prediction_id = log_ml_prediction(
+            route=route,
+            stop_id=stop_id,
+            api_prediction=api_prediction,
+            ml_prediction=ml_prediction,
+            delay_probability=delay_probability,
+            model_version=latest_version,
+            features={
+                "hour": hour,
+                "day_of_week": day_of_week,
+                "is_rush_hour": is_rush_hour,
+                "is_weekend": is_weekend
+            }
+        )
         
         return jsonify({
             "api_prediction": api_prediction,
             "ml_prediction": ml_prediction,
+            "delay_probability": round(delay_probability, 3),
             "adjustment": adjustment,
-            "confidence": round(confidence, 2),
+            "confidence": confidence,
             "model_available": True,
             "model_version": latest_version[:8] if latest_version else None,
+            "prediction_id": prediction_id,
             "factors": {
-                "is_rush_hour": is_rush_hour,
-                "is_weekend": is_weekend,
-                "is_rapid_route": is_rapid,
-                "hour": hour
+                "is_rush_hour": bool(is_rush_hour),
+                "is_weekend": bool(is_weekend),
+                "hour": hour,
+                "day_of_week": day_of_week
             }
         })
         
@@ -1052,10 +1115,173 @@ def predict_arrival():
         return jsonify({
             "api_prediction": data.get('api_prediction', 0),
             "ml_prediction": data.get('api_prediction', 0),
+            "delay_probability": 0.5,
             "adjustment": 0,
             "confidence": 0.5,
             "error": str(e)
         })
+
+
+def log_ml_prediction(route, stop_id, api_prediction, ml_prediction, 
+                      delay_probability, model_version, features):
+    """Log ML prediction to database for accuracy tracking."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        import json
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return None
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Create predictions table if not exists
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ml_predictions (
+                    id SERIAL PRIMARY KEY,
+                    prediction_id VARCHAR(50) UNIQUE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    route VARCHAR(20),
+                    stop_id VARCHAR(50),
+                    api_prediction FLOAT,
+                    ml_prediction FLOAT,
+                    delay_probability FLOAT,
+                    model_version VARCHAR(50),
+                    features JSONB,
+                    actual_delay BOOLEAN,
+                    feedback_at TIMESTAMP WITH TIME ZONE
+                )
+            """))
+            conn.commit()
+            
+            # Generate prediction ID
+            prediction_id = f"pred_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{route}"
+            
+            conn.execute(text("""
+                INSERT INTO ml_predictions 
+                (prediction_id, route, stop_id, api_prediction, ml_prediction, 
+                 delay_probability, model_version, features)
+                VALUES (:pred_id, :route, :stop_id, :api_pred, :ml_pred, 
+                        :prob, :version, :features)
+            """), {
+                "pred_id": prediction_id,
+                "route": route,
+                "stop_id": stop_id,
+                "api_pred": api_prediction,
+                "ml_pred": ml_prediction,
+                "prob": delay_probability,
+                "version": model_version,
+                "features": json.dumps(features)
+            })
+            conn.commit()
+            
+        return prediction_id
+        
+    except Exception as e:
+        logging.warning(f"Failed to log ML prediction: {e}")
+        return None
+
+
+@app.route("/api/prediction-accuracy")
+def get_prediction_accuracy():
+    """Get ML prediction accuracy statistics for dashboard."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone, timedelta
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Check if table exists
+            table_exists = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'ml_predictions'
+                )
+            """)).scalar()
+            
+            if not table_exists:
+                return jsonify({
+                    "total_predictions": 0,
+                    "predictions_today": 0,
+                    "avg_delay_probability": 0,
+                    "by_hour": [],
+                    "by_route": [],
+                    "message": "No predictions logged yet"
+                })
+            
+            # Total predictions
+            total = conn.execute(text("""
+                SELECT COUNT(*) FROM ml_predictions
+            """)).scalar() or 0
+            
+            # Predictions today
+            today = conn.execute(text("""
+                SELECT COUNT(*) FROM ml_predictions 
+                WHERE created_at >= CURRENT_DATE
+            """)).scalar() or 0
+            
+            # Average delay probability
+            avg_prob = conn.execute(text("""
+                SELECT AVG(delay_probability) FROM ml_predictions
+            """)).scalar() or 0.5
+            
+            # Predictions by hour (last 24h)
+            by_hour = conn.execute(text("""
+                SELECT EXTRACT(HOUR FROM created_at) as hour, 
+                       COUNT(*) as count,
+                       AVG(delay_probability) as avg_prob
+                FROM ml_predictions
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+                GROUP BY EXTRACT(HOUR FROM created_at)
+                ORDER BY hour
+            """)).fetchall()
+            
+            # Predictions by route
+            by_route = conn.execute(text("""
+                SELECT route, 
+                       COUNT(*) as count,
+                       AVG(delay_probability) as avg_prob
+                FROM ml_predictions
+                GROUP BY route
+                ORDER BY count DESC
+                LIMIT 10
+            """)).fetchall()
+            
+            # Recent predictions (last 10)
+            recent = conn.execute(text("""
+                SELECT prediction_id, route, created_at, delay_probability, ml_prediction
+                FROM ml_predictions
+                ORDER BY created_at DESC
+                LIMIT 10
+            """)).fetchall()
+        
+        return jsonify({
+            "total_predictions": total,
+            "predictions_today": today,
+            "avg_delay_probability": round(avg_prob, 3),
+            "by_hour": [{"hour": int(r[0]), "count": r[1], "avg_prob": round(r[2], 3)} for r in by_hour],
+            "by_route": [{"route": r[0], "count": r[1], "avg_prob": round(r[2], 3)} for r in by_route],
+            "recent_predictions": [{
+                "id": r[0],
+                "route": r[1],
+                "time": r[2].isoformat() if r[2] else None,
+                "delay_probability": round(r[3], 3) if r[3] else 0.5,
+                "ml_prediction": r[4]
+            } for r in recent],
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logging.error(f"Prediction accuracy error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/alerts/summary")
 def alerts_summary():
