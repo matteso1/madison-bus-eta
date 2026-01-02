@@ -287,7 +287,9 @@ def main():
     logger.info(f"  Reason: {deploy_reason}")
     logger.info("=" * 60)
     
-    return should_deploy
+    # Return True = pipeline completed successfully (even if we chose not to deploy)
+    # Return False only on actual failures (data fetch, training errors, etc.)
+    return True
 
 
 if __name__ == "__main__":
