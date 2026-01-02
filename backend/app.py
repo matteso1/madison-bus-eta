@@ -893,7 +893,7 @@ def get_ml_training_history():
                 SELECT version, trained_at, samples_used, accuracy, precision, 
                        recall, f1_score, previous_f1, improvement_pct, deployed, deployment_reason
                 FROM ml_training_runs
-                ORDER BY trained_at DESC
+                ORDER BY version DESC
                 LIMIT 30
             """)).fetchall()
             
