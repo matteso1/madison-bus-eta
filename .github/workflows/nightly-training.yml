@@ -9,6 +9,8 @@ on:
 jobs:
   train:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed to push new model files
     
     steps:
       - name: Checkout repository
