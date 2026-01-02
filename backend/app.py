@@ -916,7 +916,7 @@ def get_ml_training_history():
                 SELECT version, f1_score, trained_at
                 FROM ml_training_runs
                 WHERE deployed = true
-                ORDER BY trained_at DESC
+                ORDER BY version DESC
                 LIMIT 1
             """)).fetchone()
             
