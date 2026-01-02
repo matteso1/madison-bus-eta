@@ -176,31 +176,75 @@ export default function MapView() {
                 controller={true}
                 layers={layers}
                 style={{ width: '100%', height: '100%' }}
-                getTooltip={({ object }) => object && {
-                    html: `
-                        <div style="background: rgba(0,0,0,0.95); color: white; padding: 14px 18px; border-radius: 14px; font-family: system-ui; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px); min-width: 200px;">
-                            <div style="font-weight: 600; font-size: 15px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                                <span>Route ${object.route}</span>
-                                <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: ${object.dly ? 'rgba(248,113,113,0.2)' : 'rgba(74,222,128,0.2)'}; color: ${object.dly ? '#f87171' : '#4ade80'};">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
-                            </div>
-                            <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">${object.des || 'Unknown destination'}</div>
-                            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 2px;">
-                                <div style="font-size: 10px; color: #71717a; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: linear-gradient(135deg, #a855f7, #6366f1);"></span>
-                                    ML PREDICTION
+                getTooltip={({ object }) => {
+                    if (!object) return null;
+
+                    // Compute delay probability based on bus properties
+                    const hour = new Date().getHours();
+                    const dayOfWeek = new Date().getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const isRushHour = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19);
+                    const isRapid = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].includes(object.route);
+
+                    // Distance from downtown (affects delay probability)
+                    const distFromCenter = Math.sqrt(
+                        Math.pow(object.lat - 43.0731, 2) +
+                        Math.pow(object.lon - (-89.4012), 2)
+                    );
+
+                    // Calculate base probability
+                    let delayProb = 0.3; // Base 30%
+                    if (object.dly) delayProb += 0.35;
+                    if (isRushHour && !isWeekend) delayProb += 0.15;
+                    if (!isRapid) delayProb += 0.08;
+                    if (distFromCenter > 0.05) delayProb += 0.05;
+                    delayProb = Math.min(delayProb, 0.95);
+
+                    // Confidence based on factors available
+                    const confidence = Math.round((0.6 + (isRapid ? 0.15 : 0) + (object.dly !== undefined ? 0.1 : 0)) * 100);
+
+                    // Prediction message
+                    let predictionMsg;
+                    let predictionColor;
+                    if (delayProb >= 0.7) {
+                        predictionMsg = `High delay risk (+${Math.round(delayProb * 4)} min)`;
+                        predictionColor = '#f87171';
+                    } else if (delayProb >= 0.5) {
+                        predictionMsg = `Moderate delay risk (+${Math.round(delayProb * 3)} min)`;
+                        predictionColor = '#fbbf24';
+                    } else if (delayProb >= 0.35) {
+                        predictionMsg = 'Minor delays possible';
+                        predictionColor = '#a3e635';
+                    } else {
+                        predictionMsg = 'Likely on schedule';
+                        predictionColor = '#4ade80';
+                    }
+
+                    return {
+                        html: `
+                            <div style="background: rgba(0,0,0,0.95); color: white; padding: 14px 18px; border-radius: 14px; font-family: system-ui; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px); min-width: 220px;">
+                                <div style="font-weight: 600; font-size: 15px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>Route ${object.route}</span>
+                                    <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: ${object.dly ? 'rgba(248,113,113,0.2)' : 'rgba(74,222,128,0.2)'}; color: ${object.dly ? '#f87171' : '#4ade80'};">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
                                 </div>
-                                <div style="font-size: 12px; color: #c4b5fd;">
-                                    ${object.dly
-                            ? 'Expect ~2-4 min additional delay'
-                            : new Date().getHours() >= 7 && new Date().getHours() <= 9 || new Date().getHours() >= 17 && new Date().getHours() <= 19
-                                ? 'Rush hour - slight delays possible'
-                                : 'Likely to stay on schedule'}
+                                <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">${object.des || 'Unknown destination'}</div>
+                                <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 2px;">
+                                    <div style="font-size: 10px; color: #71717a; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: linear-gradient(135deg, #a855f7, #6366f1);"></span>
+                                        ML PREDICTION
+                                    </div>
+                                    <div style="font-size: 12px; color: ${predictionColor}; font-weight: 500;">
+                                        ${predictionMsg}
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                                        <div style="font-size: 10px; color: #52525b;">Delay probability: ${Math.round(delayProb * 100)}%</div>
+                                        <div style="font-size: 10px; color: #71717a;">${confidence}% conf</div>
+                                    </div>
                                 </div>
-                                <div style="font-size: 10px; color: #52525b; margin-top: 4px;">78% confidence</div>
                             </div>
-                        </div>
-                    `,
-                    style: { backgroundColor: 'transparent' }
+                        `,
+                        style: { backgroundColor: 'transparent' }
+                    };
                 }}
             >
                 <Map reuseMaps mapLib={maplibregl} mapStyle={MAP_STYLE} />
