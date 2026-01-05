@@ -201,6 +201,13 @@ def save_predictions_to_db(predictions: list) -> int:
     try:
         pred_objects = []
         for p in predictions:
+            # Handle prdctdn - API returns 'DUE' when bus is arriving
+            prdctdn_raw = p.get('prdctdn', 0)
+            try:
+                prdctdn = int(prdctdn_raw)
+            except (ValueError, TypeError):
+                prdctdn = 0  # 'DUE' or other non-numeric = arriving now
+            
             pred = Prediction(
                 stpid=str(p.get('stpid', '')),
                 stpnm=p.get('stpnm', ''),
@@ -208,7 +215,7 @@ def save_predictions_to_db(predictions: list) -> int:
                 rt=str(p.get('rt', '')),
                 des=p.get('des'),
                 prdtm=p.get('prdtm', ''),
-                prdctdn=int(p.get('prdctdn', 0)) if p.get('prdctdn') else 0
+                prdctdn=prdctdn
             )
             pred_objects.append(pred)
         
