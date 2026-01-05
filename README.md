@@ -9,7 +9,7 @@
 
 ---
 
-## 🎯 The Problem
+## The Problem
 
 The Madison Metro API provides real-time bus positions and predicted arrival times. However, these predictions have inherent errors—sometimes off by several minutes. This project builds an ML system that learns from historical patterns to **predict how wrong the API's predictions will be**, enabling corrected ETAs for users.
 
@@ -20,7 +20,7 @@ ML model: "Actually, expect ~7 min (historically 2 min late on this route at rus
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TB
@@ -54,7 +54,7 @@ flowchart TB
 
 ---
 
-## 🔬 Technical Highlights
+## Technical Highlights
 
 ### Ground Truth Collection
 
@@ -112,7 +112,7 @@ The model improves continuously without manual intervention:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Local Development
 
@@ -148,7 +148,7 @@ SENTINEL_HOST=sentinel.railway.internal
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 madison-bus-eta/
@@ -174,7 +174,7 @@ madison-bus-eta/
 
 ---
 
-## 🔌 API Reference
+## API Reference
 
 | Endpoint | Description |
 |----------|-------------|
@@ -202,7 +202,7 @@ madison-bus-eta/
 
 ---
 
-## 📈 Metrics & Monitoring
+## Metrics & Monitoring
 
 The system tracks:
 
@@ -214,7 +214,7 @@ All training runs are logged to PostgreSQL for full auditability.
 
 ---
 
-## 🔮 Future Improvements
+## Future Improvements
 
 - [ ] Real-time model inference on live predictions
 - [ ] User accounts with saved routes
@@ -224,7 +224,7 @@ All training runs are logged to PostgreSQL for full auditability.
 
 ---
 
-## 📄 License
+## License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
