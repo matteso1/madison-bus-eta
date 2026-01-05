@@ -161,12 +161,16 @@ def fetch_all_vehicles() -> list:
     return all_vehicles
 
 
-def fetch_predictions_batch(routes: list) -> list:
-    """Fetch predictions for a batch of routes (up to 10)."""
-    if not routes:
+def fetch_predictions_batch(vehicle_ids: list) -> list:
+    """Fetch predictions for a batch of vehicles (up to 10).
+    
+    The getpredictions API requires 'stpid' or 'vid', NOT 'rt'.
+    We use vehicle IDs to get predictions for where each bus is headed.
+    """
+    if not vehicle_ids:
         return []
-    rt_param = ','.join(routes[:10])
-    data = api_get('getpredictions', rt=rt_param, top=100)
+    vid_param = ','.join(vehicle_ids[:10])
+    data = api_get('getpredictions', vid=vid_param, top=10)
     preds = data.get('bustime-response', {}).get('prd', [])
     if not isinstance(preds, list):
         preds = [preds] if preds else []
@@ -331,14 +335,14 @@ def collect_vehicles() -> dict:
     return data
 
 
-def collect_predictions(routes: list) -> dict:
-    """Collect predictions for all routes in batches."""
+def collect_predictions(vehicle_ids: list) -> dict:
+    """Collect predictions for all vehicles in batches."""
     timestamp = datetime.now(timezone.utc).isoformat()
     all_predictions = []
     
-    # Batch routes (API allows 10 per request)
-    for i in range(0, len(routes), 10):
-        batch = routes[i:i+10]
+    # Batch vehicle IDs (API allows 10 per request)
+    for i in range(0, len(vehicle_ids), 10):
+        batch = vehicle_ids[i:i+10]
         preds = fetch_predictions_batch(batch)
         all_predictions.extend(preds)
         time.sleep(0.5)  # Small delay between batches
@@ -346,7 +350,7 @@ def collect_predictions(routes: list) -> dict:
     data = {
         'timestamp': timestamp,
         'prediction_count': len(all_predictions),
-        'routes_queried': routes,
+        'vehicle_ids_queried': len(vehicle_ids),
         'predictions': all_predictions
     }
     
@@ -367,7 +371,7 @@ def collect_predictions(routes: list) -> dict:
         success = sentinel_client.produce('madison-metro-predictions', data)
         sentinel_msg = ", ✓ Streamed" if success else ", ✗ Stream Fail"
 
-    logger.info(f"Predictions: {len(all_predictions)} for {len(routes)} routes → {filename.name}{db_msg}{sentinel_msg}")
+    logger.info(f"Predictions: {len(all_predictions)} for {len(vehicle_ids)} vehicles → {filename.name}{db_msg}{sentinel_msg}")
     
     return data
 
@@ -468,8 +472,10 @@ def run_collector():
             
             # Collect predictions on interval (less frequently)
             if current_time - last_prediction_time >= PREDICTION_INTERVAL:
-                if active_routes:
-                    collect_predictions(active_routes)
+                # Get vehicle IDs from last collection
+                active_vehicles = [str(v.get('vid', '')) for v in vehicle_data.get('vehicles', []) if v.get('vid')]
+                if active_vehicles:
+                    collect_predictions(active_vehicles)
                 last_prediction_time = current_time
             
             # Log stats every hour
