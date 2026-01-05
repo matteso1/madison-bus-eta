@@ -1,253 +1,235 @@
 # Madison Metro ML
 
-A machine learning-enhanced bus tracking system for Madison, WI. Predicts delays 21% better than the official API.
+> **Real-time bus ETA prediction system** that corrects Madison Metro API predictions using machine learning. Reduces arrival time prediction errors through ground truth collection and autonomous model retraining.
 
-## Quick Start
-
-```bash
-# Backend
-cd backend && python -m flask run --port=5000
-
-# Frontend  
-cd frontend && npm run dev
-```
-
-Open <http://localhost:5173> → Live map with 60+ buses
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
+[![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange)](https://xgboost.readthedocs.io/)
+[![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL-336791)](https://postgresql.org)
+[![Railway](https://img.shields.io/badge/Deployed-Railway-purple)](https://railway.app)
 
 ---
 
-## Architecture
+## 🎯 The Problem
 
-```mermaid
-graph TB
-    subgraph "User-Facing"
-        FE[React Frontend<br/>localhost:5173]
-        FE --> BE
-    end
-    
-    subgraph "API Layer"
-        BE[Flask Backend<br/>localhost:5000]
-        BE --> METRO[Madison Metro API]
-        BE --> ML[ML Models]
-    end
-    
-    subgraph "Data Pipeline - Cloud 24/7"
-        COLLECTOR[Data Collector<br/>Railway Worker]
-        COLLECTOR --> METRO
-        COLLECTOR --> SENTINEL[Sentinel<br/>Message Queue]
-    end
-    
-    subgraph "ML Pipeline"
-        SENTINEL --> CONSUMER[Consumer Service]
-        CONSUMER --> DB[(TimescaleDB)]
-        DB --> TRAINER[Daily Retrain Job]
-        TRAINER --> ML
-    end
+The Madison Metro API provides real-time bus positions and predicted arrival times. However, these predictions have inherent errors—sometimes off by several minutes. This project builds an ML system that learns from historical patterns to **predict how wrong the API's predictions will be**, enabling corrected ETAs for users.
+
 ```
-
-### Current (Working)
-
-- **Frontend**: Mobile-first PWA, Live map with 60+ buses
-- **Backend**: Flask API, 29 routes, ML inference
-- **ML Model**: XGBoost, 21.3% improvement
-- **Data Pipeline**: 24/7 Collector -> Sentinel (Stream) -> Consumer -> Postgres
-
-### Planned (Future)
-
-- **Auto-Retrain**: Daily model updates as data grows
-- **User Accounts**: Save favorite routes
-
----
-
-## Data Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Collector
-    participant API as Madison Metro API
-    participant S as Sentinel
-    participant W as Consumer Worker
-    participant DB as Postgres
-
-    loop Every 20s
-        C->>API: GET /vehicles
-        API-->>C: Live Bus Positions
-        C->>S: Produce to 'madison-metro-vehicles'
-    end
-
-    loop Async Stream
-        S->>W: Push new messages
-        W->>DB: Bulk insert to vehicle_observations
-    end
+API says: "Bus arrives in 5 min"
+ML model: "Actually, expect ~7 min (historically 2 min late on this route at rush hour)"
 ```
 
 ---
 
-## Deployment Plan
-
-| Component | Platform | Status |
-|-----------|----------|--------|
-| Frontend | Vercel | **Deploying** |
-| Backend API | Railway | **Active** |
-| Data Collector | Railway Worker | **Active** |
-| Sentinel | Railway Docker | **Active** |
-| Consumer | Railway Worker | **Active** |
-| Database | Railway Postgres | **Active** |
-
----
-
-## Directory Structure (Clean)
-
-```
-madison-bus-eta/
-├── backend/          # Flask API + ML models
-├── frontend/         # React + Vite
-├── collector/        # Cloud data ingestion (NEW)
-└── README.md
-```
-
-**Delete these (clutter):**
-
-- `BACKEND_OLD/` - 4,400+ files of old code
-- `FRONDEND_OLD/` - Previous frontend attempt
-- `ml_system/` - Duplicate ML code
-- `data_pipeline/` - Unused
-- Various `.md` files (consolidate into README)
-
----
-
-## Why Sentinel?
-
-[Sentinel](https://github.com/matteso1/sentinel) is a Kafka-like message queue I built:
-
-- Streams bus data from collector → ML pipeline
-- Decouples ingestion from processing
-- Handles 1.7M writes/sec (way more than needed, but cool)
-
-This creates a real-world demo for Sentinel while improving Madison Metro.
-
----
-
-## ML Pipeline
-
-### The Problem We're Solving
-
-The Madison Metro API provides real-time bus positions and predicted arrival times (`prdctdn`). However, these predictions aren't always accurate. Our ML pipeline learns from historical patterns to **predict how wrong the API's predictions will be**.
-
-```mermaid
-flowchart LR
-    A[API says 5 min] --> B[ML Model]
-    C[Historical Patterns] --> B
-    D[Current Conditions] --> B
-    B --> E["Corrected ETA: ~7 min"]
-```
-
-### Architecture
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph "Data Collection (24/7)"
-        COLLECTOR[Collector Service] -->|60s intervals| DB[(PostgreSQL)]
-        COLLECTOR -->|detect| ARRIVALS[Stop Arrivals]
+    subgraph "Data Collection Layer"
+        COLLECTOR[Data Collector<br/>24/7 Service] -->|Every 60s| VEHICLES[(Vehicle Positions)]
+        COLLECTOR -->|Every 2 min| PREDICTIONS[(API Predictions)]
+        COLLECTOR -->|Haversine| ARRIVALS[Arrival Detector<br/>Stop Detection]
+    end
+    
+    subgraph "Ground Truth Pipeline"
+        VEHICLES --> DB[(PostgreSQL)]
+        PREDICTIONS --> DB
         ARRIVALS --> DB
+        DB --> MATCH{Match Arrivals<br/>to Predictions}
+        MATCH --> OUTCOMES[prediction_outcomes<br/>error_seconds]
     end
     
-    subgraph "Ground Truth Generation"
-        DB --> MATCH{Match predictions to arrivals}
-        MATCH --> OUTCOMES[prediction_outcomes]
-        OUTCOMES --> ERROR["error_seconds = actual - predicted"]
-    end
-    
-    subgraph "ML Training (Nightly)"
-        ERROR --> FE[Feature Engineering]
+    subgraph "ML Training Pipeline"
+        OUTCOMES --> FE[Feature Engineering<br/>Temporal + Route]
         FE --> MODEL[XGBoost Regressor]
-        MODEL -->|if improved| DEPLOY[Deploy New Model]
+        MODEL --> EVAL{MAE Improved?}
+        EVAL -->|Yes| DEPLOY[Deploy Model]
+        EVAL -->|No| SKIP[Skip Deployment]
     end
     
-    subgraph "Inference"
-        DEPLOY --> API[/predict-arrival endpoint/]
-        API --> USER["Your bus is ~3 min late"]
+    subgraph "Inference API"
+        DEPLOY --> FLASK[Flask Backend]
+        FLASK --> REACT[React Frontend]
     end
+```
+
+---
+
+## 🔬 Technical Highlights
+
+### Ground Truth Collection
+
+Most transit ML projects fail because they predict the API's own delay flag (circular logic). This project solves that by:
+
+1. **Detecting actual arrivals** using GPS positions + stop coordinates (Haversine distance < 30m)
+2. **Matching predictions to arrivals** to compute real error
+3. **Storing ground truth** for supervised learning
+
+```python
+# The target variable we actually care about:
+error_seconds = actual_arrival_time - api_predicted_arrival_time
+# Positive = late, Negative = early
 ```
 
 ### Autonomous Retraining
 
-The pipeline runs **nightly at 3 AM CST** via GitHub Actions:
+The model improves continuously without manual intervention:
 
-1. Fetches last 7 days of data from PostgreSQL
-2. Computes ground truth (prediction vs actual arrival error)
-3. Engineers features (temporal, spatial, route patterns)
-4. Trains XGBoost regressor
-5. Compares MAE against previous model
-6. **Only deploys if performance improved**
+- **Nightly GitHub Action** at 3 AM CST
+- Fetches last 7 days of prediction outcomes
+- Trains XGBoost regressor
+- **Only deploys if MAE improves** (prevents regression)
+- Full audit trail in `ml_training_runs` table
 
-```yaml
-# .github/workflows/nightly-training.yml
-on:
-  schedule:
-    - cron: '0 9 * * *'  # 3 AM CST
-```
+### Feature Engineering
 
-### Features Used
-
-| Category | Feature | Description |
-|----------|---------|-------------|
-| Temporal | `hour`, `day_of_week`, `is_rush_hour` | Time patterns |
-| Spatial | `distance_to_stop`, `lat_offset`, `lon_offset` | Location context |
-| Route | `route_avg_eta_error` | Historical route reliability |
-| API | `api_prdctdn` | API's own prediction (baseline) |
-
-### Target Variable
-
-```python
-# What we're predicting:
-error_seconds = actual_arrival_time - api_predicted_arrival_time
-
-# Positive = bus arrived later than API said
-# Negative = bus arrived earlier than API said
-```
-
-### Evaluation Metrics
-
-| Metric | What It Measures |
-|--------|------------------|
-| **MAE** | Average prediction error in seconds |
-| **RMSE** | Root mean square error (penalizes large errors) |
-| **Improvement vs API** | How much better we are than the raw API prediction |
-
-### Why Not Classification?
-
-We previously tried classifying buses as "delayed" or "not delayed" using the API's `dly` flag. This was problematic:
-
-1. **Circular logic**: We were predicting what the API already told us
-2. **No ground truth**: Never validated if predictions came true
-3. **Meaningless metrics**: 92% accuracy but only 0.37 F1 (model just predicted "not delayed")
-
-Regression on actual ETA error is both **useful** (users get corrected times) and **measurable** (we can validate against reality).
+| Category | Features | Rationale |
+|----------|----------|-----------|
+| Temporal | `hour`, `day_of_week`, `is_rush_hour` | Delays vary by time of day |
+| Route | `route_avg_error`, `route_frequency` | Some routes are systematically late |
+| Historical | `hr_route_error` | Hour+route specific patterns |
 
 ---
 
-## API Reference
+## 📊 Data Pipeline
 
-```
-GET /health              - System status
-GET /routes              - All routes (29 total)
-GET /vehicles            - Live bus positions
-GET /vehicles?rt=80      - Filter by route
-GET /patterns?rt=A       - Route geometry
-GET /ml/status           - ML model info
-```
+**10,000 API calls/day** optimized for maximum data collection:
+
+| Endpoint | Interval | Daily Calls | Purpose |
+|----------|----------|-------------|---------|
+| `getvehicles` | 60s | ~4,300 | Live bus positions |
+| `getpredictions` | 120s | ~2,900 | API arrival predictions |
+| **Total** | | **~7,200** | Leaves headroom under 10k limit |
+
+**Database Tables:**
+
+| Table | Records | Purpose |
+|-------|---------|---------|
+| `vehicle_observations` | Growing | Raw GPS data |
+| `predictions` | Growing | API predictions at collection time |
+| `stop_arrivals` | Growing | Detected bus arrivals at stops |
+| `prediction_outcomes` | Growing | **Ground truth** (matched predictions → arrivals) |
+| `ml_training_runs` | Per training | Model version history + metrics |
 
 ---
 
-## Development
+## 🚀 Quick Start
+
+### Local Development
 
 ```bash
-# Run everything
-cd backend && python -m flask run &
-cd frontend && npm run dev &
+# 1. Clone and install
+git clone https://github.com/matteso1/madison-bus-eta.git
+cd madison-bus-eta
 
-# Test the API
-curl http://localhost:5000/health
-curl http://localhost:5000/vehicles?rt=80 | jq
+# 2. Backend (requires Python 3.11+)
+cd backend
+pip install -r requirements.txt
+python -m flask run --port=5000
+
+# 3. Frontend (requires Node 18+)
+cd frontend
+npm install
+npm run dev
 ```
+
+Open **<http://localhost:5173>** → Live map with 60+ buses
+
+### Environment Variables
+
+```bash
+# Required
+MADISON_METRO_API_KEY=your_api_key
+DATABASE_URL=postgresql://...
+
+# Optional (for streaming)
+SENTINEL_ENABLED=true
+SENTINEL_HOST=sentinel.railway.internal
+```
+
+---
+
+## 📁 Project Structure
+
+```
+madison-bus-eta/
+├── backend/                 # Flask API + ML inference
+│   ├── app.py              # Main API routes
+│   └── utils/              # API helpers
+├── frontend/               # React + Vite + TypeScript
+│   ├── src/components/     # Map, RouteList, etc.
+│   └── src/hooks/          # Custom React hooks
+├── collector/              # 24/7 Data Collection Service
+│   ├── collector.py        # Main collection loop
+│   ├── arrival_detector.py # Stop detection (Haversine)
+│   └── db.py               # SQLAlchemy models
+├── ml/                     # Machine Learning Pipeline
+│   ├── features/           # Feature engineering
+│   │   └── regression_features.py
+│   ├── training/           # Training scripts
+│   │   └── train_regression.py
+│   └── models/             # Model registry + saved models
+└── .github/workflows/      # CI/CD
+    └── nightly-training.yml
+```
+
+---
+
+## 🔌 API Reference
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | System status + uptime |
+| `GET /routes` | All 29 Madison Metro routes |
+| `GET /vehicles` | Live bus positions (60+ buses) |
+| `GET /vehicles?rt=80` | Filter by route |
+| `GET /patterns?rt=A` | Route geometry (polylines) |
+| `GET /predictions?stpid=1234` | Arrival predictions for stop |
+| `GET /ml/status` | Current model version + metrics |
+| `POST /predict-arrival` | Get corrected ETA prediction |
+
+---
+
+## 🛠️ Technologies
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 18, TypeScript, Vite, Leaflet |
+| **Backend** | Flask, Python 3.11 |
+| **ML** | XGBoost, scikit-learn, pandas, NumPy |
+| **Database** | PostgreSQL (Railway) |
+| **Streaming** | [Sentinel](https://github.com/matteso1/sentinel) (custom message queue) |
+| **Infra** | Railway (API + Collector + DB), GitHub Actions |
+
+---
+
+## 📈 Metrics & Monitoring
+
+The system tracks:
+
+- **MAE (Mean Absolute Error)** - Primary metric, measures avg prediction error in seconds
+- **RMSE** - Penalizes large errors more heavily
+- **Improvement vs Baseline** - How much better than just trusting the API
+
+All training runs are logged to PostgreSQL for full auditability.
+
+---
+
+## 🔮 Future Improvements
+
+- [ ] Real-time model inference on live predictions
+- [ ] User accounts with saved routes
+- [ ] Push notifications for significant delays
+- [ ] Weather data integration (rain → more delays)
+- [ ] Grafana dashboard for monitoring
+
+---
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Built by <a href="https://github.com/matteso1">@matteso1</a> as a portfolio project demonstrating end-to-end ML system design.
+</p>
