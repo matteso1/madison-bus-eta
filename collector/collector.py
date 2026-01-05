@@ -29,10 +29,23 @@ from dotenv import load_dotenv
 
 # Import db module (only used if DATABASE_URL is set)
 try:
-    from db import save_vehicles_to_db, save_predictions_to_db, get_db_engine
+    from db import (
+        save_vehicles_to_db, save_predictions_to_db, get_db_engine,
+        save_arrivals_to_db, save_prediction_outcomes_to_db, get_pending_predictions
+    )
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
+
+# Import arrival detector
+try:
+    from arrival_detector import (
+        ArrivalDetector, StopLocation, match_predictions_to_arrivals
+    )
+    ARRIVAL_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Arrival detector import error: {e}")
+    ARRIVAL_DETECTOR_AVAILABLE = False
 
 try:
     from sentinel_client import SentinelClient
@@ -74,15 +87,19 @@ logger = logging.getLogger(__name__)
 # Sentinel Client Instance
 sentinel_client: Optional['SentinelClient'] = None
 
-# Stats tracking
 stats = {
     'vehicles_collected': 0,
     'predictions_collected': 0,
+    'arrivals_detected': 0,
+    'predictions_matched': 0,
     'requests_today': 0,
     'started_at': None,
     'last_vehicle_fetch': None,
     'last_prediction_fetch': None
 }
+
+# Global arrival detector instance
+arrival_detector: Optional[ArrivalDetector] = None
 
 
 def api_get(endpoint: str, **params) -> dict:
@@ -156,6 +173,106 @@ def fetch_predictions_batch(routes: list) -> list:
     return preds
 
 
+def fetch_all_stops(routes: list) -> list:
+    """
+    Fetch all stop locations for the given routes.
+    
+    Returns list of StopLocation objects for arrival detection.
+    """
+    if not ARRIVAL_DETECTOR_AVAILABLE:
+        return []
+    
+    all_stops = []
+    seen_stpids = set()
+    
+    # The API requires direction (dir) parameter
+    # We need to fetch directions first, then stops for each direction
+    for rt in routes:
+        # Get directions for this route
+        dir_data = api_get('getdirections', rt=rt)
+        directions = dir_data.get('bustime-response', {}).get('directions', [])
+        if not isinstance(directions, list):
+            directions = [directions] if directions else []
+        
+        for dir_info in directions:
+            dir_val = dir_info.get('id', dir_info.get('dir', ''))
+            if not dir_val:
+                continue
+            
+            # Get stops for this route + direction
+            stop_data = api_get('getstops', rt=rt, dir=dir_val)
+            stops = stop_data.get('bustime-response', {}).get('stops', [])
+            if not isinstance(stops, list):
+                stops = [stops] if stops else []
+            
+            for s in stops:
+                stpid = str(s.get('stpid', ''))
+                if stpid and stpid not in seen_stpids:
+                    seen_stpids.add(stpid)
+                    all_stops.append(StopLocation(
+                        stpid=stpid,
+                        stpnm=s.get('stpnm', ''),
+                        lat=float(s.get('lat', 0)),
+                        lon=float(s.get('lon', 0))
+                    ))
+        
+        # Small delay between routes
+        time.sleep(0.1)
+    
+    logger.info(f"Fetched {len(all_stops)} unique stops for {len(routes)} routes")
+    return all_stops
+
+
+def process_arrivals(vehicles: list) -> None:
+    """
+    Detect vehicle arrivals at stops and match to predictions.
+    
+    This generates ground truth for ML training:
+    - Saves arrivals to stop_arrivals table
+    - Matches arrivals to predictions
+    - Saves prediction outcomes with error_seconds
+    """
+    global arrival_detector
+    
+    if not ARRIVAL_DETECTOR_AVAILABLE or arrival_detector is None:
+        return
+    
+    if not DB_AVAILABLE or not DATABASE_URL:
+        return
+    
+    # Detect arrivals
+    arrivals = arrival_detector.detect_arrivals(vehicles)
+    
+    if not arrivals:
+        return
+    
+    # Save arrivals to database
+    arrivals_saved = save_arrivals_to_db(arrivals)
+    stats['arrivals_detected'] += arrivals_saved
+    
+    # Get pending predictions for vehicles that just arrived
+    vehicle_ids = [a.vid for a in arrivals]
+    pending = get_pending_predictions(vehicle_ids, minutes_back=30)
+    
+    if not pending:
+        return
+    
+    # Match arrivals to predictions
+    outcomes = match_predictions_to_arrivals(arrivals, pending)
+    
+    if outcomes:
+        outcomes_saved = save_prediction_outcomes_to_db(outcomes)
+        stats['predictions_matched'] += outcomes_saved
+        
+        # Log summary
+        avg_error = sum(o['error_seconds'] for o in outcomes) / len(outcomes)
+        logger.info(
+            f"Ground truth: {arrivals_saved} arrivals, "
+            f"{outcomes_saved} predictions matched, "
+            f"avg error: {avg_error/60:.1f}min"
+        )
+
+
 def save_data(data: dict, prefix: str) -> Path:
     """Save data to JSON file."""
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
@@ -198,6 +315,10 @@ def collect_vehicles() -> dict:
         db_count = save_vehicles_to_db(vehicles)
     
     db_msg = f", {db_count} to DB" if db_count else ""
+    
+    # Detect arrivals and generate ground truth for ML
+    if vehicles:
+        process_arrivals(vehicles)
     
     # Send to Sentinel
     sentinel_msg = ""
@@ -261,6 +382,8 @@ def log_stats():
     logger.info(f"  Runtime: {hours:.1f} hours")
     logger.info(f"  Vehicles collected: {stats['vehicles_collected']}")
     logger.info(f"  Predictions collected: {stats['predictions_collected']}")
+    logger.info(f"  Arrivals detected: {stats['arrivals_detected']}")
+    logger.info(f"  Predictions matched: {stats['predictions_matched']}")
     logger.info(f"  API requests today: {stats['requests_today']}")
     logger.info(f"  Rate: {stats['requests_today']/max(hours,0.1):.1f} req/hour")
     logger.info("=" * 50)
@@ -303,6 +426,27 @@ def run_collector():
     if not API_KEY:
         logger.error("MADISON_METRO_API_KEY not set! Exiting.")
         return
+    
+    # Initialize Arrival Detector for ground truth collection
+    global arrival_detector
+    if ARRIVAL_DETECTOR_AVAILABLE and DB_AVAILABLE:
+        logger.info("Arrival Detector: Fetching stop locations...")
+        try:
+            # Get initial routes to fetch stops for
+            routes = fetch_routes()
+            if routes:
+                stops = fetch_all_stops(routes)
+                if stops:
+                    arrival_detector = ArrivalDetector(stops)
+                    logger.info(f"Arrival Detector: ✓ Initialized with {len(stops)} stops")
+                else:
+                    logger.warning("Arrival Detector: No stops found")
+            else:
+                logger.warning("Arrival Detector: No routes found, will retry later")
+        except Exception as e:
+            logger.warning(f"Arrival Detector: Failed to initialize: {e}")
+    else:
+        logger.info("Arrival Detector: Disabled (missing dependencies)")
     
     logger.info("Starting optimized collection loop...")
     stats['started_at'] = datetime.now(timezone.utc).isoformat()

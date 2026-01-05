@@ -128,20 +128,102 @@ This creates a real-world demo for Sentinel while improving Madison Metro.
 
 ---
 
-## ML Model
+## ML Pipeline
 
-**Current Approach:**
+### The Problem We're Solving
 
-- XGBoost regression
-- 204K training records → Overfit
-- Needs more diverse data
+The Madison Metro API provides real-time bus positions and predicted arrival times (`prdctdn`). However, these predictions aren't always accurate. Our ML pipeline learns from historical patterns to **predict how wrong the API's predictions will be**.
 
-**Roadmap:**
+```mermaid
+flowchart LR
+    A[API says 5 min] --> B[ML Model]
+    C[Historical Patterns] --> B
+    D[Current Conditions] --> B
+    B --> E["Corrected ETA: ~7 min"]
+```
 
-1. Collect 6+ months of data (24/7 cloud collector)
-2. Proper train/val/test splits by time
-3. Feature engineering: weather, events, historical patterns
-4. Possibly LSTM for sequence modeling
+### Architecture
+
+```mermaid
+flowchart TB
+    subgraph "Data Collection (24/7)"
+        COLLECTOR[Collector Service] -->|60s intervals| DB[(PostgreSQL)]
+        COLLECTOR -->|detect| ARRIVALS[Stop Arrivals]
+        ARRIVALS --> DB
+    end
+    
+    subgraph "Ground Truth Generation"
+        DB --> MATCH{Match predictions to arrivals}
+        MATCH --> OUTCOMES[prediction_outcomes]
+        OUTCOMES --> ERROR["error_seconds = actual - predicted"]
+    end
+    
+    subgraph "ML Training (Nightly)"
+        ERROR --> FE[Feature Engineering]
+        FE --> MODEL[XGBoost Regressor]
+        MODEL -->|if improved| DEPLOY[Deploy New Model]
+    end
+    
+    subgraph "Inference"
+        DEPLOY --> API[/predict-arrival endpoint/]
+        API --> USER["Your bus is ~3 min late"]
+    end
+```
+
+### Autonomous Retraining
+
+The pipeline runs **nightly at 3 AM CST** via GitHub Actions:
+
+1. Fetches last 7 days of data from PostgreSQL
+2. Computes ground truth (prediction vs actual arrival error)
+3. Engineers features (temporal, spatial, route patterns)
+4. Trains XGBoost regressor
+5. Compares MAE against previous model
+6. **Only deploys if performance improved**
+
+```yaml
+# .github/workflows/nightly-training.yml
+on:
+  schedule:
+    - cron: '0 9 * * *'  # 3 AM CST
+```
+
+### Features Used
+
+| Category | Feature | Description |
+|----------|---------|-------------|
+| Temporal | `hour`, `day_of_week`, `is_rush_hour` | Time patterns |
+| Spatial | `distance_to_stop`, `lat_offset`, `lon_offset` | Location context |
+| Route | `route_avg_eta_error` | Historical route reliability |
+| API | `api_prdctdn` | API's own prediction (baseline) |
+
+### Target Variable
+
+```python
+# What we're predicting:
+error_seconds = actual_arrival_time - api_predicted_arrival_time
+
+# Positive = bus arrived later than API said
+# Negative = bus arrived earlier than API said
+```
+
+### Evaluation Metrics
+
+| Metric | What It Measures |
+|--------|------------------|
+| **MAE** | Average prediction error in seconds |
+| **RMSE** | Root mean square error (penalizes large errors) |
+| **Improvement vs API** | How much better we are than the raw API prediction |
+
+### Why Not Classification?
+
+We previously tried classifying buses as "delayed" or "not delayed" using the API's `dly` flag. This was problematic:
+
+1. **Circular logic**: We were predicting what the API already told us
+2. **No ground truth**: Never validated if predictions came true
+3. **Meaningless metrics**: 92% accuracy but only 0.37 F1 (model just predicted "not delayed")
+
+Regression on actual ETA error is both **useful** (users get corrected times) and **measurable** (we can validate against reality).
 
 ---
 

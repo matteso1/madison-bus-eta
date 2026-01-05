@@ -5,7 +5,7 @@ Requires DATABASE_URL environment variable (from Railway PostgreSQL).
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import logging
 
@@ -81,6 +81,45 @@ class MLTrainingRun(Base):
     # Deployment status
     deployed = Column(Boolean, default=False)
     deployment_reason = Column(String(200), nullable=True)  # "improved" / "first_model" / "not_deployed"
+
+
+class StopArrival(Base):
+    """
+    Records when a vehicle arrives at a stop.
+    
+    This is detected by matching vehicle positions to stop locations.
+    Used to generate ground truth for ETA prediction models.
+    """
+    __tablename__ = 'stop_arrivals'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vid = Column(String(20), index=True)   # Vehicle ID
+    rt = Column(String(10), index=True)    # Route
+    stpid = Column(String(20), index=True) # Stop ID
+    stpnm = Column(String(100))            # Stop name
+    arrived_at = Column(DateTime(timezone=True), index=True)
+
+
+class PredictionOutcome(Base):
+    """
+    Links predictions to actual arrivals - the ground truth for ML.
+    
+    error_seconds = actual_arrival - predicted_arrival
+    Positive = bus arrived later than predicted (late)
+    Negative = bus arrived earlier than predicted (early)
+    """
+    __tablename__ = 'prediction_outcomes'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    prediction_id = Column(Integer, nullable=True)  # FK to predictions.id
+    vid = Column(String(20), index=True)
+    rt = Column(String(10), index=True)
+    stpid = Column(String(20), index=True)
+    predicted_arrival = Column(DateTime(timezone=True))
+    actual_arrival = Column(DateTime(timezone=True))
+    error_seconds = Column(Integer)  # Target variable for regression!
+    is_significantly_late = Column(Boolean, default=False)  # error > 5 min
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 # Database connection
@@ -182,3 +221,112 @@ def save_predictions_to_db(predictions: list) -> int:
         return 0
     finally:
         session.close()
+
+
+def save_arrivals_to_db(arrivals: list) -> int:
+    """Save detected stop arrivals to database. Returns count saved."""
+    session = get_session()
+    if session is None:
+        return 0
+    
+    try:
+        arrival_objects = []
+        for a in arrivals:
+            arr = StopArrival(
+                vid=a.vid,
+                rt=a.rt,
+                stpid=a.stpid,
+                stpnm=a.stpnm,
+                arrived_at=a.arrived_at
+            )
+            arrival_objects.append(arr)
+        
+        session.bulk_save_objects(arrival_objects)
+        session.commit()
+        return len(arrival_objects)
+    except Exception as e:
+        logger.error(f"Error saving arrivals to DB: {e}")
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
+def save_prediction_outcomes_to_db(outcomes: list) -> int:
+    """Save prediction outcomes (ground truth) to database. Returns count saved."""
+    session = get_session()
+    if session is None:
+        return 0
+    
+    try:
+        outcome_objects = []
+        for o in outcomes:
+            outcome = PredictionOutcome(
+                prediction_id=o.get('prediction_id'),
+                vid=o.get('vid'),
+                rt=o.get('rt'),
+                stpid=o.get('stpid'),
+                predicted_arrival=o.get('predicted_arrival'),
+                actual_arrival=o.get('actual_arrival'),
+                error_seconds=o.get('error_seconds'),
+                is_significantly_late=o.get('is_significantly_late', False)
+            )
+            outcome_objects.append(outcome)
+        
+        session.bulk_save_objects(outcome_objects)
+        session.commit()
+        return len(outcome_objects)
+    except Exception as e:
+        logger.error(f"Error saving prediction outcomes to DB: {e}")
+        session.rollback()
+        return 0
+    finally:
+        session.close()
+
+
+def get_pending_predictions(vehicle_ids: list, minutes_back: int = 30) -> list:
+    """
+    Get recent predictions for given vehicles that might be arriving at stops.
+    
+    Args:
+        vehicle_ids: List of vehicle IDs to look up
+        minutes_back: How far back to search for predictions
+    
+    Returns:
+        List of prediction dicts with id, vid, stpid, prdtm, collected_at
+    """
+    from sqlalchemy import text
+    
+    session = get_session()
+    if session is None:
+        return []
+    
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes_back)
+        
+        # Query predictions for these vehicles
+        result = session.execute(text("""
+            SELECT id, vid, stpid, prdtm, collected_at
+            FROM predictions
+            WHERE vid = ANY(:vids)
+              AND collected_at > :cutoff
+            ORDER BY collected_at DESC
+        """), {"vids": vehicle_ids, "cutoff": cutoff})
+        
+        predictions = []
+        for row in result:
+            predictions.append({
+                'id': row[0],
+                'vid': row[1],
+                'stpid': row[2],
+                'prdtm': row[3],
+                'collected_at': row[4]
+            })
+        
+        return predictions
+    except Exception as e:
+        logger.error(f"Error fetching pending predictions: {e}")
+        return []
+    finally:
+        session.close()
+

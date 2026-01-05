@@ -28,12 +28,12 @@ jobs:
         run: |
           pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv
       
-      - name: Run ML Training
+      - name: Run ML Training (Regression)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           cd ml/training
-          python train.py
+          python train_regression.py
       
       - name: Commit new model (if any)
         run: |

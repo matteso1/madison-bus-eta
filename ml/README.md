@@ -1,15 +1,28 @@
 # Madison Bus ETA - ML Pipeline
 
-This directory contains the machine learning pipeline for bus delay prediction.
+This directory contains the machine learning pipeline for **ETA error prediction**.
+
+## What We Predict
+
+The Madison Metro API provides arrival predictions (`prdctdn`). Our model predicts **how wrong those predictions will be**:
+
+```
+error_seconds = actual_arrival_time - api_predicted_arrival_time
+```
+
+- Positive error = bus arrived late
+- Negative error = bus arrived early
 
 ## Directory Structure
 
 ```
 ml/
 ├── features/
-│   └── feature_engineering.py   # Feature extraction from raw data
+│   ├── feature_engineering.py   # Legacy classification features
+│   └── regression_features.py   # ETA error regression features
 ├── training/
-│   └── train.py                 # Training script
+│   ├── train.py                 # Legacy classification training
+│   └── train_regression.py      # ETA error regression training
 ├── models/
 │   ├── model_registry.py        # Model versioning and persistence
 │   └── saved/                   # Saved model files
@@ -18,22 +31,14 @@ ml/
 
 ## Quick Start
 
-1. **Install dependencies:**
+1. **Ensure ground truth is being collected:**
+   The collector must be running with arrival detection enabled.
 
-   ```bash
-   pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary
-   ```
-
-2. **Set environment variable:**
+2. **Run regression training:**
 
    ```bash
    export DATABASE_URL="postgresql://..."
-   ```
-
-3. **Run training:**
-
-   ```bash
-   python ml/training/train.py
+   python ml/training/train_regression.py
    ```
 
 ## Features Used
@@ -41,12 +46,11 @@ ml/
 | Category | Features |
 |----------|----------|
 | Temporal | hour, day_of_week, is_weekend, is_rush_hour |
-| Spatial | lat_offset, lon_offset, distance_from_center, hdg_sin, hdg_cos |
-| Route | route_frequency |
-| Historical | route_avg_delay_rate, hr_route_delay_rate |
+| Route | route_frequency, route_encoded |
+| Historical | route_avg_error, hr_route_error |
 
 ## Model
 
-- **Algorithm:** XGBoost Classifier
-- **Target:** `is_delayed` (binary: 0/1)
-- **Metrics:** Accuracy, Precision, Recall, F1 Score
+- **Algorithm:** XGBoost Regressor
+- **Target:** `error_seconds` (continuous)
+- **Metrics:** MAE (seconds), RMSE, Improvement vs baseline
