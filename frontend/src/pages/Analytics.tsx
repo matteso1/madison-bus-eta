@@ -54,18 +54,25 @@ interface ChartData {
 interface MLTrainingData {
     runs: Array<{
         version: string;
-        accuracy: number;
-        f1_score: number;
-        precision: number;
-        recall: number;
+        mae: number;
+        rmse: number;
+        mae_minutes: number;
+        improvement_vs_baseline_pct: number | null;
         samples_used: number;
         deployed: boolean;
         deployment_reason: string;
         improvement_pct: number | null;
-        previous_f1: number | null;
+        previous_mae: number | null;
+        model_type: string;
     }>;
-    latest_model: { version: string; f1_score: number } | null;
+    latest_model: {
+        version: string;
+        mae: number;
+        mae_minutes: number;
+        improvement_vs_baseline_pct: number | null;
+    } | null;
     total_runs: number;
+    model_type: string;
 }
 // Color palette
 const COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#84cc16'];
@@ -343,18 +350,20 @@ export default function AnalyticsPage() {
                             <div className="text-xs text-zinc-500 mt-1">{mlData?.total_runs || 0} runs total</div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">F1 Score</div>
+                            <div className="text-sm text-zinc-400 mb-1">MAE</div>
                             <div className="text-lg font-bold text-cyan-400">
-                                {mlData?.latest_model?.f1_score?.toFixed(3) || 'N/A'}
+                                {mlData?.latest_model?.mae ? `${mlData.latest_model.mae.toFixed(0)}s` : 'N/A'}
                             </div>
-                            <div className="text-xs text-zinc-500 mt-1">Delay prediction</div>
+                            <div className="text-xs text-zinc-500 mt-1">
+                                {mlData?.latest_model?.mae_minutes ? `${mlData.latest_model.mae_minutes.toFixed(1)} min avg error` : 'ETA Error Prediction'}
+                            </div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
-                            <div className="text-sm text-zinc-400 mb-1">Accuracy</div>
-                            <div className="text-lg font-bold text-indigo-400">
-                                {mlData?.runs?.[0]?.accuracy ? `${(mlData.runs[0].accuracy * 100).toFixed(1)}%` : 'N/A'}
+                            <div className="text-sm text-zinc-400 mb-1">vs Baseline</div>
+                            <div className={`text-lg font-bold ${(mlData?.latest_model?.improvement_vs_baseline_pct ?? 0) > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                {mlData?.latest_model?.improvement_vs_baseline_pct != null ? `${mlData.latest_model.improvement_vs_baseline_pct > 0 ? '+' : ''}${mlData.latest_model.improvement_vs_baseline_pct.toFixed(1)}%` : 'N/A'}
                             </div>
-                            <div className="text-xs text-zinc-500 mt-1">XGBoost Classifier</div>
+                            <div className="text-xs text-zinc-500 mt-1">better than API alone</div>
                         </div>
                         <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
                             <div className="text-sm text-zinc-400 mb-1">Last Improvement</div>
@@ -374,33 +383,33 @@ export default function AnalyticsPage() {
 
                     {/* Charts Row */}
                     <div className="grid lg:grid-cols-2 gap-6 mb-6">
-                        {/* F1 Score History Chart */}
+                        {/* MAE History Chart */}
                         <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                             <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
                                 <TrendingUp className="w-4 h-4 text-purple-400" />
-                                F1 Score History
+                                MAE History (seconds)
                                 <span className="text-xs text-zinc-500 ml-auto">Last {mlData?.runs?.length || 0} runs</span>
                             </h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={[...(mlData?.runs || [])].reverse().map((run, idx) => ({
                                         run: idx + 1,
-                                        f1: run.f1_score,
+                                        mae: run.mae,
                                         deployed: run.deployed,
                                         version: formatVersion(run.version, true)
                                     }))}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                         <XAxis dataKey="run" stroke="#666" tick={{ fill: '#888', fontSize: 10 }} label={{ value: 'Run #', position: 'bottom', fill: '#666', fontSize: 10 }} />
-                                        <YAxis stroke="#666" tick={{ fill: '#888', fontSize: 10 }} domain={['dataMin - 0.05', 'dataMax + 0.05']} tickFormatter={(v) => v.toFixed(2)} />
+                                        <YAxis stroke="#666" tick={{ fill: '#888', fontSize: 10 }} domain={['dataMin - 10', 'dataMax + 10']} tickFormatter={(v) => `${v}s`} />
                                         <Tooltip
                                             contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', borderRadius: '8px' }}
                                             labelStyle={{ color: '#fff' }}
-                                            formatter={(value: number) => value.toFixed(4)}
+                                            formatter={(value: number) => [`${value.toFixed(1)}s`, 'MAE']}
                                         />
-                                        <ReferenceLine y={mlData?.latest_model?.f1_score || 0} stroke="#10b981" strokeDasharray="5 5" label={{ value: 'Current', fill: '#10b981', fontSize: 10 }} />
+                                        <ReferenceLine y={mlData?.latest_model?.mae || 0} stroke="#10b981" strokeDasharray="5 5" label={{ value: 'Current', fill: '#10b981', fontSize: 10 }} />
                                         <Line
                                             type="monotone"
-                                            dataKey="f1"
+                                            dataKey="mae"
                                             stroke="#8b5cf6"
                                             strokeWidth={2}
                                             dot={{ fill: '#8b5cf6', r: 4 }}
@@ -415,44 +424,43 @@ export default function AnalyticsPage() {
                             </div>
                         </div>
 
-                        {/* Training Runs Detail */}
+                        {/* Training Runs Detail - MAE vs RMSE */}
                         <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
                             <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
                                 <BarChart3 className="w-4 h-4 text-indigo-400" />
                                 Training Run Details
-                                <span className="text-xs text-zinc-500 ml-auto">Precision vs Recall</span>
+                                <span className="text-xs text-zinc-500 ml-auto">MAE vs RMSE</span>
                             </h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ScatterChart margin={{ top: 10, right: 10, bottom: 20, left: 10 }}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                                         <XAxis
-                                            dataKey="precision"
+                                            dataKey="mae"
                                             type="number"
                                             stroke="#666"
                                             tick={{ fill: '#888', fontSize: 10 }}
-                                            domain={[0, 1]}
-                                            name="Precision"
-                                            label={{ value: 'Precision', position: 'bottom', fill: '#666', fontSize: 10 }}
+                                            domain={['dataMin - 10', 'dataMax + 10']}
+                                            name="MAE"
+                                            label={{ value: 'MAE (seconds)', position: 'bottom', fill: '#666', fontSize: 10 }}
                                         />
                                         <YAxis
-                                            dataKey="recall"
+                                            dataKey="rmse"
                                             type="number"
                                             stroke="#666"
                                             tick={{ fill: '#888', fontSize: 10 }}
-                                            domain={[0, 1]}
-                                            name="Recall"
-                                            label={{ value: 'Recall', angle: -90, position: 'left', fill: '#666', fontSize: 10 }}
+                                            domain={['dataMin - 10', 'dataMax + 10']}
+                                            name="RMSE"
+                                            label={{ value: 'RMSE', angle: -90, position: 'left', fill: '#666', fontSize: 10 }}
                                         />
                                         <Tooltip
                                             contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', borderRadius: '8px' }}
-                                            formatter={(value: number) => value.toFixed(3)}
+                                            formatter={(value: number) => `${value.toFixed(1)}s`}
                                         />
                                         <Scatter
                                             data={(mlData?.runs || []).map(run => ({
-                                                precision: run.precision,
-                                                recall: run.recall,
-                                                f1: run.f1_score,
+                                                mae: run.mae,
+                                                rmse: run.rmse,
                                                 deployed: run.deployed,
                                                 version: formatVersion(run.version, true)
                                             }))}
@@ -469,7 +477,7 @@ export default function AnalyticsPage() {
                                 </ResponsiveContainer>
                             </div>
                             <div className="text-xs text-zinc-500 text-center mt-2">
-                                Each point represents a training run • Ideal: top-right corner
+                                Each point represents a training run - Lower MAE = better predictions
                             </div>
                         </div>
                     </div>
@@ -485,8 +493,8 @@ export default function AnalyticsPage() {
                                 <thead>
                                     <tr className="text-zinc-400 border-b border-white/10">
                                         <th className="text-left py-2 px-2">Version</th>
-                                        <th className="text-right py-2 px-2">F1</th>
-                                        <th className="text-right py-2 px-2">Δ</th>
+                                        <th className="text-right py-2 px-2">MAE</th>
+                                        <th className="text-right py-2 px-2">RMSE</th>
                                         <th className="text-right py-2 px-2">Samples</th>
                                         <th className="text-left py-2 px-2">Status</th>
                                     </tr>
@@ -495,14 +503,12 @@ export default function AnalyticsPage() {
                                     {(mlData?.runs || []).slice(0, 5).map((run, idx) => (
                                         <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
                                             <td className="py-2 px-2 font-mono text-purple-400">{formatVersion(run.version)}</td>
-                                            <td className="py-2 px-2 text-right text-cyan-400">{run.f1_score?.toFixed(3)}</td>
-                                            <td className={`py-2 px-2 text-right ${(run.improvement_pct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {run.improvement_pct != null ? `${run.improvement_pct > 0 ? '+' : ''}${run.improvement_pct.toFixed(1)}%` : '—'}
-                                            </td>
+                                            <td className="py-2 px-2 text-right text-cyan-400">{run.mae?.toFixed(0)}s</td>
+                                            <td className="py-2 px-2 text-right text-indigo-400">{run.rmse?.toFixed(0)}s</td>
                                             <td className="py-2 px-2 text-right text-zinc-300">{run.samples_used?.toLocaleString()}</td>
                                             <td className="py-2 px-2">
                                                 <span className={`px-2 py-0.5 rounded-full text-xs ${run.deployed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-                                                    {run.deployed ? '✓ Deployed' : 'Skipped'}
+                                                    {run.deployed ? 'Deployed' : 'Skipped'}
                                                 </span>
                                             </td>
                                         </tr>
