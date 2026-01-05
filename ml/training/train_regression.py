@@ -136,14 +136,14 @@ def log_training_run(version: str, metrics: dict, deployed: bool, reason: str,
                     :baseline_imp, :prev_mae, :improvement, :deployed, :reason)
         """), {
             "version": version,
-            "samples": samples,
-            "days": days,
-            "mae": metrics['mae'],
-            "rmse": metrics['rmse'],
-            "mae_min": metrics['mae_minutes'],
-            "baseline_imp": metrics['improvement_vs_baseline_pct'],
-            "prev_mae": previous_mae,
-            "improvement": improvement_pct,
+            "samples": int(samples),
+            "days": int(days),
+            "mae": float(metrics['mae']),
+            "rmse": float(metrics['rmse']),
+            "mae_min": float(metrics['mae_minutes']),
+            "baseline_imp": float(metrics['improvement_vs_baseline_pct']),
+            "prev_mae": float(previous_mae) if previous_mae else None,
+            "improvement": float(improvement_pct) if improvement_pct else None,
             "deployed": deployed,
             "reason": reason
         })
