@@ -160,10 +160,15 @@ class ArrivalDetector:
         for vehicle in vehicles:
             vid = str(vehicle.get('vid', ''))
             rt = str(vehicle.get('rt', ''))
-            lat = vehicle.get('lat')
-            lon = vehicle.get('lon')
             
-            if not vid or lat is None or lon is None:
+            # Ensure lat/lon are floats (API may return strings)
+            try:
+                lat = float(vehicle.get('lat', 0))
+                lon = float(vehicle.get('lon', 0))
+            except (TypeError, ValueError):
+                continue
+            
+            if not vid or lat == 0 or lon == 0:
                 continue
             
             # Find nearby stops
