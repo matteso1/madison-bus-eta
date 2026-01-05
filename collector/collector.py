@@ -61,8 +61,8 @@ API_KEY = os.getenv('MADISON_METRO_API_KEY')
 API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.com/bustime/api/v3')
 
 # Collection intervals (in seconds)
-VEHICLE_INTERVAL = 60      # Get all vehicles every 60s = 1440 req/day
-PREDICTION_INTERVAL = 300  # Get predictions every 5 min = ~864 req/day
+VEHICLE_INTERVAL = 60      # Get all vehicles every 60s
+PREDICTION_INTERVAL = 120  # Get predictions every 2 min (was 5 min)
 
 DATA_DIR = Path(__file__).parent / 'data'
 DATA_DIR.mkdir(exist_ok=True)
