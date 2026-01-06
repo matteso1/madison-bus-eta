@@ -111,7 +111,33 @@
         "is_evening_rush": "0.0"
       },
       "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260106_091614",
+      "filename": "model_20260106_091614.pkl",
+      "created_at": "2026-01-06T09:16:14.192485+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 6107,
+        "test_samples": 1527
+      },
+      "feature_importance": {
+        "hr_route_error": "0.8677966",
+        "route_avg_error": "0.03825926",
+        "day_of_week": "0.036506597",
+        "route_frequency": "0.02367341",
+        "hour": "0.019325826",
+        "route_encoded": "0.013165876",
+        "is_rush_hour": "0.0012724095",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
     }
   ],
-  "latest": "20260105_092022"
+  "latest": "20260106_091614"
 }
