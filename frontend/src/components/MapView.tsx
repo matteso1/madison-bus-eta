@@ -6,6 +6,7 @@ import { Map } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import axios from 'axios';
+import { Bus, AlertTriangle, BarChart3 } from 'lucide-react';
 
 const INITIAL_VIEW_STATE = {
     longitude: -89.384,
@@ -264,7 +265,7 @@ export default function MapView() {
                     {/* Center Stats */}
                     <div className="hidden md:flex items-center gap-3">
                         <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl px-4 py-2 flex items-center gap-2">
-                            <span className="text-2xl">🚌</span>
+                            <Bus className="w-6 h-6 text-emerald-400" />
                             <div>
                                 <div className="text-lg font-bold text-white">{filteredLive.length}</div>
                                 <div className="text-xs text-zinc-400">Active Buses</div>
@@ -272,7 +273,7 @@ export default function MapView() {
                         </div>
                         {delayedCount > 0 && (
                             <div className="bg-red-500/20 backdrop-blur-xl border border-red-500/30 rounded-xl px-4 py-2 flex items-center gap-2">
-                                <span className="text-2xl">⚠️</span>
+                                <AlertTriangle className="w-6 h-6 text-red-400" />
                                 <div>
                                     <div className="text-lg font-bold text-red-400">{delayedCount}</div>
                                     <div className="text-xs text-red-300">Delayed</div>
@@ -302,7 +303,7 @@ export default function MapView() {
                             to="/analytics"
                             className="bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white px-5 py-3 rounded-xl font-medium transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
                         >
-                            <span>📊</span>
+                            <BarChart3 className="w-5 h-5" />
                             <span className="hidden sm:inline">Analytics</span>
                         </Link>
                     </div>

@@ -647,6 +647,67 @@ export default function AnalyticsPage() {
                         </div>
                     </div>
                 )}
+                {/* Scientific Analytics Section - Phase 6 */}
+                {mlData?.latest_model && (
+                    <div className="mt-8 bg-gradient-to-br from-indigo-900/20 to-blue-900/20 backdrop-blur-xl border border-indigo-500/20 rounded-3xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-xl font-bold flex items-center gap-3">
+                                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center">
+                                    <BarChart3 className="w-5 h-5 text-white" />
+                                </span>
+                                Model Evaluation & Diagnostics
+                                <span className="hidden sm:inline-flex ml-4 px-3 py-1 rounded-full text-xs bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    Scientific Validation
+                                </span>
+                            </h3>
+                        </div>
+
+                        <div className="grid lg:grid-cols-3 gap-6">
+                            {/* Feature Importance */}
+                            <div className="lg:col-span-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-4 flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-indigo-400" />
+                                    Feature Importance
+                                </h4>
+                                <div className="h-[300px]">
+                                    <FeatureImportanceChart />
+                                </div>
+                                <div className="mt-2 text-xs text-zinc-500 text-center">
+                                    Top factors driving the model's predictions
+                                </div>
+                            </div>
+
+                            {/* Error Distribution (Bias) */}
+                            <div className="lg:col-span-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-4 flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                                    Error Distribution (Bias)
+                                </h4>
+                                <div className="h-[300px]">
+                                    <ErrorDistributionChart />
+                                </div>
+                                <div className="mt-2 text-xs text-zinc-500 text-center">
+                                    Bell curve peaked at 0s = Unbiased Model
+                                </div>
+                            </div>
+
+                            {/* Model vs API Comparison */}
+                            <div className="lg:col-span-1 bg-white/5 rounded-2xl p-4 border border-white/10">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-4 flex items-center gap-2">
+                                    <TrendingUp className="w-4 h-4 text-cyan-400" />
+                                    Model vs API Accuracy (24h)
+                                </h4>
+                                <div className="h-[300px]">
+                                    <ModelVsBaselineChart />
+                                </div>
+                                <div className="mt-2 text-xs text-zinc-500 text-center">
+                                    Lower MAE = Better Performance
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
             </main>
 
             <footer className="relative z-10 border-t border-white/5 mt-12">
@@ -655,6 +716,150 @@ export default function AnalyticsPage() {
                 </div>
             </footer>
         </div>
+    );
+}
+
+// --- Sub-components for Scientific Analytics ---
+
+function FeatureImportanceChart() {
+    const [data, setData] = useState<any[]>([]);
+
+    useEffect(() => {
+        axios.get(`${BACKEND_URL}/api/model-diagnostics/feature-importance`)
+            .then(res => {
+                if (res.data?.features) setData(res.data.features.slice(0, 10)); // Top 10
+            })
+            .catch(err => console.error("Feature importance fetch error", err));
+    }, []);
+
+    if (data.length === 0) return <div className="h-full flex items-center justify-center text-zinc-500 text-xs">Loading features...</div>;
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis
+                    dataKey="name"
+                    type="category"
+                    width={80}
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
+                    interval={0}
+                />
+                <Tooltip
+                    contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#f3f4f6' }}
+                    itemStyle={{ color: '#818cf8' }}
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                    formatter={(value: number) => [value.toFixed(4), 'Importance']}
+                />
+                <Bar dataKey="importance" fill="#6366f1" radius={[0, 4, 4, 0]}>
+                    {data.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={['#4f46e5', '#6366f1', '#818cf8'][index % 3]} />
+                    ))}
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+function ErrorDistributionChart() {
+    const [data, setData] = useState<any[]>([]);
+
+    useEffect(() => {
+        axios.get(`${BACKEND_URL}/api/model-diagnostics/error-distribution`)
+            .then(res => {
+                if (res.data?.bins) setData(res.data.bins);
+            })
+            .catch(err => console.error("Error distribution fetch error", err));
+    }, []);
+
+    if (data.length === 0) return <div className="h-full flex items-center justify-center text-zinc-500 text-xs">Loading distribution...</div>;
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                <XAxis
+                    dataKey="label"
+                    tick={{ fill: '#9ca3af', fontSize: 10 }}
+                    interval={1}
+                />
+                <YAxis hide />
+                <Tooltip
+                    contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#f3f4f6' }}
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                    labelStyle={{ color: '#10b981' }}
+                />
+                <ReferenceLine x="0m" stroke="#10b981" strokeDasharray="3 3" />
+                <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]}>
+                    {data.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.label === '0m' ? '#10b981' : '#34d399'} opacity={entry.label === '0m' ? 1 : 0.6} />
+                    ))}
+                </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+function ModelVsBaselineChart() {
+    const [data, setData] = useState<any[]>([]);
+
+    useEffect(() => {
+        axios.get(`${BACKEND_URL}/api/model-diagnostics/vs-baseline`)
+            .then(res => {
+                if (res.data?.timeline) setData(res.data.timeline);
+            })
+            .catch(err => console.error("Vs baseline fetch error", err));
+    }, []);
+
+    if (data.length === 0) return <div className="h-full flex items-center justify-center text-zinc-500 text-xs">Loading comparison...</div>;
+
+    return (
+        <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                    <linearGradient id="colorModel" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorApi" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#9ca3af" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#9ca3af" stopOpacity={0} />
+                    </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                <XAxis
+                    dataKey="hour"
+                    tickFormatter={(tick) => {
+                        const date = new Date(tick);
+                        return `${date.getHours()}:00`;
+                    }}
+                    tick={{ fill: '#6b7280', fontSize: 10 }}
+                    minTickGap={30}
+                />
+                <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} />
+                <Tooltip
+                    contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#f3f4f6' }}
+                    labelFormatter={(label) => new Date(label).toLocaleString()}
+                />
+                <Area
+                    type="monotone"
+                    dataKey="api_mae"
+                    name="API Error"
+                    stroke="#9ca3af"
+                    strokeDasharray="4 4"
+                    fill="url(#colorApi)"
+                />
+                <Area
+                    type="monotone"
+                    dataKey="model_mae"
+                    name="Model Error"
+                    stroke="#06b6d4"
+                    strokeWidth={2}
+                    fill="url(#colorModel)"
+                />
+            </AreaChart>
+        </ResponsiveContainer>
     );
 }
 

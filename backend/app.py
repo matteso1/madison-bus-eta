@@ -859,72 +859,43 @@ def get_analytics_charts():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/ml-training-history")
-def get_ml_training_history():
-    """Get ML model training history for dashboard - updated for regression models."""
+def get_ml_history():
+    """Get full history of training runs and model metrics."""
     try:
         from sqlalchemy import create_engine, text
-        from datetime import datetime, timezone
+        from datetime import datetime, timezone # Keep datetime and timezone for isoformat
         
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
-            return jsonify({"error": "Database not configured", "runs": []}), 503
+            return jsonify({"error": "Database not configured"}), 503
         
         engine = create_engine(database_url, pool_pre_ping=True)
         
         with engine.connect() as conn:
-            # Check if regression table exists (new system)
-            regression_table_exists = conn.execute(text("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_name = 'ml_regression_runs'
-                )
-            """)).scalar()
+            # Fetch all runs
+            runs_query = text("""
+                SELECT 
+                    model_version,
+                    mae_seconds,
+                    rmse_seconds,
+                    samples_used,
+                    created_at,
+                    deployed,
+                    deployment_reason,
+                    improvement_pct,
+                    previous_mae_seconds,
+                    model_type,
+                    feature_importance,
+                    metrics_json
+                FROM ml_regression_runs 
+                ORDER BY created_at DESC
+            """)
+            runs = conn.execute(runs_query).fetchall()
             
-            if regression_table_exists:
-                # Use new regression table
-                runs_data = conn.execute(text("""
-                    SELECT version, trained_at, samples_used, mae, rmse, mae_minutes,
-                           improvement_vs_baseline_pct, previous_mae, improvement_pct, 
-                           deployed, deployment_reason
-                    FROM ml_regression_runs
-                    ORDER BY version DESC
-                    LIMIT 30
-                """)).fetchall()
-                
-                runs = [{
+            history = []
+            for row in runs:
+                history.append({
                     "version": row[0],
-                    "trained_at": row[1].isoformat() if row[1] else None,
-                    "samples_used": row[2],
-                    "mae": round(row[3], 1) if row[3] else None,
-                    "rmse": round(row[4], 1) if row[4] else None,
-                    "mae_minutes": round(row[5], 2) if row[5] else None,
-                    "improvement_vs_baseline_pct": round(row[6], 1) if row[6] else None,
-                    "previous_mae": round(row[7], 1) if row[7] else None,
-                    "improvement_pct": round(row[8], 1) if row[8] else None,
-                    "deployed": row[9],
-                    "deployment_reason": row[10],
-                    "model_type": "regression"
-                } for row in runs_data]
-                
-                # Get latest deployed model
-                latest_deployed = conn.execute(text("""
-                    SELECT version, mae, mae_minutes, trained_at, improvement_vs_baseline_pct
-                    FROM ml_regression_runs
-                    WHERE deployed = true
-                    ORDER BY version DESC
-                    LIMIT 1
-                """)).fetchone()
-                
-                latest_model = None
-                if latest_deployed:
-                    latest_model = {
-                        "version": latest_deployed[0],
-                        "mae": round(latest_deployed[1], 1) if latest_deployed[1] else None,
-                        "mae_minutes": round(latest_deployed[2], 2) if latest_deployed[2] else None,
-                        "trained_at": latest_deployed[3].isoformat() if latest_deployed[3] else None,
-                        "improvement_vs_baseline_pct": round(latest_deployed[4], 1) if latest_deployed[4] else None,
-                        "model_type": "regression"
-                    }
             else:
                 # No regression table yet - return empty or check old table
                 runs = []
@@ -1802,9 +1773,9 @@ def get_geo_heatmap():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/viz/error-distribution")
-def get_error_distribution():
-    """Get error distribution histogram and CDF"""
+@app.route("/api/model-diagnostics/error-distribution")
+def get_model_diagnostics_error_distribution():
+    """Return histogram data for model error distribution (Bias Check)."""
     try:
         agg = get_aggregator()
         if agg is None:
