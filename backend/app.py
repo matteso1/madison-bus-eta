@@ -890,28 +890,50 @@ def get_ml_history():
                 FROM ml_regression_runs 
                 ORDER BY created_at DESC
             """)
-            runs = conn.execute(runs_query).fetchall()
+            try:
+                runs = conn.execute(runs_query).fetchall()
+            except Exception:
+                # Fallback if table doesn't exist yet
+                runs = []
             
             history = []
             for row in runs:
                 history.append({
                     "version": row[0],
-            else:
-                # No regression table yet - return empty or check old table
-                runs = []
-                latest_model = None
-        
-        return jsonify({
-            "runs": runs,
-            "latest_model": latest_model,
-            "total_runs": len(runs),
-            "model_type": "regression",
-            "target_variable": "error_seconds",
-            "generated_at": datetime.now(timezone.utc).isoformat()
-        })
-        
+                    "mae": float(row[1]) if row[1] else None,
+                    "rmse": float(row[2]) if row[2] else None,
+                    "mae_minutes": float(row[1])/60 if row[1] else None,
+                    "samples_used": row[3],
+                    "created_at": row[4].isoformat() if row[4] else None,
+                    "deployed": row[5],
+                    "deployment_reason": row[6],
+                    "improvement_pct": float(row[7]) if row[7] else None,
+                    "previous_mae": float(row[8]) if row[8] else None,
+                    "model_type": row[9],
+                    "metrics": row[11] if row[11] else {}
+                })
+            
+            # Identify current active model (latest deployed)
+            latest_model = next((r for r in history if r["deployed"]), None)
+            if latest_model:
+                # Calculate improvement vs baseline (if stored in metrics)
+                metrics = latest_model.get("metrics", {})
+                baseline_mae = metrics.get("baseline_mae")
+                if baseline_mae and latest_model["mae"]:
+                    improvement_vs_baseline = ((baseline_mae - latest_model["mae"]) / baseline_mae) * 100
+                    latest_model["improvement_vs_baseline_pct"] = round(improvement_vs_baseline, 1)
+                else:
+                    latest_model["improvement_vs_baseline_pct"] = None
+
+            return jsonify({
+                "runs": history,
+                "total_runs": len(history),
+                "latest_model": latest_model,
+                "model_type": "XGBRegressor"
+            })
+            
     except Exception as e:
-        return jsonify({"error": str(e), "runs": []}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/route-accuracy")
