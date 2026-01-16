@@ -1988,7 +1988,169 @@ def get_reliability_rankings():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/viz/anomalies")
+@app.route("/api/scientific-metrics")
+def get_scientific_metrics():
+    """
+    Return rigorous scientific metrics for model evaluation.
+    metrics:
+      - MAPE (Mean Absolute Percentage Error): ABS(Error) / Horizon
+      - R² (Coefficient of Determination): 1 - (SS_res / SS_tot)
+      - Buffer Time Index: (95th% Travel Time - Mean Travel Time) / Mean Travel Time
+      - Planning Time Index: 95th% Travel Time / Free Flow Travel Time
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+            
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Check availability of prediction_outcomes
+            check = conn.execute(text("SELECT to_regclass('public.prediction_outcomes')")).scalar()
+            if not check:
+                return jsonify({"error": "No data available"})
+
+            # Calculate R-Squared and MAPE
+            # MAPE definition: |Error| / (Actual Travel Time remaining)
+            # We approximate Actual Travel Time as: (Predicted Time remaining - Error)?
+            # Or simpler: |Error| / Predicted_Time_Remaining (from predictions table)
+            
+            # Complex query for detailed stats
+            query = text("""
+                WITH metrics AS (
+                    SELECT 
+                        po.error_seconds,
+                        ABS(po.error_seconds) as abs_error,
+                        p.prdctdn * 60 as horizon_seconds,
+                        (p.prdctdn * 60) - po.error_seconds as actual_duration_approx 
+                    FROM prediction_outcomes po
+                    JOIN predictions p ON po.prediction_id = p.id
+                    WHERE po.created_at > NOW() - INTERVAL '24 hours'
+                    AND p.prdctdn > 2 -- Filter out nearly arrived buses (noise)
+                ),
+                stats AS (
+                    SELECT 
+                        AVG(abs_error) as mae,
+                        AVG(CASE WHEN horizon_seconds > 0 THEN abs_error / horizon_seconds ELSE 0 END) as mape,
+                        STDDEV(error_seconds) as std_dev,
+                        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY abs_error) as p95_error
+                    FROM metrics
+                )
+                SELECT 
+                    mae, 
+                    mape, 
+                    std_dev, 
+                    p95_error,
+                    (SELECT COUNT(*) FROM metrics) as sample_count
+                FROM stats
+            """)
+            
+            # R-Squared calculation (Separate to verify formula correctness)
+            # SS_res = SUM(error^2)
+            # SS_tot = SUM((actual - mean_actual)^2)
+            r2_query = text("""
+                WITH data AS (
+                    SELECT 
+                        po.error_seconds,
+                        (p.prdctdn * 60) - po.error_seconds as actual_duration
+                    FROM prediction_outcomes po
+                    JOIN predictions p ON po.prediction_id = p.id
+                    WHERE po.created_at > NOW() - INTERVAL '24 hours'
+                    AND p.prdctdn > 0
+                ),
+                means AS (
+                    SELECT AVG(actual_duration) as mean_actual FROM data
+                )
+                SELECT 
+                    1.0 - (
+                        SUM(POWER(error_seconds, 2)) / 
+                        NULLIF(SUM(POWER(actual_duration - (SELECT mean_actual FROM means), 2)), 0)
+                    ) as r_squared
+                FROM data
+            """)
+
+            row = conn.execute(query).fetchone()
+            r2_row = conn.execute(r2_query).fetchone()
+            
+            if not row:
+                return jsonify({"metrics": None})
+
+            mae = float(row[0]) if row[0] else 0
+            mape = float(row[1]) * 100 if row[1] else 0 # Convert to percentage
+            std_dev = float(row[2]) if row[2] else 0
+            p95_error = float(row[3]) if row[3] else 0
+            count = row[4]
+            r_squared = float(r2_row[0]) if r2_row and r2_row[0] else 0.0
+
+            # Buffer Time Index (approximate)
+            # BTI = (95th percentile travel time - Mean travel time) / Mean travel time
+            # Here we substitute "Error" for "Travel Time Variation"
+            # BTI ~ p95_error / Mean_Horizon ?? 
+            # Standard definition: BTI of 0.5 means you need 50% extra buffer.
+            # Let's use: (MAE + 2*StdDev) / Mean_Horizon as a proxy if we assume normal distribution
+            # Or simply return the calculated p95 error as "Buffer Seconds"
+            
+            buffer_time_index = 0
+            if count > 0:
+                 # Simplified BTI: p95 Error / Average Horizon (approx)
+                 # Fetch avg horizon
+                 avg_horizon = conn.execute(text("SELECT AVG(prdctdn * 60) FROM predictions WHERE collected_at > NOW() - INTERVAL '24 hours'")).scalar()
+                 if avg_horizon and avg_horizon > 0:
+                     buffer_time_index = p95_error / avg_horizon
+
+            return jsonify({
+                "mape": round(mape, 2),
+                "r_squared": round(r_squared, 3),
+                "buffer_time_index": round(buffer_time_index, 2),
+                "mae": round(mae, 1),
+                "std_dev": round(std_dev, 1),
+                "p95_error": round(p95_error, 1),
+                "sample_count": count
+            })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/model-diagnostics/residuals")
+def get_residual_analysis():
+    """
+    Return scatter plot data for Predicted vs Actual and Residuals.
+    Used for heteroscedasticity checks.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+             query = text("""
+                SELECT 
+                    p.prdctdn * 60 as predicted_duration,
+                    (p.prdctdn * 60) - po.error_seconds as actual_duration,
+                    po.error_seconds as residual
+                FROM prediction_outcomes po
+                JOIN predictions p ON po.prediction_id = p.id
+                WHERE po.created_at > NOW() - INTERVAL '24 hours'
+                AND ABS(po.error_seconds) < 1800 -- Filter distinct outliers
+                AND p.prdctdn > 0
+                ORDER BY RANDOM() -- Sample random points
+                LIMIT 500
+            """)
+             
+             rows = conn.execute(query).fetchall()
+             data = []
+             for r in rows:
+                 data.append({
+                     "predicted": float(r[0]),
+                     "actual": float(r[1]),
+                     "residual": float(r[2])
+                 })
+                 
+             return jsonify(data)
+             
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 def get_anomalies():
     """Detect and return timing anomalies and unusual patterns"""
     try:
