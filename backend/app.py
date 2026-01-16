@@ -1964,16 +1964,7 @@ def get_geo_heatmap():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/model-diagnostics/error-distribution")
-def get_model_diagnostics_error_distribution():
-    """Return histogram data for model error distribution (Bias Check)."""
-    try:
-        agg = get_aggregator()
-        if agg is None:
-            return jsonify({"error": "Data aggregator not available"}), 503
-        return jsonify(agg.get_error_distribution())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/viz/calibration")
 def get_calibration():
