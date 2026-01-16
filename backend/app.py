@@ -2095,9 +2095,11 @@ def get_scientific_metrics():
             if count > 0:
                  # Simplified BTI: p95 Error / Average Horizon (approx)
                  # Fetch avg horizon
-                 avg_horizon = conn.execute(text("SELECT AVG(prdctdn * 60) FROM predictions WHERE collected_at > NOW() - INTERVAL '24 hours'")).scalar()
-                 if avg_horizon and avg_horizon > 0:
-                     buffer_time_index = p95_error / avg_horizon
+                 avg_horizon_scalar = conn.execute(text("SELECT AVG(prdctdn * 60) FROM predictions WHERE collected_at > NOW() - INTERVAL '24 hours'")).scalar()
+                 if avg_horizon_scalar:
+                     avg_horizon = float(avg_horizon_scalar)
+                     if avg_horizon > 0:
+                        buffer_time_index = p95_error / avg_horizon
 
             return jsonify({
                 "mape": round(mape, 2),
