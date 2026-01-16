@@ -863,7 +863,7 @@ def get_ml_history():
     """Get full history of training runs and model metrics."""
     try:
         from sqlalchemy import create_engine, text
-        from datetime import datetime, timezone # Keep datetime and timezone for isoformat
+        from datetime import datetime, timezone
         
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
@@ -872,56 +872,75 @@ def get_ml_history():
         engine = create_engine(database_url, pool_pre_ping=True)
         
         with engine.connect() as conn:
-            # Fetch all runs
-            runs_query = text("""
-                SELECT 
-                    model_version,
-                    mae_seconds,
-                    rmse_seconds,
-                    samples_used,
-                    created_at,
-                    deployed,
-                    deployment_reason,
-                    improvement_pct,
-                    previous_mae_seconds,
-                    model_type,
-                    feature_importance,
-                    metrics_json
-                FROM ml_regression_runs 
-                ORDER BY created_at DESC
+            # Check available columns to handle schema differences dynamically
+            columns_query = text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'ml_regression_runs'
             """)
+            available_columns = [row[0] for row in conn.execute(columns_query).fetchall()]
+            
+            # Build query based on what we have
+            cols = ["version", "mae", "rmse", "samples_used", "trained_at", "deployed", "deployment_reason", "improvement_pct", "previous_mae"]
+            
+            # Optional columns
+            has_metrics = "metrics_json" in available_columns
+            has_features = "feature_importance" in available_columns
+            
+            if has_metrics: cols.append("metrics_json")
+            if has_features: cols.append("feature_importance")
+            
+            # Map for selection
+            select_clause = ", ".join(cols)
+            
+            runs_query = text(f"""
+                SELECT {select_clause}
+                FROM ml_regression_runs 
+                ORDER BY trained_at DESC
+            """)
+            
             try:
                 runs = conn.execute(runs_query).fetchall()
-            except Exception:
-                # Fallback if table doesn't exist yet
+            except Exception as e:
+                print(f"Query failed: {e}")
                 runs = []
             
             history = []
             for row in runs:
+                # Map row by index or name
+                # Since we built the query dynamically, we know the order
+                run_dict = {}
+                for idx, col in enumerate(cols):
+                    run_dict[col] = row[idx]
+                
+                # Normalize to frontend expected format
                 history.append({
-                    "version": row[0],
-                    "mae": float(row[1]) if row[1] else None,
-                    "rmse": float(row[2]) if row[2] else None,
-                    "mae_minutes": float(row[1])/60 if row[1] else None,
-                    "samples_used": row[3],
-                    "created_at": row[4].isoformat() if row[4] else None,
-                    "deployed": row[5],
-                    "deployment_reason": row[6],
-                    "improvement_pct": float(row[7]) if row[7] else None,
-                    "previous_mae": float(row[8]) if row[8] else None,
-                    "model_type": row[9],
-                    "metrics": row[11] if row[11] else {}
+                    "version": run_dict.get("version"),
+                    "mae": float(run_dict["mae"]) if run_dict.get("mae") else None,
+                    "rmse": float(run_dict["rmse"]) if run_dict.get("rmse") else None,
+                    "mae_minutes": float(run_dict["mae"])/60 if run_dict.get("mae") else None,
+                    "samples_used": run_dict.get("samples_used"),
+                    "created_at": run_dict["trained_at"].isoformat() if run_dict.get("trained_at") else None,
+                    "deployed": run_dict.get("deployed"),
+                    "deployment_reason": run_dict.get("deployment_reason"),
+                    "improvement_pct": float(run_dict["improvement_pct"]) if run_dict.get("improvement_pct") else None,
+                    "previous_mae": float(run_dict["previous_mae"]) if run_dict.get("previous_mae") else None,
+                    "model_type": "XGBRegressor",
+                    "metrics": run_dict["metrics_json"] if has_metrics and run_dict.get("metrics_json") else {},
+                    "feature_importance": run_dict["feature_importance"] if has_features and run_dict.get("feature_importance") else {}
                 })
             
             # Identify current active model (latest deployed)
             latest_model = next((r for r in history if r["deployed"]), None)
             if latest_model:
-                # Calculate improvement vs baseline (if stored in metrics)
                 metrics = latest_model.get("metrics", {})
                 baseline_mae = metrics.get("baseline_mae")
                 if baseline_mae and latest_model["mae"]:
-                    improvement_vs_baseline = ((baseline_mae - latest_model["mae"]) / baseline_mae) * 100
-                    latest_model["improvement_vs_baseline_pct"] = round(improvement_vs_baseline, 1)
+                    # Recalculate if not stored
+                    latest_model["improvement_vs_baseline_pct"] = round(((baseline_mae - latest_model["mae"]) / baseline_mae) * 100, 1)
+                elif latest_model.get("improvement_pct"): 
+                     # Fallback to stored improvement column if metrics missing
+                     latest_model["improvement_vs_baseline_pct"] = latest_model["improvement_pct"]
                 else:
                     latest_model["improvement_vs_baseline_pct"] = None
 
