@@ -68,15 +68,49 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     df['predicted_arrival'] = pd.to_datetime(df['predicted_arrival'], utc=True)
     df['actual_arrival'] = pd.to_datetime(df['actual_arrival'], utc=True)
     
-    # ====== TEMPORAL FEATURES (based on predicted arrival time) ======
+    # ====== TEMPORAL FEATURES (Cyclical) ======
     df['hour'] = df['predicted_arrival'].dt.hour
-    df['day_of_week'] = df['predicted_arrival'].dt.dayofweek  # 0=Mon, 6=Sun
+    df['day_of_week'] = df['predicted_arrival'].dt.dayofweek
+    df['month'] = df['predicted_arrival'].dt.month
+    
+    # Cyclical encoding for hour (0-23)
+    df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+    
+    # Cyclical encoding for day (0-6)
+    df['day_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+    df['day_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
+
+    # Cyclical encoding for month (1-12)
+    df['month_sin'] = np.sin(2 * np.pi * (df['month'] - 1) / 12)
+    df['month_cos'] = np.cos(2 * np.pi * (df['month'] - 1) / 12)
+    
     df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
     
     # Rush hour indicators
     df['is_morning_rush'] = df['hour'].between(7, 9).astype(int)
     df['is_evening_rush'] = df['hour'].between(16, 18).astype(int)
     df['is_rush_hour'] = (df['is_morning_rush'] | df['is_evening_rush']).astype(int)
+
+    # ====== SPECIAL EVENTS (Holidays) ======
+    import holidays
+    us_holidays = holidays.US(years=df['predicted_arrival'].dt.year.unique())
+    df['is_holiday'] = df['predicted_arrival'].dt.date.apply(lambda x: 1 if x in us_holidays else 0)
+    
+    # ====== CONSTRAINT FEATURES ======
+    # The API's own prediction is a strong constraint baseline
+    # We first ensure predicted_arrival is valid
+    current_time = pd.Timestamp.now(tz=timezone.utc)
+    # Calculate minutes until predicted arrival (from record creation)
+    # Note: 'created_at' in prediction_outcomes is when the prediction was MADE
+    if 'created_at' in df.columns:
+        df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
+        # Predicted duration in minutes (the API's estimate)
+        df['predicted_minutes'] = (df['predicted_arrival'] - df['created_at']).dt.total_seconds() / 60
+        # Clip to reasonable range (0 to 60 mins) to avoid outliers
+        df['predicted_minutes'] = df['predicted_minutes'].clip(0, 90)
+    else:
+        df['predicted_minutes'] = 0.0
     
     # ====== ROUTE FEATURES ======
     # Route frequency (number of observations - does not leak target)
@@ -132,11 +166,21 @@ def apply_historical_eta_features(df: pd.DataFrame, aggregates: Dict[str, dict])
 def get_regression_feature_columns() -> list:
     """Return list of feature columns for regression model."""
     return [
-        # Temporal
-        'hour', 'day_of_week', 'is_weekend', 'is_rush_hour',
+        # Temporal Cyclical
+        'hour_sin', 'hour_cos', 
+        'day_sin', 'day_cos',
+        'month_sin', 'month_cos',
+        
+        # Temporal Flags
+        'is_weekend', 'is_rush_hour', 'is_holiday',
         'is_morning_rush', 'is_evening_rush',
+        
         # Route
         'route_frequency', 'route_encoded',
+        
+        # Constraint (The API's own estimate)
+        'predicted_minutes',
+        
         # Historical ETA patterns (from training data only, no leakage)
         'route_avg_error', 'hr_route_error',
     ]
