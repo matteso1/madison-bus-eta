@@ -943,6 +943,92 @@ def get_ml_training_history():
         return jsonify({"error": str(e), "runs": []}), 500
 
 
+@app.route("/api/route-accuracy")
+def get_route_accuracy():
+    """Get prediction accuracy breakdown by route."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            route_data = conn.execute(text("""
+                SELECT 
+                    rt,
+                    COUNT(*) as prediction_count,
+                    AVG(ABS(error_seconds)) as avg_error,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(error_seconds)) as median_error,
+                    AVG(CASE WHEN ABS(error_seconds) <= 60 THEN 1 ELSE 0 END) * 100 as within_1min,
+                    AVG(CASE WHEN ABS(error_seconds) <= 120 THEN 1 ELSE 0 END) * 100 as within_2min
+                FROM prediction_outcomes
+                GROUP BY rt
+                ORDER BY COUNT(*) DESC
+            """)).fetchall()
+            
+            routes = [{
+                "route": row[0],
+                "predictions": row[1],
+                "avgError": round(row[2], 1) if row[2] else 0,
+                "medianError": round(row[3], 1) if row[3] else 0,
+                "within1min": round(row[4], 1) if row[4] else 0,
+                "within2min": round(row[5], 1) if row[5] else 0
+            } for row in route_data]
+        
+        return jsonify({
+            "routes": routes,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/hourly-accuracy")
+def get_hourly_accuracy():
+    """Get prediction accuracy breakdown by hour of day."""
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            hourly_data = conn.execute(text("""
+                SELECT 
+                    EXTRACT(HOUR FROM actual_arrival) as hour,
+                    COUNT(*) as prediction_count,
+                    AVG(ABS(error_seconds)) as avg_error,
+                    AVG(CASE WHEN ABS(error_seconds) <= 60 THEN 1 ELSE 0 END) * 100 as within_1min
+                FROM prediction_outcomes
+                GROUP BY EXTRACT(HOUR FROM actual_arrival)
+                ORDER BY hour
+            """)).fetchall()
+            
+            hours = [{
+                "hour": int(row[0]),
+                "predictions": row[1],
+                "avgError": round(row[2], 1) if row[2] else 0,
+                "within1min": round(row[3], 1) if row[3] else 0
+            } for row in hourly_data]
+        
+        return jsonify({
+            "hours": hours,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/predict-arrival", methods=["POST"])
 def predict_arrival():
     """

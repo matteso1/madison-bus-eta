@@ -74,6 +74,17 @@ interface MLTrainingData {
     total_runs: number;
     model_type: string;
 }
+
+interface RouteAccuracyData {
+    routes: Array<{
+        route: string;
+        predictions: number;
+        avgError: number;
+        medianError: number;
+        within1min: number;
+        within2min: number;
+    }>;
+}
 // Color palette
 const COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6', '#f97316', '#84cc16'];
 
@@ -94,17 +105,19 @@ export default function AnalyticsPage() {
     const [health, setHealth] = useState<SystemHealth | null>(null);
     const [charts, setCharts] = useState<ChartData | null>(null);
     const [mlData, setMlData] = useState<MLTrainingData | null>(null);
+    const [routeAccuracy, setRouteAccuracy] = useState<RouteAccuracyData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [statsRes, healthRes, chartsRes, mlRes] = await Promise.all([
+                const [statsRes, healthRes, chartsRes, mlRes, routeRes] = await Promise.all([
                     axios.get(`${BACKEND_URL}/api/pipeline-stats`),
                     axios.get(`${BACKEND_URL}/api/system-health`),
                     axios.get(`${BACKEND_URL}/api/analytics-charts`),
-                    axios.get(`${BACKEND_URL}/api/ml-training-history`).catch(() => ({ data: null }))
+                    axios.get(`${BACKEND_URL}/api/ml-training-history`).catch(() => ({ data: null })),
+                    axios.get(`${BACKEND_URL}/api/route-accuracy`).catch(() => ({ data: null }))
                 ]);
                 if (statsRes.data.db_connected) {
                     setStats(statsRes.data);
@@ -114,6 +127,7 @@ export default function AnalyticsPage() {
                 setHealth(healthRes.data);
                 setCharts(chartsRes.data);
                 if (mlRes.data) setMlData(mlRes.data);
+                if (routeRes.data) setRouteAccuracy(routeRes.data);
             } catch {
                 setError('Failed to fetch data');
             } finally {
@@ -388,7 +402,7 @@ export default function AnalyticsPage() {
                             <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
                                 <TrendingUp className="w-4 h-4 text-purple-400" />
                                 MAE History (seconds)
-                                <span className="text-xs text-zinc-500 ml-auto">Last {mlData?.runs?.length || 0} runs</span>
+                                <span className="text-xs text-zinc-500 ml-auto">All {mlData?.runs?.length || 0} runs</span>
                             </h4>
                             <div className="h-48">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -454,8 +468,17 @@ export default function AnalyticsPage() {
                                             label={{ value: 'RMSE', angle: -90, position: 'left', fill: '#666', fontSize: 10 }}
                                         />
                                         <Tooltip
-                                            contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', borderRadius: '8px' }}
-                                            formatter={(value: number) => `${value.toFixed(1)}s`}
+                                            contentStyle={{ backgroundColor: '#374151', border: '1px solid #6b7280', borderRadius: '8px', padding: '10px' }}
+                                            itemStyle={{ color: '#f3f4f6' }}
+                                            labelStyle={{ color: '#f3f4f6', fontWeight: 'bold', marginBottom: '4px' }}
+                                            formatter={(value: number, name: string) => [
+                                                `${value.toFixed(1)}s`,
+                                                name === 'mae' ? 'MAE' : 'RMSE'
+                                            ]}
+                                            labelFormatter={(label) => {
+                                                const item = (mlData?.runs || []).find(r => r.mae === label);
+                                                return item ? `${formatVersion(item.version)} ${item.deployed ? '✅' : '❌'}` : '';
+                                            }}
                                         />
                                         <Scatter
                                             data={(mlData?.runs || []).map(run => ({
@@ -500,7 +523,7 @@ export default function AnalyticsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(mlData?.runs || []).slice(0, 5).map((run, idx) => (
+                                    {(mlData?.runs || []).map((run, idx) => (
                                         <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
                                             <td className="py-2 px-2 font-mono text-purple-400">{formatVersion(run.version)}</td>
                                             <td className="py-2 px-2 text-right text-cyan-400">{run.mae?.toFixed(0)}s</td>
@@ -531,6 +554,99 @@ export default function AnalyticsPage() {
                         </div>
                     </div>
                 </div>
+
+                {/* Route Accuracy Section */}
+                {routeAccuracy && routeAccuracy.routes?.length > 0 && (
+                    <div className="mt-8 bg-gradient-to-br from-cyan-900/20 to-teal-900/20 backdrop-blur-xl border border-cyan-500/20 rounded-3xl p-6">
+                        <h3 className="text-xl font-bold mb-6 flex items-center gap-3">
+                            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-500 flex items-center justify-center">
+                                <Bus className="w-5 h-5 text-white" />
+                            </span>
+                            Route Performance Analysis
+                            <span className="ml-auto px-3 py-1 rounded-full text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                                {routeAccuracy.routes.length} routes tracked
+                            </span>
+                        </h3>
+
+                        <div className="grid lg:grid-cols-2 gap-6">
+                            {/* Route Accuracy Bar Chart */}
+                            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                    <BarChart3 className="w-4 h-4 text-cyan-400" />
+                                    Avg Error by Route (seconds)
+                                    <span className="text-xs text-zinc-500 ml-auto">Top 12 by volume</span>
+                                </h4>
+                                <div className="h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={routeAccuracy.routes.slice(0, 12)} layout="vertical">
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                                            <XAxis type="number" stroke="#666" tick={{ fill: '#888', fontSize: 10 }} />
+                                            <YAxis dataKey="route" type="category" stroke="#666" tick={{ fill: '#888', fontSize: 10 }} width={35} />
+                                            <Tooltip
+                                                contentStyle={{ backgroundColor: '#374151', border: '1px solid #6b7280', borderRadius: '8px' }}
+                                                labelStyle={{ color: '#f3f4f6', fontWeight: 'bold' }}
+                                                formatter={(value: number, name: string) => [
+                                                    name === 'avgError' ? `${value}s avg` : `${value}%`,
+                                                    name === 'avgError' ? 'Avg Error' : 'Within 1 min'
+                                                ]}
+                                            />
+                                            <Bar dataKey="avgError" radius={[0, 4, 4, 0]}>
+                                                {routeAccuracy.routes.slice(0, 12).map((route, index) => (
+                                                    <Cell
+                                                        key={`cell-${index}`}
+                                                        fill={route.avgError < 100 ? '#10b981' : route.avgError < 200 ? '#f59e0b' : '#ef4444'}
+                                                    />
+                                                ))}
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div className="flex items-center justify-center gap-4 mt-2 text-xs">
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> &lt;100s (Good)</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-500"></span> 100-200s (OK)</span>
+                                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> &gt;200s (Needs Work)</span>
+                                </div>
+                            </div>
+
+                            {/* Route Performance Table */}
+                            <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                                <h4 className="text-sm font-medium text-zinc-300 mb-3 flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-teal-400" />
+                                    Route Performance Details
+                                </h4>
+                                <div className="overflow-y-auto max-h-64">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-zinc-400 border-b border-white/10">
+                                                <th className="text-left py-2 px-2">Route</th>
+                                                <th className="text-right py-2 px-2">Predictions</th>
+                                                <th className="text-right py-2 px-2">Avg Error</th>
+                                                <th className="text-right py-2 px-2">≤1 min</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {routeAccuracy.routes.slice(0, 15).map((route, idx) => (
+                                                <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
+                                                    <td className="py-2 px-2 font-bold text-cyan-400">{route.route}</td>
+                                                    <td className="py-2 px-2 text-right text-zinc-300">{route.predictions.toLocaleString()}</td>
+                                                    <td className={`py-2 px-2 text-right ${route.avgError < 100 ? 'text-emerald-400' : route.avgError < 200 ? 'text-amber-400' : 'text-red-400'}`}>
+                                                        {route.avgError}s
+                                                    </td>
+                                                    <td className={`py-2 px-2 text-right ${route.within1min > 60 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                        {route.within1min.toFixed(1)}%
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="mt-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-400">
+                                    ⚠️ Routes with &gt;200s avg error may need special attention or additional training data
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </main>
 
             <footer className="relative z-10 border-t border-white/5 mt-12">
