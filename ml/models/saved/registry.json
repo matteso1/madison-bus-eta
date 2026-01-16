@@ -1,0 +1,403 @@
+{
+  "models": [
+    {
+      "version": "20260102_205417",
+      "filename": "model_20260102_205417.pkl",
+      "created_at": "2026-01-02T20:54:17.819545+00:00",
+      "metrics": {
+        "accuracy": 0.9339901477832512,
+        "precision": 0.25585754451733833,
+        "recall": 0.9646643109540636,
+        "f1": 0.40444444444444444,
+        "train_samples": 48718,
+        "test_samples": 12180
+      },
+      "feature_importance": {
+        "hr_route_delay_rate": "0.35321257",
+        "distance_from_center": "0.14775944",
+        "route_avg_delay_rate": "0.12749949",
+        "route_frequency": "0.08162733",
+        "lat_offset": "0.07246427",
+        "lon_offset": "0.07215415",
+        "hdg_sin": "0.046279717",
+        "hdg_cos": "0.044596292",
+        "day_of_week": "0.020982707",
+        "hour": "0.01729879",
+        "is_rush_hour": "0.016125236",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "first_model"
+    },
+    {
+      "version": "20260102_210437",
+      "filename": "model_20260102_210437.pkl",
+      "created_at": "2026-01-02T21:04:37.926641+00:00",
+      "metrics": {
+        "accuracy": 0.9377176642099295,
+        "precision": 0.2685274302213667,
+        "recall": 0.96875,
+        "f1": 0.42049736247174074,
+        "train_samples": 49387,
+        "test_samples": 12347
+      },
+      "feature_importance": {
+        "hr_route_delay_rate": "0.36206472",
+        "route_avg_delay_rate": "0.15469621",
+        "distance_from_center": "0.14586394",
+        "route_frequency": "0.09154887",
+        "lat_offset": "0.057090785",
+        "lon_offset": "0.04952998",
+        "hdg_cos": "0.03659774",
+        "hdg_sin": "0.036430683",
+        "day_of_week": "0.029171629",
+        "hour": "0.020510321",
+        "is_rush_hour": "0.016495178",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "improved_4.0pct"
+    },
+    {
+      "version": "20260105_021448",
+      "filename": "model_20260105_021448.pkl",
+      "created_at": "2026-01-05T02:14:48.264180+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 135,
+        "test_samples": 34
+      },
+      "feature_importance": {
+        "hr_route_error": "0.7831299",
+        "route_avg_error": "0.211426",
+        "route_frequency": "0.004575675",
+        "route_encoded": "0.0008667226",
+        "hour": "1.7147382e-06",
+        "day_of_week": "0.0",
+        "is_weekend": "0.0",
+        "is_rush_hour": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260105_092022",
+      "filename": "model_20260105_092022.pkl",
+      "created_at": "2026-01-05T09:20:22.484856+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 584,
+        "test_samples": 147
+      },
+      "feature_importance": {
+        "hr_route_error": "0.98682404",
+        "hour": "0.0048401114",
+        "route_encoded": "0.0033936598",
+        "route_avg_error": "0.0033445533",
+        "route_frequency": "0.0015976677",
+        "day_of_week": "0.0",
+        "is_weekend": "0.0",
+        "is_rush_hour": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260106_091614",
+      "filename": "model_20260106_091614.pkl",
+      "created_at": "2026-01-06T09:16:14.192485+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 6107,
+        "test_samples": 1527
+      },
+      "feature_importance": {
+        "hr_route_error": "0.8677966",
+        "route_avg_error": "0.03825926",
+        "day_of_week": "0.036506597",
+        "route_frequency": "0.02367341",
+        "hour": "0.019325826",
+        "route_encoded": "0.013165876",
+        "is_rush_hour": "0.0012724095",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260107_091803",
+      "filename": "model_20260107_091803.pkl",
+      "created_at": "2026-01-07T09:18:03.438069+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 11877,
+        "test_samples": 2970
+      },
+      "feature_importance": {
+        "hr_route_error": "0.64203435",
+        "route_avg_error": "0.07306873",
+        "day_of_week": "0.062444054",
+        "hour": "0.061377563",
+        "is_rush_hour": "0.05809856",
+        "route_frequency": "0.05196802",
+        "route_encoded": "0.05100869",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260108_091740",
+      "filename": "model_20260108_091740.pkl",
+      "created_at": "2026-01-08T09:17:40.185617+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 17714,
+        "test_samples": 4429
+      },
+      "feature_importance": {
+        "hr_route_error": "0.5218659",
+        "is_rush_hour": "0.15405963",
+        "route_encoded": "0.111903235",
+        "route_avg_error": "0.058630064",
+        "hour": "0.058050644",
+        "day_of_week": "0.05074015",
+        "route_frequency": "0.04475037",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260109_091656",
+      "filename": "model_20260109_091656.pkl",
+      "created_at": "2026-01-09T09:16:56.503787+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 23416,
+        "test_samples": 5855
+      },
+      "feature_importance": {
+        "hr_route_error": "0.6444079",
+        "hour": "0.07970879",
+        "is_rush_hour": "0.069929324",
+        "route_encoded": "0.06068949",
+        "day_of_week": "0.05352968",
+        "route_frequency": "0.049700633",
+        "route_avg_error": "0.04203415",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260110_091005",
+      "filename": "model_20260110_091005.pkl",
+      "created_at": "2026-01-10T09:10:05.976936+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 28946,
+        "test_samples": 7237
+      },
+      "feature_importance": {
+        "hr_route_error": "0.64599013",
+        "is_rush_hour": "0.09209187",
+        "route_frequency": "0.062250745",
+        "hour": "0.05849356",
+        "route_avg_error": "0.05187189",
+        "day_of_week": "0.04989394",
+        "route_encoded": "0.03940783",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260111_091054",
+      "filename": "model_20260111_091054.pkl",
+      "created_at": "2026-01-11T09:10:54.278549+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 32087,
+        "test_samples": 8022
+      },
+      "feature_importance": {
+        "hr_route_error": "0.5720818",
+        "is_rush_hour": "0.102786206",
+        "hour": "0.070728086",
+        "route_avg_error": "0.07001782",
+        "route_encoded": "0.06476791",
+        "route_frequency": "0.062429026",
+        "day_of_week": "0.057189174",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260112_092108",
+      "filename": "model_20260112_092108.pkl",
+      "created_at": "2026-01-12T09:21:08.291502+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 33988,
+        "test_samples": 8498
+      },
+      "feature_importance": {
+        "hr_route_error": "0.5545303",
+        "is_rush_hour": "0.11406395",
+        "route_frequency": "0.09363309",
+        "route_avg_error": "0.0691548",
+        "route_encoded": "0.06718354",
+        "hour": "0.063055016",
+        "day_of_week": "0.038379263",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260113_091744",
+      "filename": "model_20260113_091744.pkl",
+      "created_at": "2026-01-13T09:17:44.366119+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 34174,
+        "test_samples": 8544
+      },
+      "feature_importance": {
+        "hr_route_error": "0.55591303",
+        "is_rush_hour": "0.11877263",
+        "route_frequency": "0.071100175",
+        "hour": "0.06842901",
+        "route_encoded": "0.06631369",
+        "route_avg_error": "0.06628166",
+        "day_of_week": "0.05318978",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260114_091835",
+      "filename": "model_20260114_091835.pkl",
+      "created_at": "2026-01-14T09:18:35.272188+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 34294,
+        "test_samples": 8574
+      },
+      "feature_importance": {
+        "hr_route_error": "0.546886",
+        "is_rush_hour": "0.10017381",
+        "route_encoded": "0.098908305",
+        "route_frequency": "0.07803807",
+        "route_avg_error": "0.06604569",
+        "hour": "0.06462951",
+        "day_of_week": "0.045318615",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260115_091715",
+      "filename": "model_20260115_091715.pkl",
+      "created_at": "2026-01-15T09:17:15.822163+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 34348,
+        "test_samples": 8587
+      },
+      "feature_importance": {
+        "hr_route_error": "0.5672455",
+        "route_avg_error": "0.08388242",
+        "route_frequency": "0.08265905",
+        "route_encoded": "0.07619089",
+        "hour": "0.06809161",
+        "is_rush_hour": "0.06595605",
+        "day_of_week": "0.055974517",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260116_091603",
+      "filename": "model_20260116_091603.pkl",
+      "created_at": "2026-01-16T09:16:03.386023+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 34573,
+        "test_samples": 8644
+      },
+      "feature_importance": {
+        "hr_route_error": "0.5942304",
+        "route_avg_error": "0.087896466",
+        "is_rush_hour": "0.08506816",
+        "route_frequency": "0.07299965",
+        "hour": "0.059429083",
+        "route_encoded": "0.054825995",
+        "day_of_week": "0.045550257",
+        "is_weekend": "0.0",
+        "is_morning_rush": "0.0",
+        "is_evening_rush": "0.0"
+      },
+      "notes": "upgrade_from_classification"
+    }
+  ],
+  "latest": "20260116_091603"
+}

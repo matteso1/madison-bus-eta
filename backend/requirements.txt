@@ -27,3 +27,6 @@ gunicorn==21.2.0
 xgboost==1.7.6
 lightgbm==4.1.0
 folium==0.15.1
+requests==2.32.5
+gtfs-realtime-bindings==1.0.0
+protobuf==4.25.0
