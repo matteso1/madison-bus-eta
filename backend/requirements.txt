@@ -30,3 +30,4 @@ folium==0.15.1
 requests==2.32.5
 gtfs-realtime-bindings==1.0.0
 protobuf==4.25.0
+holidays

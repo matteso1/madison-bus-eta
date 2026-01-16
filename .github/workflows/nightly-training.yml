@@ -26,7 +26,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv
+          pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv holidays
       
       - name: Run ML Training (Regression)
         env:
