@@ -1,0 +1,24 @@
+================================================================================
+CRITICAL ML PIPELINE ANALYSIS
+Traceback (most recent call last):
+================================================================================
+Timestamp: 2026-01-16 15:26:55.793779
+
+================================================================================
+1. IS 2.2 MIN AVG ERROR ACCEPTABLE FOR BUS ETA?
+================================================================================
+
+Total predictions: 76,718
+Signed avg error: 121.8s  <-- IMPORTANT: Is model biased early/late?
+Absolute avg error: 132.1s (2.20 min)
+Std deviation: 312.0s  <-- HIGH variance is a problem
+Median signed: 49.0s
+IQR: 23.0s to 76.0s
+Range: -1335s to 1858s
+
+  File "C:\Users\nilsm\Desktop\VSCODE PROJECTS\madison-bus-eta\analysis\critical_analysis.py", line 49, in <module>
+    print("\u26a0\ufe0f  SYSTEMATIC BIAS DETECTED: Model is consistently predicting", "EARLY" if stats[1] > 0 else "LATE")
+  File "C:\Users\nilsm\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-1: character maps to <undefined>

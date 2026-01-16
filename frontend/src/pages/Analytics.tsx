@@ -594,7 +594,7 @@ export default function AnalyticsPage() {
                                                 {routeAccuracy.routes.slice(0, 12).map((route, index) => (
                                                     <Cell
                                                         key={`cell-${index}`}
-                                                        fill={route.avgError < 100 ? '#10b981' : route.avgError < 200 ? '#f59e0b' : '#ef4444'}
+                                                        fill={Number(route.avgError) < 100 ? '#10b981' : Number(route.avgError) < 200 ? '#f59e0b' : '#ef4444'}
                                                     />
                                                 ))}
                                             </Bar>
@@ -629,11 +629,11 @@ export default function AnalyticsPage() {
                                                 <tr key={idx} className="border-b border-white/5 hover:bg-white/5">
                                                     <td className="py-2 px-2 font-bold text-cyan-400">{route.route}</td>
                                                     <td className="py-2 px-2 text-right text-zinc-300">{route.predictions.toLocaleString()}</td>
-                                                    <td className={`py-2 px-2 text-right ${route.avgError < 100 ? 'text-emerald-400' : route.avgError < 200 ? 'text-amber-400' : 'text-red-400'}`}>
+                                                    <td className={`py-2 px-2 text-right ${Number(route.avgError) < 100 ? 'text-emerald-400' : Number(route.avgError) < 200 ? 'text-amber-400' : 'text-red-400'}`}>
                                                         {route.avgError}s
                                                     </td>
-                                                    <td className={`py-2 px-2 text-right ${(route.within1min || 0) > 60 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                                        {(route.within1min || 0).toFixed(1)}%
+                                                    <td className={`py-2 px-2 text-right ${Number(route.within1min || 0) > 60 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                        {Number(route.within1min || 0).toFixed(1)}%
                                                     </td>
                                                 </tr>
                                             ))}
