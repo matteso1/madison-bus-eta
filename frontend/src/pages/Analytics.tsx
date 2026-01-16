@@ -632,8 +632,8 @@ export default function AnalyticsPage() {
                                                     <td className={`py-2 px-2 text-right ${route.avgError < 100 ? 'text-emerald-400' : route.avgError < 200 ? 'text-amber-400' : 'text-red-400'}`}>
                                                         {route.avgError}s
                                                     </td>
-                                                    <td className={`py-2 px-2 text-right ${route.within1min > 60 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                                        {route.within1min.toFixed(1)}%
+                                                    <td className={`py-2 px-2 text-right ${(route.within1min || 0) > 60 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                        {(route.within1min || 0).toFixed(1)}%
                                                     </td>
                                                 </tr>
                                             ))}
