@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-    Activity, ArrowUpRight, ArrowDownRight, CheckCircle, AlertTriangle,
-    Database, Server, RefreshCcw, TrendingUp, BarChart2, ScatterChart as ScatterIcon
+    Activity, Database, RefreshCcw, ScatterChart as ScatterIcon, BarChart2
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    ScatterChart, Scatter, Cell, ReferenceLine, BarChart, Bar, Legend
+    XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    ScatterChart, Scatter, ReferenceLine
 } from 'recharts';
 
 const BACKEND_URL = 'https://madison-bus-eta-production.up.railway.app';
@@ -82,6 +81,15 @@ export default function AnalyticsPage() {
         const interval = setInterval(fetchData, 30000); // 30s refresh
         return () => clearInterval(interval);
     }, []);
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#0f1117] flex items-center justify-center text-zinc-500 font-mono text-sm">
+                <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+                INITIALIZING SCIENTIFIC DASHBOARD...
+            </div>
+        );
+    }
 
     // Theme: "Enterprise Dark" - #0f1117 background, thin borders
     return (
