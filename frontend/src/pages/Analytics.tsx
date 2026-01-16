@@ -60,10 +60,10 @@ export default function AnalyticsPage() {
                 const rows = routeRes.data.routes.map((r: any) => ({
                     route: r.route,
                     predictions: r.predictions,
-                    avgError: r.avgError,
-                    mape: (r.avgError / 600) * 100, // Approximate MAPE if we lack route-level horizon
-                    bti: 0.45, // Placeholder if backend doesn't provide route-level BTI yet
-                    within1min: r.within1min
+                    avgError: Number(r.avgError || 0), // Defensive cast
+                    mape: (Number(r.avgError || 0) / 600) * 100,
+                    bti: 0.45,
+                    within1min: Number(r.within1min || 0)
                 }));
                 setRouteStats(rows);
             }
