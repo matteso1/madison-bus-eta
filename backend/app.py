@@ -2402,6 +2402,326 @@ def get_residual_analysis():
              
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-diagnostics/error-distribution")
+def get_error_distribution():
+    """
+    Return histogram bins for error distribution.
+    ML Engineers use this to check if errors are normally distributed.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            # Get error distribution with bins
+            query = text("""
+                WITH bins AS (
+                    SELECT 
+                        CASE 
+                            WHEN error_seconds < -300 THEN '-5+ min early'
+                            WHEN error_seconds < -120 THEN '-2 to -5 min'
+                            WHEN error_seconds < -60 THEN '-1 to -2 min'
+                            WHEN error_seconds < 0 THEN '0 to -1 min'
+                            WHEN error_seconds < 60 THEN '0 to 1 min'
+                            WHEN error_seconds < 120 THEN '1 to 2 min'
+                            WHEN error_seconds < 300 THEN '2 to 5 min'
+                            ELSE '5+ min late'
+                        END as bin,
+                        CASE 
+                            WHEN error_seconds < -300 THEN 0
+                            WHEN error_seconds < -120 THEN 1
+                            WHEN error_seconds < -60 THEN 2
+                            WHEN error_seconds < 0 THEN 3
+                            WHEN error_seconds < 60 THEN 4
+                            WHEN error_seconds < 120 THEN 5
+                            WHEN error_seconds < 300 THEN 6
+                            ELSE 7
+                        END as bin_order,
+                        error_seconds
+                    FROM prediction_outcomes
+                    WHERE created_at > NOW() - INTERVAL '7 days'
+                )
+                SELECT bin, bin_order, COUNT(*) as count
+                FROM bins
+                GROUP BY bin, bin_order
+                ORDER BY bin_order
+            """)
+            
+            rows = conn.execute(query).fetchall()
+            
+            # Also get statistics
+            stats_query = text("""
+                SELECT 
+                    AVG(error_seconds) as mean,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY error_seconds) as median,
+                    STDDEV(error_seconds) as std_dev,
+                    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY error_seconds) as q25,
+                    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY error_seconds) as q75,
+                    COUNT(*) as total
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+            """)
+            stats = conn.execute(stats_query).fetchone()
+            
+            return jsonify({
+                "bins": [{"bin": r[0], "count": r[2]} for r in rows],
+                "statistics": {
+                    "mean": round(float(stats[0]), 1) if stats[0] else 0,
+                    "median": round(float(stats[1]), 1) if stats[1] else 0,
+                    "std_dev": round(float(stats[2]), 1) if stats[2] else 0,
+                    "q25": round(float(stats[3]), 1) if stats[3] else 0,
+                    "q75": round(float(stats[4]), 1) if stats[4] else 0,
+                    "total": stats[5]
+                }
+            })
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-diagnostics/temporal-stability")
+def get_temporal_stability():
+    """
+    Return model performance metrics over time (daily).
+    Used to detect model degradation or drift.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            query = text("""
+                SELECT 
+                    DATE(created_at) as date,
+                    AVG(ABS(error_seconds)) as mae,
+                    STDDEV(error_seconds) as std_dev,
+                    AVG(CASE WHEN error_seconds > 0 THEN 1 ELSE 0 END) * 100 as late_pct,
+                    AVG(CASE WHEN ABS(error_seconds) < 120 THEN 1 ELSE 0 END) * 100 as within_2min_pct,
+                    COUNT(*) as predictions
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '14 days'
+                GROUP BY DATE(created_at)
+                ORDER BY DATE(created_at)
+            """)
+            
+            rows = conn.execute(query).fetchall()
+            
+            data = []
+            for r in rows:
+                data.append({
+                    "date": r[0].isoformat() if r[0] else None,
+                    "mae": round(float(r[1]), 1) if r[1] else 0,
+                    "std_dev": round(float(r[2]), 1) if r[2] else 0,
+                    "late_pct": round(float(r[3]), 1) if r[3] else 0,
+                    "within_2min_pct": round(float(r[4]), 1) if r[4] else 0,
+                    "predictions": r[5]
+                })
+            
+            # Detect drift: is latest MAE significantly worse than average?
+            if len(data) >= 3:
+                recent_mae = data[-1]["mae"]
+                avg_mae = sum(d["mae"] for d in data[:-1]) / len(data[:-1])
+                drift_detected = recent_mae > avg_mae * 1.2  # 20% worse
+            else:
+                drift_detected = False
+            
+            return jsonify({
+                "daily_metrics": data,
+                "drift_detected": drift_detected,
+                "summary": f"Performance {'stable' if not drift_detected else 'degraded'}"
+            })
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-diagnostics/route-heatmap")
+def get_route_time_heatmap():
+    """
+    Return error by route and hour - heatmap data.
+    Shows which route+time combinations are problematic.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            query = text("""
+                SELECT 
+                    rt,
+                    EXTRACT(HOUR FROM created_at) as hour,
+                    AVG(ABS(error_seconds)) as mae,
+                    COUNT(*) as count
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                AND rt IS NOT NULL
+                GROUP BY rt, EXTRACT(HOUR FROM created_at)
+                HAVING COUNT(*) >= 5
+                ORDER BY rt, hour
+            """)
+            
+            rows = conn.execute(query).fetchall()
+            
+            # Build heatmap data
+            routes = sorted(list(set(r[0] for r in rows)))
+            hours = list(range(5, 24))  # 5 AM to 11 PM
+            
+            # Create matrix
+            matrix = []
+            for route in routes[:15]:  # Top 15 routes
+                row_data = {"route": route}
+                route_rows = [r for r in rows if r[0] == route]
+                
+                for hour in hours:
+                    hour_data = next((r for r in route_rows if int(r[1]) == hour), None)
+                    if hour_data:
+                        row_data[f"h{hour}"] = round(float(hour_data[2]), 0)
+                    else:
+                        row_data[f"h{hour}"] = None
+                
+                matrix.append(row_data)
+            
+            return jsonify({
+                "heatmap": matrix,
+                "hours": hours,
+                "routes": routes[:15]
+            })
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-status")
+def get_model_status():
+    """
+    Return comprehensive model status for ML monitoring.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        from pathlib import Path
+        import json
+        
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        # Get latest training run
+        with engine.connect() as conn:
+            latest_run = conn.execute(text("""
+                SELECT version, trained_at, mae, improvement_vs_baseline_pct, samples_used
+                FROM ml_regression_runs
+                ORDER BY trained_at DESC
+                LIMIT 1
+            """)).fetchone()
+            
+            # Get data freshness
+            latest_outcome = conn.execute(text("""
+                SELECT MAX(created_at) FROM prediction_outcomes
+            """)).scalar()
+            
+            # Get prediction count today
+            today_count = conn.execute(text("""
+                SELECT COUNT(*) FROM prediction_outcomes
+                WHERE created_at > DATE_TRUNC('day', NOW())
+            """)).scalar()
+        
+        now = datetime.now(timezone.utc)
+        
+        # Model staleness
+        model_age_days = 0
+        if latest_run and latest_run[1]:
+            model_age_days = (now - latest_run[1].replace(tzinfo=timezone.utc)).days
+        
+        # Data freshness
+        data_freshness_min = 0
+        if latest_outcome:
+            data_freshness_min = int((now - latest_outcome.replace(tzinfo=timezone.utc)).total_seconds() / 60)
+        
+        # Get model registry info
+        ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+        registry_file = ml_path / 'registry.json'
+        model_count = 0
+        latest_version = None
+        
+        if registry_file.exists():
+            with open(registry_file) as f:
+                registry = json.load(f)
+                model_count = len(registry.get('models', []))
+                latest_version = registry.get('latest', '')[:8]
+        
+        return jsonify({
+            "model_version": latest_version,
+            "trained_at": latest_run[1].isoformat() if latest_run and latest_run[1] else None,
+            "model_age_days": model_age_days,
+            "staleness_status": "fresh" if model_age_days < 3 else "needs_retraining",
+            "current_mae": round(float(latest_run[2]), 1) if latest_run and latest_run[2] else None,
+            "improvement_pct": round(float(latest_run[3]), 1) if latest_run and latest_run[3] else 0,
+            "training_samples": latest_run[4] if latest_run else 0,
+            "data_freshness_minutes": data_freshness_min,
+            "predictions_today": today_count,
+            "total_models_trained": model_count,
+            "health": "healthy" if model_age_days < 7 and data_freshness_min < 60 else "degraded"
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/model-diagnostics/coverage")
+def get_model_coverage():
+    """
+    Return prediction coverage metrics.
+    What % of predictions are within X minutes of actual?
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        with engine.connect() as conn:
+            query = text("""
+                SELECT 
+                    AVG(CASE WHEN ABS(error_seconds) <= 30 THEN 1 ELSE 0 END) * 100 as within_30s,
+                    AVG(CASE WHEN ABS(error_seconds) <= 60 THEN 1 ELSE 0 END) * 100 as within_1min,
+                    AVG(CASE WHEN ABS(error_seconds) <= 120 THEN 1 ELSE 0 END) * 100 as within_2min,
+                    AVG(CASE WHEN ABS(error_seconds) <= 300 THEN 1 ELSE 0 END) * 100 as within_5min,
+                    COUNT(*) as total
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+            """)
+            
+            row = conn.execute(query).fetchone()
+            
+            return jsonify({
+                "coverage": [
+                    {"threshold": "30s", "percentage": round(float(row[0]), 1) if row[0] else 0},
+                    {"threshold": "1min", "percentage": round(float(row[1]), 1) if row[1] else 0},
+                    {"threshold": "2min", "percentage": round(float(row[2]), 1) if row[2] else 0},
+                    {"threshold": "5min", "percentage": round(float(row[3]), 1) if row[3] else 0}
+                ],
+                "total_predictions": row[4] if row else 0,
+                "target_coverage": 80,  # Goal: 80% within 2 min
+                "meets_target": (row[2] or 0) >= 80
+            })
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 def get_anomalies():
     """Detect and return timing anomalies and unusual patterns"""
     try:
