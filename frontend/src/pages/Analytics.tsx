@@ -228,7 +228,7 @@ export default function AnalyticsPage() {
                                 <XAxis type="number" stroke="#666" tickFormatter={v => `${v}s`} />
                                 <YAxis dataKey="name" type="category" stroke="#666" width={100} />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333' }}
+                                    contentStyle={{ backgroundColor: '#2d2d3d', border: '1px solid #555', color: '#fff' }}
                                     formatter={(value: number) => [`${value.toFixed(1)}s`, 'MAE']}
                                 />
                                 <Bar dataKey="mae" radius={[0, 4, 4, 0]}>
@@ -252,7 +252,7 @@ export default function AnalyticsPage() {
                                 <XAxis dataKey="version" stroke="#666" fontSize={10} />
                                 <YAxis stroke="#666" tickFormatter={v => `${v}s`} />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333' }}
+                                    contentStyle={{ backgroundColor: '#2d2d3d', border: '1px solid #555', color: '#fff' }}
                                     formatter={(value: number) => [`${value?.toFixed(1)}s`, 'MAE']}
                                 />
                                 <Line type="monotone" dataKey="mae" stroke="#818cf8" strokeWidth={2} dot={{ fill: '#818cf8' }} />
@@ -303,7 +303,7 @@ export default function AnalyticsPage() {
                                 <XAxis type="number" stroke="#666" />
                                 <YAxis dataKey="name" type="category" stroke="#666" width={120} fontSize={11} />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333' }}
+                                    contentStyle={{ backgroundColor: '#2d2d3d', border: '1px solid #555', color: '#fff' }}
                                     formatter={(value: number) => [`${value.toFixed(1)}%`, 'Importance']}
                                 />
                                 <Bar dataKey="importance" fill="#a855f7" radius={[0, 4, 4, 0]} />
@@ -372,7 +372,7 @@ export default function AnalyticsPage() {
                                 label={{ value: 'Actual (s)', angle: -90, position: 'left', fill: '#666', fontSize: 10 }}
                             />
                             <Tooltip
-                                contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333' }}
+                                contentStyle={{ backgroundColor: '#2d2d3d', border: '1px solid #555', color: '#fff' }}
                                 formatter={(value: number) => value.toFixed(1)}
                             />
                             <ReferenceLine stroke="#22c55e" strokeDasharray="3 3" segment={[{ x: 0, y: 0 }, { x: 1000, y: 1000 }]} />

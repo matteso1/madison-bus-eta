@@ -38,6 +38,7 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
     
     # JOIN with predictions table to get prdctdn (predicted countdown minutes)
     # This is the #1 most important feature - longer predictions have more error
+    # Also LEFT JOIN with weather_observations to get weather context
     query = """
         SELECT 
             po.vid,
@@ -48,9 +49,24 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
             po.error_seconds,
             po.is_significantly_late,
             po.created_at,
-            COALESCE(p.prdctdn, 10) as prediction_horizon_min
+            COALESCE(p.prdctdn, 10) as prediction_horizon_min,
+            -- Weather features (join to nearest weather observation)
+            w.temp_celsius,
+            w.precipitation_1h_mm,
+            w.snow_1h_mm,
+            w.wind_speed_mps,
+            w.visibility_meters,
+            w.is_severe as is_severe_weather
         FROM prediction_outcomes po
         LEFT JOIN predictions p ON po.prediction_id = p.id
+        LEFT JOIN LATERAL (
+            SELECT temp_celsius, precipitation_1h_mm, snow_1h_mm, 
+                   wind_speed_mps, visibility_meters, is_severe
+            FROM weather_observations
+            WHERE observed_at <= po.created_at
+            ORDER BY observed_at DESC
+            LIMIT 1
+        ) w ON true
         WHERE po.created_at > :cutoff
         AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
         ORDER BY po.created_at
@@ -146,6 +162,47 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
         df['horizon_squared'] = 100.0
         df['horizon_bucket'] = 2.0
     
+    # ====== WEATHER FEATURES ======
+    # Weather has significant impact on bus delays (rain, snow, visibility)
+    if 'temp_celsius' in df.columns:
+        # Temperature (normalized around comfortable temp)
+        df['temp_celsius'] = df['temp_celsius'].fillna(10.0)  # Default to mild temp
+        df['is_cold'] = (df['temp_celsius'] < -5).astype(int)  # Very cold
+        df['is_hot'] = (df['temp_celsius'] > 30).astype(int)   # Very hot
+        
+        # Precipitation (rain/snow causes delays)
+        df['precipitation_mm'] = df['precipitation_1h_mm'].fillna(0)
+        df['snow_mm'] = df['snow_1h_mm'].fillna(0)
+        df['is_raining'] = (df['precipitation_mm'] > 0.1).astype(int)
+        df['is_snowing'] = (df['snow_mm'] > 0.1).astype(int)
+        df['is_precipitating'] = ((df['precipitation_mm'] > 0.1) | (df['snow_mm'] > 0.1)).astype(int)
+        
+        # Wind (strong wind can delay buses)
+        df['wind_speed'] = df['wind_speed_mps'].fillna(0)
+        df['is_windy'] = (df['wind_speed'] > 10).astype(int)  # >10 m/s is strong wind
+        
+        # Visibility
+        df['visibility_km'] = df['visibility_meters'].fillna(10000) / 1000
+        df['low_visibility'] = (df['visibility_km'] < 1).astype(int)  # <1km is low
+        
+        # Severe weather flag
+        df['is_severe_weather'] = df['is_severe_weather'].fillna(False).astype(int)
+    else:
+        # Fallback if weather data not available yet
+        df['temp_celsius'] = 10.0
+        df['is_cold'] = 0
+        df['is_hot'] = 0
+        df['precipitation_mm'] = 0.0
+        df['snow_mm'] = 0.0
+        df['is_raining'] = 0
+        df['is_snowing'] = 0
+        df['is_precipitating'] = 0
+        df['wind_speed'] = 0.0
+        df['is_windy'] = 0
+        df['visibility_km'] = 10.0
+        df['low_visibility'] = 0
+        df['is_severe_weather'] = 0
+    
     return df
 
 
@@ -214,6 +271,21 @@ def get_regression_feature_columns() -> list:
         
         # Historical ETA patterns (from training data only, no leakage)
         'route_avg_error', 'hr_route_error',
+        
+        # ====== WEATHER FEATURES ======
+        'temp_celsius',          # Temperature in Celsius
+        'is_cold',               # Binary: < -5°C
+        'is_hot',                # Binary: > 30°C
+        'precipitation_mm',      # Rain in mm/hour
+        'snow_mm',               # Snow in mm/hour
+        'is_raining',            # Binary: rain > 0.1mm
+        'is_snowing',            # Binary: snow > 0.1mm
+        'is_precipitating',      # Binary: any precipitation
+        'wind_speed',            # Wind speed m/s
+        'is_windy',              # Binary: > 10 m/s
+        'visibility_km',         # Visibility in km
+        'low_visibility',        # Binary: < 1km
+        'is_severe_weather',     # Binary: severe weather alert
     ]
 
 
