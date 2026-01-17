@@ -1375,7 +1375,150 @@ def predict_arrival():
         })
 
 
-def log_ml_prediction(route, stop_id, api_prediction, ml_prediction, 
+@app.route("/api/predict-arrival-v2", methods=["POST"])
+def predict_arrival_v2():
+    """
+    Enhanced ML prediction with confidence intervals using quantile regression.
+    
+    Returns:
+    - eta_low: 10th percentile (best case)
+    - eta_median: 50th percentile (most likely)
+    - eta_high: 90th percentile (worst case)
+    - confidence: 80% of arrivals will fall in [eta_low, eta_high]
+    
+    Example response:
+    {
+        "api_prediction_min": 10,
+        "eta_low_min": 8.5,
+        "eta_median_min": 10.2,
+        "eta_high_min": 12.8,
+        "confidence": 0.80,
+        "interval_description": "Bus will arrive in 8-13 minutes (80% confidence)"
+    }
+    """
+    try:
+        from pathlib import Path
+        from datetime import datetime, timezone
+        import pickle
+        import numpy as np
+        
+        data = request.get_json() or {}
+        route = data.get('route')
+        api_prediction = data.get('api_prediction')  # Countdown in minutes
+        stop_id = data.get('stop_id')
+        
+        if api_prediction is None:
+            return jsonify({"error": "Missing api_prediction (countdown minutes)"}), 400
+        
+        # Load quantile ensemble
+        ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+        quantile_model_path = ml_path / 'quantile_latest.pkl'
+        
+        if not quantile_model_path.exists():
+            # Fallback: return API prediction with default intervals
+            return jsonify({
+                "api_prediction_min": api_prediction,
+                "eta_low_min": round(api_prediction * 0.85, 1),
+                "eta_median_min": api_prediction,
+                "eta_high_min": round(api_prediction * 1.3, 1),
+                "confidence": 0.80,
+                "model_available": False,
+                "interval_description": f"Bus estimated in {int(api_prediction * 0.85)}-{int(api_prediction * 1.3)} minutes (estimated)"
+            })
+        
+        with open(quantile_model_path, 'rb') as f:
+            ensemble = pickle.load(f)
+        
+        models = ensemble['models']  # {0.1: model, 0.5: model, 0.9: model}
+        
+        # Build feature vector - must match training features
+        now = datetime.now(timezone.utc)
+        hour = now.hour
+        day_of_week = now.weekday()
+        
+        # Cyclical encodings
+        hour_sin = np.sin(2 * np.pi * hour / 24)
+        hour_cos = np.cos(2 * np.pi * hour / 24)
+        day_sin = np.sin(2 * np.pi * day_of_week / 7)
+        day_cos = np.cos(2 * np.pi * day_of_week / 7)
+        month = now.month
+        month_sin = np.sin(2 * np.pi * (month - 1) / 12)
+        month_cos = np.cos(2 * np.pi * (month - 1) / 12)
+        
+        is_weekend = 1 if day_of_week >= 5 else 0
+        is_morning_rush = 1 if 7 <= hour <= 9 else 0
+        is_evening_rush = 1 if 16 <= hour <= 18 else 0
+        is_rush_hour = 1 if is_morning_rush or is_evening_rush else 0
+        is_holiday = 0  # Simplified
+        
+        # Horizon features (from api_prediction)
+        horizon_min = min(api_prediction, 60)
+        horizon_squared = horizon_min ** 2
+        horizon_bucket = (
+            0 if horizon_min <= 2 else 
+            1 if horizon_min <= 5 else 
+            2 if horizon_min <= 10 else 
+            3 if horizon_min <= 20 else 4
+        )
+        
+        # Route features (approximate - in production would look up from DB)
+        route_frequency = 1000
+        route_encoded = hash(str(route)) % 30 if route else 0
+        predicted_minutes = api_prediction
+        route_avg_error = 60  # Default 60s avg error
+        hr_route_error = 90 if is_rush_hour else 45
+        
+        # Feature vector - order MUST match get_regression_feature_columns()
+        features = np.array([[
+            horizon_min, horizon_squared, horizon_bucket,
+            hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
+            is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
+            route_frequency, route_encoded, predicted_minutes,
+            route_avg_error, hr_route_error
+        ]])
+        
+        # Predict error at each quantile
+        error_10 = models[0.1].predict(features)[0]  # Best case error
+        error_50 = models[0.5].predict(features)[0]  # Median error
+        error_90 = models[0.9].predict(features)[0]  # Worst case error
+        
+        # Convert error predictions to ETA (API prediction + predicted error in minutes)
+        eta_low = round(api_prediction + error_10 / 60, 1)
+        eta_median = round(api_prediction + error_50 / 60, 1)
+        eta_high = round(api_prediction + error_90 / 60, 1)
+        
+        # Ensure sensible bounds
+        eta_low = max(0, eta_low)
+        eta_median = max(eta_low, eta_median)
+        eta_high = max(eta_median, eta_high)
+        
+        interval_desc = f"Bus will arrive in {int(eta_low)}-{int(eta_high)} minutes (80% confidence)"
+        
+        return jsonify({
+            "api_prediction_min": api_prediction,
+            "eta_low_min": eta_low,
+            "eta_median_min": eta_median,
+            "eta_high_min": eta_high,
+            "confidence": 0.80,
+            "model_available": True,
+            "model_version": ensemble.get('version', 'unknown')[:8],
+            "interval_description": interval_desc,
+            "predictions_seconds": {
+                "error_10th_pct": round(error_10, 1),
+                "error_50th_pct": round(error_50, 1),
+                "error_90th_pct": round(error_90, 1)
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"Predict arrival v2 error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "api_prediction_min": data.get('api_prediction', 0) if 'data' in dir() else 0,
+            "error": str(e)
+        }), 500
+def log_ml_prediction(route, stop_id, api_prediction, ml_prediction,
                       delay_probability, model_version, features):
     """Log ML prediction to database for accuracy tracking."""
     try:
