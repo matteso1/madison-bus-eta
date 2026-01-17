@@ -20,6 +20,7 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
     
     Returns DataFrame with:
     - error_seconds: target variable
+    - prediction_horizon_min: the API's predicted minutes until arrival (CRITICAL FEATURE)
     - temporal features: hour, day_of_week, etc.
     - route features: rt
     """
@@ -35,6 +36,8 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
     
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     
+    # JOIN with predictions table to get prdctdn (predicted countdown minutes)
+    # This is the #1 most important feature - longer predictions have more error
     query = """
         SELECT 
             po.vid,
@@ -44,9 +47,12 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
             po.actual_arrival,
             po.error_seconds,
             po.is_significantly_late,
-            po.created_at
+            po.created_at,
+            COALESCE(p.prdctdn, 10) as prediction_horizon_min
         FROM prediction_outcomes po
+        LEFT JOIN predictions p ON po.prediction_id = p.id
         WHERE po.created_at > :cutoff
+        AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
         ORDER BY po.created_at
     """
     
@@ -120,6 +126,26 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     # Route as categorical encoding (for XGBoost)
     df['route_encoded'] = df['rt'].astype('category').cat.codes
     
+    # ====== PREDICTION HORIZON FEATURES (THE MOST IMPORTANT) ======
+    # Longer predictions naturally have more error - this is the key insight
+    if 'prediction_horizon_min' in df.columns:
+        df['horizon_min'] = df['prediction_horizon_min'].fillna(10).clip(0, 60)
+        
+        # Squared term captures non-linear relationship (error grows faster at longer horizons)
+        df['horizon_squared'] = df['horizon_min'] ** 2
+        
+        # Bucket for categorical effects
+        df['horizon_bucket'] = pd.cut(
+            df['horizon_min'], 
+            bins=[0, 2, 5, 10, 20, np.inf],
+            labels=[0, 1, 2, 3, 4]  # 0-2, 2-5, 5-10, 10-20, 20+
+        ).astype(float).fillna(2)  # Default to middle bucket
+    else:
+        # Fallback if horizon not available (shouldn't happen with new data)
+        df['horizon_min'] = 10.0
+        df['horizon_squared'] = 100.0
+        df['horizon_bucket'] = 2.0
+    
     return df
 
 
@@ -166,6 +192,11 @@ def apply_historical_eta_features(df: pd.DataFrame, aggregates: Dict[str, dict])
 def get_regression_feature_columns() -> list:
     """Return list of feature columns for regression model."""
     return [
+        # ====== PREDICTION HORIZON (MOST IMPORTANT) ======
+        'horizon_min',           # Raw horizon in minutes
+        'horizon_squared',       # Quadratic term for non-linearity
+        'horizon_bucket',        # Categorical bucket
+        
         # Temporal Cyclical
         'hour_sin', 'hour_cos', 
         'day_sin', 'day_cos',
