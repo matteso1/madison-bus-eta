@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-    Activity, RefreshCcw, TrendingUp, Zap, Database,
-    Shield, Clock, CheckCircle, BarChart3, Target
+    Activity, RefreshCcw, Zap, Database,
+    Shield, Clock, Target, Cpu
 } from 'lucide-react';
 import {
     XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -11,7 +11,6 @@ import {
 
 const BACKEND_URL = 'https://madison-bus-eta-production.up.railway.app';
 
-// Types
 interface RouteData {
     route: string;
     predictions: number;
@@ -20,6 +19,24 @@ interface RouteData {
     within1min: string;
     within2min: string;
 }
+
+// Custom tooltip component to ensure white text
+const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="bg-slate-900 border border-cyan-500/30 rounded-lg px-4 py-3 shadow-xl shadow-cyan-500/10">
+                <p className="text-cyan-400 text-sm font-medium mb-1">{label}</p>
+                {payload.map((entry: any, index: number) => (
+                    <p key={index} className="text-white text-sm">
+                        <span className="text-slate-400">{entry.name}:</span>{' '}
+                        <span className="font-bold" style={{ color: entry.color }}>{entry.value?.toFixed?.(1) || entry.value}</span>
+                    </p>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
 
 export default function AnalyticsPage() {
     const [modelPerf, setModelPerf] = useState<any>(null);
@@ -66,284 +83,317 @@ export default function AnalyticsPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-                <div className="flex items-center gap-3 text-slate-400">
-                    <RefreshCcw className="w-5 h-5 animate-spin" />
-                    <span className="font-medium">Loading Analytics...</span>
+            <div className="min-h-screen bg-[#0a0b0f] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="relative">
+                        <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+                        <Cpu className="absolute inset-0 m-auto w-6 h-6 text-cyan-400" />
+                    </div>
+                    <span className="text-slate-500 font-mono text-sm tracking-wider">LOADING NEURAL METRICS...</span>
                 </div>
             </div>
         );
     }
 
     const comparisonData = modelPerf ? [
-        { name: 'API Baseline', value: modelPerf.api_baseline?.mae_seconds || 0, fill: '#ef4444' },
-        { name: 'ML Model', value: modelPerf.current_model?.mae_seconds || 0, fill: '#10b981' }
+        { name: 'API', value: modelPerf.api_baseline?.mae_seconds || 0, fill: '#f43f5e' },
+        { name: 'ML', value: modelPerf.current_model?.mae_seconds || 0, fill: '#06b6d4' }
     ] : [];
 
     const coverageData = coverage?.coverage || [];
     const historyData = modelPerf?.training_history?.slice().reverse() || [];
     const distributionData = errorDist?.bins || [];
 
+    const improvementPct = modelPerf?.current_model?.improvement_vs_baseline_pct || 0;
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+        <div className="min-h-screen bg-[#0a0b0f] text-white overflow-hidden">
+            {/* Atmospheric background */}
+            <div className="fixed inset-0 pointer-events-none">
+                <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-[150px]" />
+                <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-rose-500/5 rounded-full blur-[150px]" />
+            </div>
+
             {/* Header */}
-            <header className="border-b border-white/10 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
-                            <Activity className="w-5 h-5 text-white" />
+            <header className="relative border-b border-white/5 bg-[#0a0b0f]/80 backdrop-blur-xl sticky top-0 z-50">
+                <div className="max-w-[1600px] mx-auto px-8 h-20 flex items-center justify-between">
+                    <div className="flex items-center gap-5">
+                        <div className="relative">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                                <Activity className="w-6 h-6 text-white" />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-[#0a0b0f] flex items-center justify-center">
+                                <span className="text-[8px] font-bold">✓</span>
+                            </div>
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold">ML Analytics</h1>
-                            <p className="text-xs text-slate-500">Madison Metro ETA Prediction</p>
+                            <h1 className="text-xl font-bold tracking-tight">
+                                <span className="text-white">ML</span>
+                                <span className="text-cyan-400">Analytics</span>
+                            </h1>
+                            <p className="text-xs text-slate-600 font-mono tracking-widest">MADISON METRO • ETA PREDICTION</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        {/* Tabs */}
-                        <div className="flex rounded-xl bg-slate-800/50 p-1 gap-1">
-                            {(['overview', 'diagnostics', 'routes'] as const).map(tab => (
+                    <div className="flex items-center gap-6">
+                        {/* Tabs - brutalist style */}
+                        <div className="flex border border-white/10 rounded-none overflow-hidden">
+                            {(['overview', 'diagnostics', 'routes'] as const).map((tab, i) => (
                                 <button
                                     key={tab}
                                     onClick={() => setActiveTab(tab)}
-                                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === tab
-                                        ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg'
-                                        : 'text-slate-400 hover:text-white hover:bg-white/5'
-                                        }`}
+                                    className={`px-6 py-3 text-sm font-mono uppercase tracking-wider transition-all relative ${activeTab === tab
+                                        ? 'bg-cyan-500 text-black font-bold'
+                                        : 'text-slate-500 hover:text-white hover:bg-white/5'
+                                        } ${i > 0 ? 'border-l border-white/10' : ''}`}
                                 >
-                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                    {tab}
                                 </button>
                             ))}
                         </div>
 
-                        {/* Status */}
-                        <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-800/30 border border-white/5">
-                            <div className={`w-2 h-2 rounded-full ${modelStatus?.health === 'healthy' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-amber-500'}`} />
-                            <span className="text-sm text-slate-400">{lastUpdated.toLocaleTimeString()}</span>
-                            <button onClick={fetchData} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-                                <RefreshCcw className="w-4 h-4 text-slate-400" />
+                        {/* Live indicator */}
+                        <div className="flex items-center gap-3 px-4 py-2">
+                            <div className="relative flex items-center gap-2">
+                                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                                <span className="text-xs font-mono text-slate-500">{lastUpdated.toLocaleTimeString()}</span>
+                            </div>
+                            <button onClick={fetchData} className="p-2 hover:bg-white/5 transition-colors border border-white/10">
+                                <RefreshCcw className="w-4 h-4 text-slate-500 hover:text-cyan-400 transition-colors" />
                             </button>
                         </div>
                     </div>
                 </div>
             </header>
 
-            <main className="max-w-7xl mx-auto px-6 py-8">
+            <main className="relative max-w-[1600px] mx-auto px-8 py-10">
                 {activeTab === 'overview' && (
-                    <div className="space-y-6">
-                        {/* Hero Stats */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                            <StatCard
-                                icon={<Target className="w-5 h-5" />}
-                                label="Model MAE"
-                                value={`${modelPerf?.current_model?.mae_seconds?.toFixed(0) || '--'}s`}
-                                change={`${modelPerf?.current_model?.improvement_vs_baseline_pct?.toFixed(0) || 0}% better`}
-                                positive
-                            />
-                            <StatCard
-                                icon={<Zap className="w-5 h-5" />}
-                                label="API Baseline"
-                                value={`${modelPerf?.api_baseline?.mae_seconds?.toFixed(0) || '--'}s`}
-                                change="Raw API error"
-                            />
-                            <StatCard
-                                icon={<Clock className="w-5 h-5" />}
-                                label="Model Age"
-                                value={`${modelStatus?.model_age_days || 0} days`}
-                                change={modelStatus?.staleness_status === 'fresh' ? 'Fresh' : 'Needs update'}
-                                positive={modelStatus?.staleness_status === 'fresh'}
-                            />
-                            <StatCard
-                                icon={<Database className="w-5 h-5" />}
-                                label="Today"
-                                value={modelStatus?.predictions_today?.toLocaleString() || '--'}
-                                change="Predictions"
-                            />
-                            <StatCard
-                                icon={<CheckCircle className="w-5 h-5" />}
-                                label="Within 2min"
-                                value={`${coverageData.find((c: any) => c.threshold === '2min')?.percentage?.toFixed(0) || '--'}%`}
-                                change={coverage?.meets_target ? 'Target met' : 'Below 80%'}
-                                positive={coverage?.meets_target}
-                            />
-                            <StatCard
-                                icon={<Shield className="w-5 h-5" />}
-                                label="Data Fresh"
-                                value={`${modelStatus?.data_freshness_minutes || '--'}m`}
-                                change="Last outcome"
-                                positive={(modelStatus?.data_freshness_minutes || 999) < 30}
-                            />
+                    <div className="space-y-8">
+                        {/* Hero improvement metric */}
+                        <div className="relative overflow-hidden border border-cyan-500/20 bg-gradient-to-r from-cyan-950/30 to-transparent p-8">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 blur-3xl" />
+                            <div className="relative flex items-center justify-between">
+                                <div>
+                                    <p className="text-cyan-400 font-mono text-sm tracking-widest mb-2">MODEL IMPROVEMENT</p>
+                                    <div className="flex items-baseline gap-3">
+                                        <span className="text-7xl font-black tracking-tight text-white">{improvementPct.toFixed(0)}</span>
+                                        <span className="text-4xl font-bold text-cyan-400">%</span>
+                                    </div>
+                                    <p className="text-slate-500 mt-2">Better than raw API predictions</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-8">
+                                    <MetricBox
+                                        label="ML MODEL"
+                                        value={`${modelPerf?.current_model?.mae_seconds?.toFixed(0) || '--'}s`}
+                                        sub="MAE"
+                                        accent="cyan"
+                                    />
+                                    <MetricBox
+                                        label="API BASELINE"
+                                        value={`${modelPerf?.api_baseline?.mae_seconds?.toFixed(0) || '--'}s`}
+                                        sub="MAE"
+                                        accent="rose"
+                                    />
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Charts Row 1 */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <ChartCard title="MAE Comparison" icon={<BarChart3 className="w-4 h-4" />}>
+                        {/* Quick stats row */}
+                        <div className="grid grid-cols-4 gap-4">
+                            <QuickStat icon={<Clock />} label="Model Age" value={`${modelStatus?.model_age_days || 0}d`} status={modelStatus?.staleness_status === 'fresh' ? 'good' : 'warn'} />
+                            <QuickStat icon={<Database />} label="Predictions Today" value={modelStatus?.predictions_today?.toLocaleString() || '--'} />
+                            <QuickStat icon={<Target />} label="Within 2min" value={`${coverageData.find((c: any) => c.threshold === '2min')?.percentage?.toFixed(0) || '--'}%`} status={coverage?.meets_target ? 'good' : 'warn'} />
+                            <QuickStat icon={<Zap />} label="Data Fresh" value={`${modelStatus?.data_freshness_minutes || '--'}m`} status={(modelStatus?.data_freshness_minutes || 999) < 30 ? 'good' : 'warn'} />
+                        </div>
+
+                        {/* Charts grid */}
+                        <div className="grid grid-cols-12 gap-6">
+                            {/* MAE Comparison */}
+                            <div className="col-span-4 border border-white/10 bg-white/[0.02] p-6">
+                                <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">MAE COMPARISON</h3>
                                 <ResponsiveContainer width="100%" height={180}>
                                     <BarChart data={comparisonData} layout="vertical" margin={{ left: 0 }}>
-                                        <XAxis type="number" stroke="#475569" tickFormatter={v => `${v}s`} fontSize={11} />
-                                        <YAxis dataKey="name" type="category" stroke="#475569" width={80} fontSize={11} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <Bar dataKey="value" radius={[0, 6, 6, 0]} />
+                                        <XAxis type="number" stroke="#334155" tickFormatter={v => `${v}s`} fontSize={10} axisLine={false} />
+                                        <YAxis dataKey="name" type="category" stroke="#334155" width={40} fontSize={11} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Bar dataKey="value" radius={[0, 4, 4, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
-                            </ChartCard>
+                            </div>
 
-                            <ChartCard title="Prediction Coverage" icon={<Target className="w-4 h-4" />}>
+                            {/* Coverage */}
+                            <div className="col-span-4 border border-white/10 bg-white/[0.02] p-6">
+                                <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">PREDICTION COVERAGE</h3>
                                 <ResponsiveContainer width="100%" height={180}>
                                     <BarChart data={coverageData}>
-                                        <XAxis dataKey="threshold" stroke="#475569" fontSize={11} />
-                                        <YAxis stroke="#475569" fontSize={11} domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <Bar dataKey="percentage" fill="#10b981" radius={[6, 6, 0, 0]} />
+                                        <XAxis dataKey="threshold" stroke="#334155" fontSize={10} axisLine={false} tickLine={false} />
+                                        <YAxis stroke="#334155" fontSize={10} domain={[0, 100]} tickFormatter={v => `${v}%`} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Bar dataKey="percentage" fill="#06b6d4" radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
-                            </ChartCard>
+                            </div>
 
-                            <ChartCard title="Training History" icon={<TrendingUp className="w-4 h-4" />}>
+                            {/* Training History */}
+                            <div className="col-span-4 border border-white/10 bg-white/[0.02] p-6">
+                                <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">TRAINING EVOLUTION</h3>
                                 <ResponsiveContainer width="100%" height={180}>
                                     <LineChart data={historyData}>
-                                        <XAxis dataKey="version" stroke="#475569" fontSize={10} />
-                                        <YAxis stroke="#475569" fontSize={11} tickFormatter={v => `${v}s`} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <Line type="monotone" dataKey="mae" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6', r: 4 }} />
+                                        <XAxis dataKey="version" stroke="#334155" fontSize={9} axisLine={false} tickLine={false} />
+                                        <YAxis stroke="#334155" fontSize={10} tickFormatter={v => `${v}s`} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Line type="monotone" dataKey="mae" stroke="#a855f7" strokeWidth={2} dot={{ fill: '#a855f7', r: 4 }} />
                                     </LineChart>
                                 </ResponsiveContainer>
-                            </ChartCard>
-                        </div>
+                            </div>
 
-                        {/* Charts Row 2 */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <ChartCard title="Error Distribution (7 days)" icon={<BarChart3 className="w-4 h-4" />}>
+                            {/* Error Distribution */}
+                            <div className="col-span-6 border border-white/10 bg-white/[0.02] p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-xs font-mono text-slate-500 tracking-widest">ERROR DISTRIBUTION</h3>
+                                    {errorDist?.statistics && (
+                                        <div className="flex gap-6 text-xs">
+                                            <span className="text-slate-500">μ = <span className="text-white font-bold">{errorDist.statistics.mean?.toFixed(0)}s</span></span>
+                                            <span className="text-slate-500">σ = <span className="text-white font-bold">{errorDist.statistics.std_dev?.toFixed(0)}s</span></span>
+                                        </div>
+                                    )}
+                                </div>
                                 <ResponsiveContainer width="100%" height={200}>
                                     <BarChart data={distributionData}>
-                                        <XAxis dataKey="bin" stroke="#475569" fontSize={9} angle={-15} textAnchor="end" height={60} />
-                                        <YAxis stroke="#475569" fontSize={11} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <Bar dataKey="count" fill="#f97316" radius={[4, 4, 0, 0]} />
+                                        <XAxis dataKey="bin" stroke="#334155" fontSize={8} angle={-15} textAnchor="end" height={50} axisLine={false} tickLine={false} />
+                                        <YAxis stroke="#334155" fontSize={10} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Bar dataKey="count" fill="#f97316" radius={[2, 2, 0, 0]} />
                                     </BarChart>
                                 </ResponsiveContainer>
-                                {errorDist?.statistics && (
-                                    <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-white/10">
-                                        <MiniStat label="Mean" value={`${errorDist.statistics.mean?.toFixed(0)}s`} />
-                                        <MiniStat label="Median" value={`${errorDist.statistics.median?.toFixed(0)}s`} />
-                                        <MiniStat label="Std Dev" value={`${errorDist.statistics.std_dev?.toFixed(0)}s`} />
-                                        <MiniStat label="Total" value={errorDist.statistics.total?.toLocaleString()} />
-                                    </div>
-                                )}
-                            </ChartCard>
+                            </div>
 
-                            <ChartCard title="Top Routes by Volume" icon={<Database className="w-4 h-4" />}>
-                                <div className="space-y-2 max-h-[240px] overflow-y-auto pr-2">
-                                    {routeStats.slice(0, 8).map((r, i) => (
-                                        <RouteBar key={r.route} rank={i + 1} route={r} />
-                                    ))}
+                            {/* Top Routes */}
+                            <div className="col-span-6 border border-white/10 bg-white/[0.02] p-6">
+                                <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">TOP ROUTES</h3>
+                                <div className="space-y-3">
+                                    {routeStats.slice(0, 6).map((r, i) => {
+                                        const avgError = parseFloat(r.avgError);
+                                        const color = avgError < 100 ? '#06b6d4' : avgError < 200 ? '#f59e0b' : '#f43f5e';
+                                        const width = Math.min((avgError / 350) * 100, 100);
+                                        return (
+                                            <div key={r.route} className="flex items-center gap-4">
+                                                <span className="w-6 text-xs text-slate-600 font-mono">{String(i + 1).padStart(2, '0')}</span>
+                                                <span className="w-10 font-bold text-cyan-400 font-mono">{r.route}</span>
+                                                <div className="flex-1 h-6 bg-white/5 relative overflow-hidden">
+                                                    <div className="h-full transition-all" style={{ width: `${width}%`, backgroundColor: color }} />
+                                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-white">{avgError.toFixed(0)}s</span>
+                                                </div>
+                                                <span className="w-20 text-right text-xs text-slate-500">{parseFloat(r.within2min).toFixed(0)}% &lt;2m</span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            </ChartCard>
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'diagnostics' && (
-                    <div className="space-y-6">
-                        {/* Temporal Charts */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <ChartCard
-                                title="Daily MAE (14 days)"
-                                icon={<TrendingUp className="w-4 h-4" />}
-                                badge={temporal?.drift_detected ? { text: 'Drift Detected', color: 'red' } : undefined}
-                            >
-                                <ResponsiveContainer width="100%" height={220}>
+                    <div className="space-y-8">
+                        <div className="grid grid-cols-2 gap-6">
+                            {/* Temporal MAE */}
+                            <div className="border border-white/10 bg-white/[0.02] p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-xs font-mono text-slate-500 tracking-widest">DAILY MAE · 14 DAYS</h3>
+                                    {temporal?.drift_detected && (
+                                        <span className="px-2 py-1 bg-rose-500/20 text-rose-400 text-xs font-mono">DRIFT DETECTED</span>
+                                    )}
+                                </div>
+                                <ResponsiveContainer width="100%" height={240}>
                                     <AreaChart data={temporal?.daily_metrics || []}>
                                         <defs>
-                                            <linearGradient id="maeGradient" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                                <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                            <linearGradient id="maeGrad" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />
+                                                <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
-                                        <XAxis dataKey="date" stroke="#475569" fontSize={10} tickFormatter={d => d?.slice(5) || ''} />
-                                        <YAxis stroke="#475569" fontSize={11} tickFormatter={v => `${v}s`} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <Area type="monotone" dataKey="mae" stroke="#8b5cf6" strokeWidth={2} fill="url(#maeGradient)" />
+                                        <XAxis dataKey="date" stroke="#334155" fontSize={9} tickFormatter={d => d?.slice(5) || ''} axisLine={false} tickLine={false} />
+                                        <YAxis stroke="#334155" fontSize={10} tickFormatter={v => `${v}s`} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Area type="monotone" dataKey="mae" stroke="#a855f7" strokeWidth={2} fill="url(#maeGrad)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
-                            </ChartCard>
+                            </div>
 
-                            <ChartCard title="Daily Coverage (% within 2min)" icon={<CheckCircle className="w-4 h-4" />}>
-                                <ResponsiveContainer width="100%" height={220}>
+                            {/* Coverage trend */}
+                            <div className="border border-white/10 bg-white/[0.02] p-6">
+                                <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">DAILY COVERAGE · % WITHIN 2MIN</h3>
+                                <ResponsiveContainer width="100%" height={240}>
                                     <LineChart data={temporal?.daily_metrics || []}>
-                                        <XAxis dataKey="date" stroke="#475569" fontSize={10} tickFormatter={d => d?.slice(5) || ''} />
-                                        <YAxis stroke="#475569" fontSize={11} domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff' }} />
-                                        <ReferenceLine y={80} stroke="#10b981" strokeDasharray="3 3" label={{ value: 'Target', fill: '#10b981', fontSize: 10 }} />
+                                        <XAxis dataKey="date" stroke="#334155" fontSize={9} tickFormatter={d => d?.slice(5) || ''} axisLine={false} tickLine={false} />
+                                        <YAxis stroke="#334155" fontSize={10} domain={[0, 100]} tickFormatter={v => `${v}%`} axisLine={false} tickLine={false} />
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <ReferenceLine y={80} stroke="#06b6d4" strokeDasharray="8 4" label={{ value: 'TARGET', fill: '#06b6d4', fontSize: 9, position: 'right' }} />
                                         <Line type="monotone" dataKey="within_2min_pct" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 3 }} />
                                     </LineChart>
                                 </ResponsiveContainer>
-                            </ChartCard>
+                            </div>
                         </div>
 
-                        {/* Health Check */}
-                        <ChartCard title="Model Health Check" icon={<Shield className="w-4 h-4" />}>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <HealthCard icon={<Database />} label="Model Version" value={modelStatus?.model_version || 'N/A'} status="info" />
-                                <HealthCard icon={<Clock />} label="Model Age" value={`${modelStatus?.model_age_days || 0} days`} status={modelStatus?.model_age_days < 3 ? 'good' : modelStatus?.model_age_days < 7 ? 'warn' : 'bad'} />
-                                <HealthCard icon={<RefreshCcw />} label="Data Freshness" value={`${modelStatus?.data_freshness_minutes || 0} min`} status={(modelStatus?.data_freshness_minutes || 0) < 30 ? 'good' : 'warn'} />
-                                <HealthCard icon={<Shield />} label="Overall Health" value={modelStatus?.health === 'healthy' ? 'Healthy' : 'Degraded'} status={modelStatus?.health === 'healthy' ? 'good' : 'bad'} />
+                        {/* Health grid */}
+                        <div className="border border-white/10 bg-white/[0.02] p-6">
+                            <h3 className="text-xs font-mono text-slate-500 tracking-widest mb-6">MODEL HEALTH CHECK</h3>
+                            <div className="grid grid-cols-4 gap-4">
+                                <HealthCard label="VERSION" value={modelStatus?.model_version || 'N/A'} icon={<Cpu className="w-5 h-5" />} />
+                                <HealthCard label="AGE" value={`${modelStatus?.model_age_days || 0} days`} status={modelStatus?.model_age_days < 3 ? 'good' : 'warn'} icon={<Clock className="w-5 h-5" />} />
+                                <HealthCard label="DATA FRESH" value={`${modelStatus?.data_freshness_minutes || 0} min`} status={(modelStatus?.data_freshness_minutes || 0) < 30 ? 'good' : 'warn'} icon={<RefreshCcw className="w-5 h-5" />} />
+                                <HealthCard label="STATUS" value={modelStatus?.health === 'healthy' ? 'HEALTHY' : 'DEGRADED'} status={modelStatus?.health === 'healthy' ? 'good' : 'bad'} icon={<Shield className="w-5 h-5" />} />
                             </div>
-                        </ChartCard>
+                        </div>
                     </div>
                 )}
 
                 {activeTab === 'routes' && (
-                    <ChartCard title="Route Performance Analysis" icon={<Database className="w-4 h-4" />}>
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="border-b border-white/10">
-                                        <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">Route</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Predictions</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Avg Error</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Median</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Within 1min</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Within 2min</th>
-                                        <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {routeStats.map((r) => {
-                                        const avgError = parseFloat(r.avgError);
-                                        const within1 = parseFloat(r.within1min);
-                                        const within2 = parseFloat(r.within2min);
-                                        const status = avgError < 100 ? 'good' : avgError < 200 ? 'warn' : 'bad';
-
-                                        return (
-                                            <tr key={r.route} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                                <td className="py-3 px-4">
-                                                    <span className="font-mono font-bold text-violet-400">{r.route}</span>
-                                                </td>
-                                                <td className="py-3 px-4 text-right text-slate-300">{r.predictions?.toLocaleString()}</td>
-                                                <td className="py-3 px-4 text-right">
-                                                    <span className={`font-medium ${status === 'good' ? 'text-emerald-400' : status === 'warn' ? 'text-amber-400' : 'text-red-400'}`}>
-                                                        {avgError.toFixed(0)}s
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4 text-right text-slate-400">{r.medianError}s</td>
-                                                <td className="py-3 px-4 text-right text-slate-300">{within1.toFixed(0)}%</td>
-                                                <td className="py-3 px-4 text-right text-slate-300">{within2.toFixed(0)}%</td>
-                                                <td className="py-3 px-4 text-right">
-                                                    <span className={`inline-flex px-2 py-1 rounded-md text-xs font-medium ${status === 'good' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                        status === 'warn' ? 'bg-amber-500/20 text-amber-400' :
-                                                            'bg-red-500/20 text-red-400'
-                                                        }`}>
-                                                        {status === 'good' ? 'Good' : status === 'warn' ? 'OK' : 'Poor'}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                    <div className="border border-white/10 bg-white/[0.02]">
+                        <div className="border-b border-white/10 px-6 py-4">
+                            <h3 className="text-xs font-mono text-slate-500 tracking-widest">ROUTE PERFORMANCE ANALYSIS</h3>
                         </div>
-                    </ChartCard>
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-white/10 text-xs font-mono text-slate-500">
+                                    <th className="text-left py-4 px-6">ROUTE</th>
+                                    <th className="text-right py-4 px-6">PREDICTIONS</th>
+                                    <th className="text-right py-4 px-6">AVG ERROR</th>
+                                    <th className="text-right py-4 px-6">MEDIAN</th>
+                                    <th className="text-right py-4 px-6">WITHIN 1MIN</th>
+                                    <th className="text-right py-4 px-6">WITHIN 2MIN</th>
+                                    <th className="text-right py-4 px-6">STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {routeStats.map((r) => {
+                                    const avgError = parseFloat(r.avgError);
+                                    const status = avgError < 100 ? 'good' : avgError < 200 ? 'warn' : 'bad';
+                                    return (
+                                        <tr key={r.route} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                                            <td className="py-4 px-6 font-bold font-mono text-cyan-400">{r.route}</td>
+                                            <td className="py-4 px-6 text-right text-slate-400">{r.predictions?.toLocaleString()}</td>
+                                            <td className={`py-4 px-6 text-right font-bold ${status === 'good' ? 'text-cyan-400' : status === 'warn' ? 'text-amber-400' : 'text-rose-400'}`}>
+                                                {avgError.toFixed(0)}s
+                                            </td>
+                                            <td className="py-4 px-6 text-right text-slate-500">{r.medianError}s</td>
+                                            <td className="py-4 px-6 text-right text-slate-400">{parseFloat(r.within1min).toFixed(0)}%</td>
+                                            <td className="py-4 px-6 text-right text-slate-400">{parseFloat(r.within2min).toFixed(0)}%</td>
+                                            <td className="py-4 px-6 text-right">
+                                                <span className={`inline-flex px-3 py-1 text-xs font-mono font-bold ${status === 'good' ? 'bg-cyan-500/20 text-cyan-400' :
+                                                    status === 'warn' ? 'bg-amber-500/20 text-amber-400' :
+                                                        'bg-rose-500/20 text-rose-400'
+                                                    }`}>
+                                                    {status === 'good' ? 'GOOD' : status === 'warn' ? 'OK' : 'POOR'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </main>
         </div>
@@ -351,90 +401,50 @@ export default function AnalyticsPage() {
 }
 
 // Components
-function StatCard({ icon, label, value, change, positive }: { icon: React.ReactNode; label: string; value: string; change: string; positive?: boolean }) {
-    return (
-        <div className="rounded-xl bg-slate-800/50 border border-white/5 p-4 hover:border-white/10 transition-colors">
-            <div className="flex items-center gap-2 mb-2 text-slate-400">
-                {icon}
-                <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-            </div>
-            <div className="text-2xl font-bold text-white mb-1">{value}</div>
-            <div className={`text-xs ${positive ? 'text-emerald-400' : positive === false ? 'text-red-400' : 'text-slate-500'}`}>
-                {change}
-            </div>
-        </div>
-    );
-}
-
-function ChartCard({ title, icon, children, badge }: { title: string; icon: React.ReactNode; children: React.ReactNode; badge?: { text: string; color: string } }) {
-    return (
-        <div className="rounded-xl bg-slate-800/50 border border-white/5 p-5">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-slate-300">
-                    <span className="text-violet-400">{icon}</span>
-                    <span className="font-medium">{title}</span>
-                </div>
-                {badge && (
-                    <span className={`text-xs px-2 py-1 rounded-md ${badge.color === 'red' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                        {badge.text}
-                    </span>
-                )}
-            </div>
-            {children}
-        </div>
-    );
-}
-
-function MiniStat({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="text-center">
-            <div className="text-xs text-slate-500 mb-1">{label}</div>
-            <div className="text-sm font-semibold text-white">{value}</div>
-        </div>
-    );
-}
-
-function RouteBar({ rank, route }: { rank: number; route: RouteData }) {
-    const avgError = parseFloat(route.avgError);
-    const maxError = 350;
-    const width = Math.min((avgError / maxError) * 100, 100);
-    const color = avgError < 100 ? 'bg-emerald-500' : avgError < 200 ? 'bg-amber-500' : 'bg-red-500';
-
-    return (
-        <div className="flex items-center gap-3">
-            <span className="w-5 text-xs text-slate-500 text-right">{rank}</span>
-            <span className="w-8 font-mono font-bold text-violet-400">{route.route}</span>
-            <div className="flex-1 h-6 bg-slate-700/50 rounded-md overflow-hidden relative">
-                <div className={`h-full ${color} rounded-md transition-all`} style={{ width: `${width}%` }} />
-                <span className="absolute inset-0 flex items-center justify-end pr-2 text-xs text-white font-medium">
-                    {avgError.toFixed(0)}s
-                </span>
-            </div>
-            <span className="w-16 text-xs text-slate-400 text-right">{parseFloat(route.within2min).toFixed(0)}% &lt;2m</span>
-        </div>
-    );
-}
-
-function HealthCard({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status: 'good' | 'warn' | 'bad' | 'info' }) {
+function MetricBox({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: 'cyan' | 'rose' }) {
     const colors = {
-        good: 'border-emerald-500/30 bg-emerald-500/10',
-        warn: 'border-amber-500/30 bg-amber-500/10',
-        bad: 'border-red-500/30 bg-red-500/10',
-        info: 'border-blue-500/30 bg-blue-500/10'
+        cyan: 'border-cyan-500/30 bg-cyan-950/30',
+        rose: 'border-rose-500/30 bg-rose-950/30'
     };
-    const iconColors = {
-        good: 'text-emerald-400',
-        warn: 'text-amber-400',
-        bad: 'text-red-400',
-        info: 'text-blue-400'
-    };
+    const textColors = { cyan: 'text-cyan-400', rose: 'text-rose-400' };
 
     return (
-        <div className={`flex items-center gap-3 p-4 rounded-xl border ${colors[status]}`}>
-            <div className={iconColors[status]}>{icon}</div>
+        <div className={`border ${colors[accent]} px-6 py-4`}>
+            <p className={`text-xs font-mono ${textColors[accent]} tracking-widest mb-1`}>{label}</p>
+            <p className="text-3xl font-black text-white">{value}</p>
+            <p className="text-xs text-slate-500">{sub}</p>
+        </div>
+    );
+}
+
+function QuickStat({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status?: 'good' | 'warn' }) {
+    return (
+        <div className="border border-white/10 bg-white/[0.02] p-5 flex items-center gap-4">
+            <div className={`w-10 h-10 flex items-center justify-center ${status === 'good' ? 'text-cyan-400' : status === 'warn' ? 'text-amber-400' : 'text-slate-600'}`}>
+                {icon}
+            </div>
             <div>
-                <div className="text-xs text-slate-500">{label}</div>
-                <div className="text-sm font-semibold text-white">{value}</div>
+                <p className="text-xs font-mono text-slate-500 tracking-wide">{label}</p>
+                <p className="text-xl font-bold text-white">{value}</p>
+            </div>
+        </div>
+    );
+}
+
+function HealthCard({ label, value, status, icon }: { label: string; value: string; status?: 'good' | 'warn' | 'bad'; icon: React.ReactNode }) {
+    const colors = {
+        good: 'border-cyan-500/30 bg-cyan-950/20 text-cyan-400',
+        warn: 'border-amber-500/30 bg-amber-950/20 text-amber-400',
+        bad: 'border-rose-500/30 bg-rose-950/20 text-rose-400'
+    };
+    const color = status ? colors[status] : 'border-white/10 bg-white/[0.02] text-slate-400';
+
+    return (
+        <div className={`border ${color} p-5 flex items-center gap-4`}>
+            <div className="opacity-60">{icon}</div>
+            <div>
+                <p className="text-xs font-mono text-slate-500 tracking-wide">{label}</p>
+                <p className="text-lg font-bold text-white">{value}</p>
             </div>
         </div>
     );
