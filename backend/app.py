@@ -2390,58 +2390,8 @@ def get_stop_headway(route, stop_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/route-accuracy")
-def get_route_accuracy():
-    """Get prediction accuracy statistics by route."""
-    try:
-        from sqlalchemy import create_engine, text
-        database_url = os.getenv('DATABASE_URL')
-        if not database_url:
-            return jsonify({"error": "Database not configured"}), 503
-            
-        engine = create_engine(database_url, pool_pre_ping=True)
-        with engine.connect() as conn:
-            # Query for route-level stats
-            query = text("""
-                WITH outcomes AS (
-                    SELECT 
-                        po.vid,
-                        -- Extract route from vid (assuming vid format includes route or we join)
-                        -- Simplify: we don't have route col in outcomes? 
-                        -- Check schema: outcomes has (id, prediction_id, vid, rt, ...)
-                        -- Schema said: id, prediction_id, vid, rt, stpid... so 'rt' is route!
-                        po.rt as route,
-                        ABS(po.error_seconds) as abs_error,
-                        CASE WHEN ABS(po.error_seconds) <= 60 THEN 1 ELSE 0 END as within_1min
-                    FROM prediction_outcomes po
-                    WHERE po.created_at > NOW() - INTERVAL '24 hours'
-                    AND po.rt IS NOT NULL
-                )
-                SELECT 
-                    route,
-                    COUNT(*) as predictions,
-                    AVG(abs_error) as avg_error,
-                    SUM(within_1min)::FLOAT / NULLIF(COUNT(*), 0) * 100 as accuracy_pct
-                FROM outcomes
-                GROUP BY 1
-                ORDER BY 2 DESC
-                LIMIT 50
-            """)
-            
-            rows = conn.execute(query).fetchall()
-            routes = []
-            for r in rows:
-                routes.append({
-                    "route": str(r[0]),
-                    "predictions": int(r[1]),
-                    "avgError": float(r[2]) if r[2] is not None else 0.0,
-                    "within1min": float(r[3]) if r[3] is not None else 0.0
-                })
-                
-            return jsonify({"routes": routes})
-            
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+
 
 # ==================== Isochrone (Approximate) ====================
 
