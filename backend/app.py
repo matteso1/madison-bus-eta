@@ -2257,6 +2257,112 @@ def get_scientific_metrics():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route("/api/model-performance")
+def get_model_performance():
+    """
+    Return ML model performance metrics from training history.
+    Shows both API baseline and ML model improvement.
+    
+    This is what the dashboard should show - the actual ML model performance,
+    not just the raw prediction error distribution.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        import json
+        from pathlib import Path
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Get latest training runs
+            runs = conn.execute(text("""
+                SELECT 
+                    version, trained_at, samples_used, 
+                    mae, rmse, mae_minutes,
+                    improvement_vs_baseline_pct, deployed, deployment_reason
+                FROM ml_regression_runs
+                ORDER BY trained_at DESC
+                LIMIT 10
+            """)).fetchall()
+            
+            if not runs:
+                return jsonify({
+                    "model_available": False,
+                    "message": "No training runs found"
+                })
+            
+            # Latest deployed model
+            latest = runs[0]
+            
+            # Calculate trends
+            history = []
+            for r in runs:
+                history.append({
+                    "version": r[0][:8] if r[0] else "unknown",
+                    "trained_at": r[1].isoformat() if r[1] else None,
+                    "samples": r[2],
+                    "mae": round(float(r[3]), 1) if r[3] else None,
+                    "rmse": round(float(r[4]), 1) if r[4] else None,
+                    "mae_minutes": round(float(r[5]), 2) if r[5] else None,
+                    "improvement_pct": round(float(r[6]), 1) if r[6] else 0,
+                    "deployed": r[7],
+                    "reason": r[8]
+                })
+            
+            # Get registry info for feature importance
+            ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+            registry_file = ml_path / 'registry.json'
+            feature_importance = {}
+            
+            if registry_file.exists():
+                with open(registry_file, 'r') as f:
+                    registry = json.load(f)
+                    for model in registry.get('models', []):
+                        if model.get('version') == registry.get('latest'):
+                            feature_importance = model.get('feature_importance', {})
+                            break
+            
+            # Calculate API baseline MAE from raw data
+            api_baseline = conn.execute(text("""
+                SELECT AVG(ABS(error_seconds)) as baseline_mae
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+            """)).scalar()
+            
+            return jsonify({
+                "model_available": True,
+                "current_model": {
+                    "version": latest[0][:8] if latest[0] else "unknown",
+                    "trained_at": latest[1].isoformat() if latest[1] else None,
+                    "mae_seconds": round(float(latest[3]), 1) if latest[3] else 0,
+                    "mae_minutes": round(float(latest[5]), 2) if latest[5] else 0,
+                    "rmse_seconds": round(float(latest[4]), 1) if latest[4] else 0,
+                    "improvement_vs_baseline_pct": round(float(latest[6]), 1) if latest[6] else 0,
+                    "samples_trained": latest[2]
+                },
+                "api_baseline": {
+                    "mae_seconds": round(float(api_baseline), 1) if api_baseline else 0,
+                    "mae_minutes": round(float(api_baseline) / 60, 2) if api_baseline else 0,
+                    "description": "Raw API prediction error without ML correction"
+                },
+                "training_history": history[:5],  # Last 5 runs
+                "feature_importance": dict(sorted(
+                    feature_importance.items(), 
+                    key=lambda x: float(x[1]) if x[1] else 0, 
+                    reverse=True
+                )[:10]) if feature_importance else {},
+                "model_summary": f"ML reduces prediction error by {round(float(latest[6]), 1) if latest[6] else 0}% vs API baseline"
+            })
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/model-diagnostics/residuals")
 def get_residual_analysis():
     """
