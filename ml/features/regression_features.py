@@ -17,64 +17,96 @@ from sklearn.model_selection import train_test_split
 def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
     """
     Fetch prediction outcomes from database for regression training.
-    
+
     Returns DataFrame with:
     - error_seconds: target variable
     - prediction_horizon_min: the API's predicted minutes until arrival (CRITICAL FEATURE)
     - temporal features: hour, day_of_week, etc.
     - route features: rt
+    - weather features (if available)
     """
     import os
     from sqlalchemy import create_engine, text
     from datetime import timedelta
-    
+
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         raise ValueError("DATABASE_URL not set")
-    
+
     engine = create_engine(database_url, pool_pre_ping=True)
-    
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    
-    # JOIN with predictions table to get prdctdn (predicted countdown minutes)
-    # This is the #1 most important feature - longer predictions have more error
-    # Also LEFT JOIN with weather_observations to get weather context
-    query = """
-        SELECT 
-            po.vid,
-            po.rt,
-            po.stpid,
-            po.predicted_arrival,
-            po.actual_arrival,
-            po.error_seconds,
-            po.is_significantly_late,
-            po.created_at,
-            COALESCE(p.prdctdn, 10) as prediction_horizon_min,
-            -- Weather features (join to nearest weather observation)
-            w.temp_celsius,
-            w.precipitation_1h_mm,
-            w.snow_1h_mm,
-            w.wind_speed_mps,
-            w.visibility_meters,
-            w.is_severe as is_severe_weather
-        FROM prediction_outcomes po
-        LEFT JOIN predictions p ON po.prediction_id = p.id
-        LEFT JOIN LATERAL (
-            SELECT temp_celsius, precipitation_1h_mm, snow_1h_mm, 
-                   wind_speed_mps, visibility_meters, is_severe
-            FROM weather_observations
-            WHERE observed_at <= po.created_at
-            ORDER BY observed_at DESC
-            LIMIT 1
-        ) w ON true
-        WHERE po.created_at > :cutoff
-        AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
-        ORDER BY po.created_at
-    """
-    
+
+    # Check if weather_observations table exists
+    with engine.connect() as conn:
+        weather_table_exists = conn.execute(
+            text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'weather_observations')")
+        ).scalar()
+
+    if weather_table_exists:
+        # Full query with weather data
+        query = """
+            SELECT
+                po.vid,
+                po.rt,
+                po.stpid,
+                po.predicted_arrival,
+                po.actual_arrival,
+                po.error_seconds,
+                po.is_significantly_late,
+                po.created_at,
+                COALESCE(p.prdctdn, 10) as prediction_horizon_min,
+                -- Weather features (join to nearest weather observation)
+                w.temp_celsius,
+                w.precipitation_1h_mm,
+                w.snow_1h_mm,
+                w.wind_speed_mps,
+                w.visibility_meters,
+                w.is_severe as is_severe_weather
+            FROM prediction_outcomes po
+            LEFT JOIN predictions p ON po.prediction_id = p.id
+            LEFT JOIN LATERAL (
+                SELECT temp_celsius, precipitation_1h_mm, snow_1h_mm,
+                       wind_speed_mps, visibility_meters, is_severe
+                FROM weather_observations
+                WHERE observed_at <= po.created_at
+                ORDER BY observed_at DESC
+                LIMIT 1
+            ) w ON true
+            WHERE po.created_at > :cutoff
+            AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
+            ORDER BY po.created_at
+        """
+    else:
+        # Query without weather data (table doesn't exist yet)
+        query = """
+            SELECT
+                po.vid,
+                po.rt,
+                po.stpid,
+                po.predicted_arrival,
+                po.actual_arrival,
+                po.error_seconds,
+                po.is_significantly_late,
+                po.created_at,
+                COALESCE(p.prdctdn, 10) as prediction_horizon_min,
+                -- Weather columns as NULL (table not available)
+                NULL::float as temp_celsius,
+                NULL::float as precipitation_1h_mm,
+                NULL::float as snow_1h_mm,
+                NULL::float as wind_speed_mps,
+                NULL::float as visibility_meters,
+                NULL::boolean as is_severe_weather
+            FROM prediction_outcomes po
+            LEFT JOIN predictions p ON po.prediction_id = p.id
+            WHERE po.created_at > :cutoff
+            AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
+            ORDER BY po.created_at
+        """
+
     with engine.connect() as conn:
         df = pd.read_sql(text(query), conn, params={"cutoff": cutoff})
-    
+
     return df
 
 
@@ -209,40 +241,75 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
 def compute_historical_eta_aggregates(train_df: pd.DataFrame) -> Dict[str, dict]:
     """
     Compute historical ETA error aggregates from TRAINING DATA ONLY.
-    
-    These replace the old delay_rate features with meaningful ETA error patterns.
+
+    These features capture patterns without leaking future information.
     """
     aggregates = {}
-    
+
     # Route-level average ETA error (in seconds)
     aggregates['route_avg_error'] = train_df.groupby('rt')['error_seconds'].mean().to_dict()
-    
+
+    # Route-level error standard deviation (volatility)
+    aggregates['route_error_std'] = train_df.groupby('rt')['error_seconds'].std().to_dict()
+
     # Hour-route average error
     aggregates['hour_route_error'] = train_df.groupby(['rt', 'hour'])['error_seconds'].mean().to_dict()
-    
+
+    # Stop-level reliability (average error by stop)
+    if 'stpid' in train_df.columns:
+        aggregates['stop_avg_error'] = train_df.groupby('stpid')['error_seconds'].mean().to_dict()
+        aggregates['stop_error_std'] = train_df.groupby('stpid')['error_seconds'].std().to_dict()
+
+    # Horizon bucket reliability (how reliable are predictions at each horizon?)
+    if 'horizon_min' in train_df.columns:
+        # Create temp buckets for aggregation
+        train_df_temp = train_df.copy()
+        train_df_temp['_horizon_bucket'] = pd.cut(
+            train_df_temp['horizon_min'].fillna(10),
+            bins=[0, 2, 5, 10, 20, 60],
+            labels=['0-2', '2-5', '5-10', '10-20', '20+']
+        )
+        aggregates['horizon_bucket_error'] = train_df_temp.groupby('_horizon_bucket')['error_seconds'].mean().to_dict()
+
     # Global fallback
     aggregates['global_avg_error'] = train_df['error_seconds'].mean()
-    
+    aggregates['global_error_std'] = train_df['error_seconds'].std()
+
     return aggregates
 
 
 def apply_historical_eta_features(df: pd.DataFrame, aggregates: Dict[str, dict]) -> pd.DataFrame:
     """Apply pre-computed historical ETA aggregates to a DataFrame."""
     df = df.copy()
-    
+
     global_error = aggregates.get('global_avg_error', 0)
+    global_std = aggregates.get('global_error_std', 60)
     route_error = aggregates.get('route_avg_error', {})
+    route_std = aggregates.get('route_error_std', {})
     hour_route_error = aggregates.get('hour_route_error', {})
-    
+    stop_error = aggregates.get('stop_avg_error', {})
+    stop_std = aggregates.get('stop_error_std', {})
+
     # Route average ETA error (with fallback)
     df['route_avg_error'] = df['rt'].map(route_error).fillna(global_error)
-    
+
+    # Route error volatility (high = unpredictable route)
+    df['route_error_std'] = df['rt'].map(route_std).fillna(global_std)
+
     # Hour-route ETA error (with fallback)
     df['hr_route_error'] = df.apply(
-        lambda x: hour_route_error.get((x['rt'], x['hour']), 
+        lambda x: hour_route_error.get((x['rt'], x['hour']),
                   route_error.get(x['rt'], global_error)), axis=1
     )
-    
+
+    # Stop-level reliability (some stops are harder to predict)
+    if 'stpid' in df.columns and stop_error:
+        df['stop_avg_error'] = df['stpid'].map(stop_error).fillna(global_error)
+        df['stop_error_std'] = df['stpid'].map(stop_std).fillna(global_std)
+    else:
+        df['stop_avg_error'] = global_error
+        df['stop_error_std'] = global_std
+
     return df
 
 
@@ -253,29 +320,35 @@ def get_regression_feature_columns() -> list:
         'horizon_min',           # Raw horizon in minutes
         'horizon_squared',       # Quadratic term for non-linearity
         'horizon_bucket',        # Categorical bucket
-        
+
         # Temporal Cyclical
-        'hour_sin', 'hour_cos', 
+        'hour_sin', 'hour_cos',
         'day_sin', 'day_cos',
         'month_sin', 'month_cos',
-        
+
         # Temporal Flags
         'is_weekend', 'is_rush_hour', 'is_holiday',
         'is_morning_rush', 'is_evening_rush',
-        
+
         # Route
         'route_frequency', 'route_encoded',
-        
+
         # Constraint (The API's own estimate)
         'predicted_minutes',
-        
+
         # Historical ETA patterns (from training data only, no leakage)
-        'route_avg_error', 'hr_route_error',
-        
+        'route_avg_error',       # Route average error
+        'route_error_std',       # Route error volatility
+        'hr_route_error',        # Hour + route error
+
+        # Stop-level reliability (NEW - high impact expected)
+        'stop_avg_error',        # Stop average error
+        'stop_error_std',        # Stop error volatility
+
         # ====== WEATHER FEATURES ======
         'temp_celsius',          # Temperature in Celsius
-        'is_cold',               # Binary: < -5°C
-        'is_hot',                # Binary: > 30°C
+        'is_cold',               # Binary: < -5C
+        'is_hot',                # Binary: > 30C
         'precipitation_mm',      # Rain in mm/hour
         'snow_mm',               # Snow in mm/hour
         'is_raining',            # Binary: rain > 0.1mm

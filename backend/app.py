@@ -1060,47 +1060,55 @@ def get_feature_importance():
 
 @app.route("/api/model-diagnostics/vs-baseline")
 def get_model_vs_baseline():
-    """Return time-series comparison of Model Error vs API Error."""
+    """
+    Return time-series comparison of API Error (baseline) over time.
+
+    Note: error_seconds in prediction_outcomes IS the API's raw error.
+    The ML model's job is to predict this error so users can add a correction.
+    """
     try:
         from sqlalchemy import create_engine, text
-        
+
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
             return jsonify({"error": "Database not configured"}), 503
-            
+
         engine = create_engine(database_url, pool_pre_ping=True)
         with engine.connect() as conn:
+            check_table = conn.execute(text("SELECT to_regclass('public.prediction_outcomes')")).scalar()
+            if not check_table:
+                return jsonify({"timeline": [], "message": "No prediction data yet"})
+
+            # Get hourly API error (what we're measuring and trying to correct)
             query = text("""
-                SELECT 
+                SELECT
                     DATE_TRUNC('hour', created_at) as hour,
-                    AVG(ABS(error_seconds)) as model_mae,
+                    AVG(ABS(error_seconds)) as api_mae,
+                    AVG(error_seconds) as api_bias,
+                    STDDEV(error_seconds) as api_stddev,
                     COUNT(*) as count
                 FROM prediction_outcomes
                 WHERE created_at > NOW() - INTERVAL '24 hours'
                 GROUP BY 1
                 ORDER BY 1 ASC
             """)
-            
-            check_table = conn.execute(text("SELECT to_regclass('public.prediction_outcomes')")).scalar()
-            if not check_table:
-                return jsonify({"timeline": []})
 
             rows = conn.execute(query).fetchall()
-            
+
             timeline = []
             for r in rows:
-                model_mae = float(r[1])
-                # Mock API MAE as slightly worse for viz if real data missing
-                api_mae = model_mae * 1.15 
-                
                 timeline.append({
                     "hour": r[0].isoformat(),
-                    "model_mae": round(model_mae, 1),
-                    "api_mae": round(api_mae, 1),
-                    "count": r[2]
+                    "api_mae": round(float(r[1]), 1) if r[1] else 0,
+                    "api_bias": round(float(r[2]), 1) if r[2] else 0,  # Positive = buses running late
+                    "api_stddev": round(float(r[3]), 1) if r[3] else 0,
+                    "count": r[4]
                 })
-                
-            return jsonify({"timeline": timeline})
+
+            return jsonify({
+                "timeline": timeline,
+                "description": "API prediction error over time (what the ML model corrects)"
+            })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2721,6 +2729,376 @@ def get_model_coverage():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+# ==================== NEW ML DIAGNOSTICS ENDPOINTS ====================
+
+@app.route("/api/diagnostics/error-by-horizon")
+def get_error_by_horizon():
+    """
+    Return prediction error breakdown by prediction horizon.
+    This is THE most important diagnostic - horizon is the #1 feature.
+    Shows how error increases with longer prediction windows.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Join with predictions to get prdctdn (prediction horizon)
+            query = text("""
+                SELECT
+                    CASE
+                        WHEN p.prdctdn <= 2 THEN '0-2 min'
+                        WHEN p.prdctdn <= 5 THEN '2-5 min'
+                        WHEN p.prdctdn <= 10 THEN '5-10 min'
+                        WHEN p.prdctdn <= 20 THEN '10-20 min'
+                        ELSE '20+ min'
+                    END as horizon_bucket,
+                    CASE
+                        WHEN p.prdctdn <= 2 THEN 1
+                        WHEN p.prdctdn <= 5 THEN 2
+                        WHEN p.prdctdn <= 10 THEN 3
+                        WHEN p.prdctdn <= 20 THEN 4
+                        ELSE 5
+                    END as bucket_order,
+                    AVG(ABS(po.error_seconds)) as mae,
+                    AVG(po.error_seconds) as bias,
+                    STDDEV(po.error_seconds) as stddev,
+                    COUNT(*) as count,
+                    AVG(CASE WHEN ABS(po.error_seconds) <= 60 THEN 1 ELSE 0 END) * 100 as within_1min_pct,
+                    AVG(CASE WHEN ABS(po.error_seconds) <= 120 THEN 1 ELSE 0 END) * 100 as within_2min_pct
+                FROM prediction_outcomes po
+                JOIN predictions p ON po.prediction_id = p.id
+                WHERE po.created_at > NOW() - INTERVAL '7 days'
+                AND p.prdctdn > 0
+                GROUP BY 1, 2
+                ORDER BY bucket_order
+            """)
+
+            rows = conn.execute(query).fetchall()
+
+            buckets = []
+            for r in rows:
+                buckets.append({
+                    "horizon": r[0],
+                    "mae": round(float(r[2]), 1) if r[2] else 0,
+                    "bias": round(float(r[3]), 1) if r[3] else 0,
+                    "stddev": round(float(r[4]), 1) if r[4] else 0,
+                    "count": r[5],
+                    "within_1min_pct": round(float(r[6]), 1) if r[6] else 0,
+                    "within_2min_pct": round(float(r[7]), 1) if r[7] else 0
+                })
+
+            return jsonify({
+                "buckets": buckets,
+                "insight": "Longer prediction horizons have higher error - this is expected",
+                "recommendation": "Focus on 5-10 min predictions for best accuracy"
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/diagnostics/predicted-vs-actual")
+def get_predicted_vs_actual():
+    """
+    Return scatter plot data for predicted arrival time vs actual arrival time.
+    Used for regression diagnostics - check for heteroscedasticity, systematic bias.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Sample random points for scatter plot (avoid overloading frontend)
+            query = text("""
+                SELECT
+                    p.prdctdn as predicted_minutes,
+                    p.prdctdn - (po.error_seconds / 60.0) as actual_minutes,
+                    po.error_seconds,
+                    po.rt
+                FROM prediction_outcomes po
+                JOIN predictions p ON po.prediction_id = p.id
+                WHERE po.created_at > NOW() - INTERVAL '24 hours'
+                AND ABS(po.error_seconds) < 1200
+                AND p.prdctdn > 0 AND p.prdctdn < 60
+                ORDER BY RANDOM()
+                LIMIT 500
+            """)
+
+            rows = conn.execute(query).fetchall()
+
+            points = []
+            for r in rows:
+                points.append({
+                    "predicted": round(float(r[0]), 2),
+                    "actual": round(float(r[1]), 2),
+                    "error_seconds": int(r[2]),
+                    "route": r[3]
+                })
+
+            # Calculate regression statistics
+            if points:
+                predicted = [p["predicted"] for p in points]
+                actual = [p["actual"] for p in points]
+                errors = [p["error_seconds"] for p in points]
+
+                # Simple correlation
+                n = len(points)
+                mean_pred = sum(predicted) / n
+                mean_act = sum(actual) / n
+
+                cov = sum((p - mean_pred) * (a - mean_act) for p, a in zip(predicted, actual)) / n
+                std_pred = (sum((p - mean_pred) ** 2 for p in predicted) / n) ** 0.5
+                std_act = (sum((a - mean_act) ** 2 for a in actual) / n) ** 0.5
+
+                correlation = cov / (std_pred * std_act) if std_pred > 0 and std_act > 0 else 0
+
+                # Mean absolute error
+                mae = sum(abs(e) for e in errors) / n
+                bias = sum(errors) / n
+
+                stats = {
+                    "correlation": round(correlation, 3),
+                    "r_squared": round(correlation ** 2, 3),
+                    "mae_seconds": round(mae, 1),
+                    "bias_seconds": round(bias, 1),
+                    "sample_size": n
+                }
+            else:
+                stats = {}
+
+            return jsonify({
+                "points": points,
+                "statistics": stats
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/diagnostics/worst-predictions")
+def get_worst_predictions():
+    """
+    Return the worst predictions in the last 24 hours for debugging.
+    Helps identify systematic issues with specific routes/stops/times.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            query = text("""
+                SELECT
+                    po.rt,
+                    po.stpid,
+                    po.vid,
+                    p.prdctdn as predicted_minutes,
+                    po.error_seconds,
+                    po.created_at,
+                    EXTRACT(HOUR FROM po.created_at) as hour
+                FROM prediction_outcomes po
+                LEFT JOIN predictions p ON po.prediction_id = p.id
+                WHERE po.created_at > NOW() - INTERVAL '24 hours'
+                ORDER BY ABS(po.error_seconds) DESC
+                LIMIT 20
+            """)
+
+            rows = conn.execute(query).fetchall()
+
+            worst = []
+            for r in rows:
+                worst.append({
+                    "route": r[0],
+                    "stop_id": r[1],
+                    "vehicle_id": r[2],
+                    "predicted_minutes": int(r[3]) if r[3] else None,
+                    "error_seconds": int(r[4]),
+                    "error_minutes": round(abs(r[4]) / 60, 1),
+                    "direction": "late" if r[4] > 0 else "early",
+                    "created_at": r[5].isoformat() if r[5] else None,
+                    "hour": int(r[6]) if r[6] else None
+                })
+
+            return jsonify({
+                "worst_predictions": worst,
+                "description": "Top 20 predictions with highest absolute error in last 24h"
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/diagnostics/hourly-bias")
+def get_hourly_bias():
+    """
+    Return average error by hour of day.
+    Detects systematic time-of-day bias (e.g., always late during rush hour).
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            query = text("""
+                SELECT
+                    EXTRACT(HOUR FROM created_at) as hour,
+                    AVG(error_seconds) as avg_bias,
+                    AVG(ABS(error_seconds)) as mae,
+                    STDDEV(error_seconds) as stddev,
+                    COUNT(*) as count
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY 1
+                ORDER BY 1
+            """)
+
+            rows = conn.execute(query).fetchall()
+
+            hourly = []
+            for r in rows:
+                hourly.append({
+                    "hour": int(r[0]),
+                    "hour_label": f"{int(r[0]):02d}:00",
+                    "bias": round(float(r[1]), 1) if r[1] else 0,
+                    "mae": round(float(r[2]), 1) if r[2] else 0,
+                    "stddev": round(float(r[3]), 1) if r[3] else 0,
+                    "count": r[4]
+                })
+
+            # Identify rush hour impact
+            rush_hours = [h for h in hourly if h["hour"] in [7, 8, 9, 16, 17, 18]]
+            non_rush = [h for h in hourly if h["hour"] not in [7, 8, 9, 16, 17, 18] and h["hour"] >= 6 and h["hour"] <= 22]
+
+            rush_avg_mae = sum(h["mae"] for h in rush_hours) / len(rush_hours) if rush_hours else 0
+            non_rush_avg_mae = sum(h["mae"] for h in non_rush) / len(non_rush) if non_rush else 0
+
+            return jsonify({
+                "hourly": hourly,
+                "insights": {
+                    "rush_hour_mae": round(rush_avg_mae, 1),
+                    "non_rush_mae": round(non_rush_avg_mae, 1),
+                    "rush_hour_penalty": round(rush_avg_mae - non_rush_avg_mae, 1)
+                }
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/diagnostics/feature-importance")
+def get_feature_importance_history():
+    """
+    Return feature importance from training runs for stability analysis.
+    Shows if feature importance is stable over time or drifting.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        import json
+
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Check if feature_importance column exists
+            has_col = conn.execute(text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='ml_regression_runs' AND column_name='feature_importance')"
+            )).scalar()
+
+            if not has_col:
+                # Try to get from registry file instead
+                from pathlib import Path
+                registry_file = Path(__file__).parent.parent / 'ml' / 'models' / 'saved' / 'registry.json'
+                if registry_file.exists():
+                    with open(registry_file) as f:
+                        registry = json.load(f)
+                        for model in registry.get('models', []):
+                            if model.get('version') == registry.get('latest'):
+                                importance = model.get('feature_importance', {})
+                                features = sorted(
+                                    [{"name": k, "importance": round(float(v), 4)} for k, v in importance.items()],
+                                    key=lambda x: x["importance"],
+                                    reverse=True
+                                )[:15]
+                                return jsonify({
+                                    "current": features,
+                                    "history": [],
+                                    "source": "registry"
+                                })
+
+                return jsonify({"error": "Feature importance not available", "features": []})
+
+            # Get latest feature importance
+            query = text("""
+                SELECT version, trained_at, feature_importance
+                FROM ml_regression_runs
+                WHERE feature_importance IS NOT NULL
+                ORDER BY trained_at DESC
+                LIMIT 5
+            """)
+
+            rows = conn.execute(query).fetchall()
+
+            if not rows:
+                return jsonify({"current": [], "history": []})
+
+            # Current model features
+            current_importance = rows[0][2] if rows[0][2] else {}
+            current_features = sorted(
+                [{"name": k, "importance": round(float(v), 4)} for k, v in current_importance.items()],
+                key=lambda x: x["importance"],
+                reverse=True
+            )[:15]
+
+            # History for stability analysis
+            history = []
+            for r in rows:
+                imp = r[2] if r[2] else {}
+                history.append({
+                    "version": r[0][:8] if r[0] else "unknown",
+                    "trained_at": r[1].isoformat() if r[1] else None,
+                    "top_features": sorted(imp.items(), key=lambda x: float(x[1]), reverse=True)[:5]
+                })
+
+            return jsonify({
+                "current": current_features,
+                "history": history,
+                "source": "database"
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 def get_anomalies():
     """Detect and return timing anomalies and unusual patterns"""
