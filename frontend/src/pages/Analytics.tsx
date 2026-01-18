@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
     Activity, RefreshCcw, Target, BarChart3, TrendingUp,
-    AlertTriangle, Clock, Layers, Zap, GitBranch, Map
+    AlertTriangle, Clock, Layers, Zap, GitBranch, Map,
+    FlaskConical, ShieldCheck, ShieldAlert, ShieldX
 } from 'lucide-react';
 import {
     XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -65,6 +66,47 @@ interface RouteData {
     within2min: number;
 }
 
+interface ABTestResults {
+    total_predictions: number;
+    matched_predictions: number;
+    match_rate: number;
+    api_mae_sec: number | null;
+    ml_mae_sec: number | null;
+    improvement_pct: number | null;
+    ml_win_rate: number | null;
+    coverage: {
+        api_within_1min: number | null;
+        ml_within_1min: number | null;
+        api_within_2min: number | null;
+        ml_within_2min: number | null;
+    };
+    daily_breakdown: Array<{
+        date: string;
+        matched: number;
+        api_mae: number | null;
+        ml_mae: number | null;
+        ml_wins: number;
+    }>;
+}
+
+interface DriftStatus {
+    status: 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
+    baseline_mae_sec: number;
+    current_mae_sec: number | null;
+    drift_pct: number | null;
+    prediction_count_7d: number;
+    coverage: {
+        within_1min_pct: number | null;
+        within_2min_pct: number | null;
+    };
+    model: {
+        version: string | null;
+        trained_at: string | null;
+        age_days: number | null;
+    };
+    recommendation: string;
+}
+
 // Clean tooltip component
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -88,7 +130,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export default function AnalyticsPage() {
     // State
-    const [activeTab, setActiveTab] = useState<'health' | 'errors' | 'features' | 'segments'>('health');
+    const [activeTab, setActiveTab] = useState<'health' | 'errors' | 'features' | 'segments' | 'abtest'>('health');
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(new Date());
 
@@ -107,6 +149,10 @@ export default function AnalyticsPage() {
     const [featureImportance, setFeatureImportance] = useState<FeatureImportance[]>([]);
     const [routeStats, setRouteStats] = useState<RouteData[]>([]);
     const [routeHeatmap, setRouteHeatmap] = useState<any>(null);
+
+    // A/B Testing & Drift
+    const [abTestResults, setAbTestResults] = useState<ABTestResults | null>(null);
+    const [driftStatus, setDriftStatus] = useState<DriftStatus | null>(null);
 
     const fetchData = async () => {
         try {
@@ -143,6 +189,15 @@ export default function AnalyticsPage() {
             if (featRes.data?.current) setFeatureImportance(featRes.data.current);
             if (routeRes.data?.routes) setRouteStats(routeRes.data.routes);
             if (heatmapRes.data) setRouteHeatmap(heatmapRes.data);
+
+            // A/B Testing & Drift endpoints
+            const [abRes, driftRes] = await Promise.all([
+                axios.get(`${BACKEND_URL}/api/ab-test/results`).catch(() => ({ data: null })),
+                axios.get(`${BACKEND_URL}/api/drift/check`).catch(() => ({ data: null }))
+            ]);
+
+            if (abRes.data) setAbTestResults(abRes.data);
+            if (driftRes.data) setDriftStatus(driftRes.data);
 
             setLastUpdated(new Date());
             setLoading(false);
@@ -203,16 +258,16 @@ export default function AnalyticsPage() {
                                 { id: 'health', label: 'Health', icon: Activity },
                                 { id: 'errors', label: 'Errors', icon: AlertTriangle },
                                 { id: 'features', label: 'Features', icon: Layers },
-                                { id: 'segments', label: 'Segments', icon: GitBranch }
+                                { id: 'segments', label: 'Segments', icon: GitBranch },
+                                { id: 'abtest', label: 'A/B Test', icon: FlaskConical }
                             ].map(tab => (
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1.5 transition-all ${
-                                        activeTab === tab.id
-                                            ? 'bg-slate-700 text-white'
-                                            : 'text-slate-500 hover:text-slate-300'
-                                    }`}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded flex items-center gap-1.5 transition-all ${activeTab === tab.id
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                        }`}
                                 >
                                     <tab.icon className="w-3.5 h-3.5" />
                                     {tab.label}
@@ -473,9 +528,8 @@ export default function AnalyticsPage() {
                                                     <td className="py-1.5 px-2 text-right">{p.predicted_minutes ?? '-'}m</td>
                                                     <td className="py-1.5 px-2 text-right font-bold text-red-400">{p.error_minutes}m</td>
                                                     <td className="py-1.5 px-2 text-center">
-                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                                                            p.direction === 'late' ? 'bg-red-900/50 text-red-400' : 'bg-blue-900/50 text-blue-400'
-                                                        }`}>
+                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${p.direction === 'late' ? 'bg-red-900/50 text-red-400' : 'bg-blue-900/50 text-blue-400'
+                                                            }`}>
                                                             {p.direction}
                                                         </span>
                                                     </td>
@@ -564,51 +618,51 @@ export default function AnalyticsPage() {
                                     <p className="text-xs mt-1">Route performance data will appear once the backend is connected and has prediction outcomes.</p>
                                 </div>
                             ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-xs">
-                                    <thead className="text-slate-500 uppercase border-b border-slate-800">
-                                        <tr>
-                                            <th className="text-left py-2 px-3">Route</th>
-                                            <th className="text-right py-2 px-3">Predictions</th>
-                                            <th className="text-right py-2 px-3">Avg Error</th>
-                                            <th className="text-right py-2 px-3">Median</th>
-                                            <th className="text-right py-2 px-3">&lt;1min</th>
-                                            <th className="text-right py-2 px-3">&lt;2min</th>
-                                            <th className="text-center py-2 px-3">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800/50">
-                                        {routeStats.slice(0, 20).map((r) => {
-                                            // Convert to numbers in case API returns strings
-                                            const avgErr = Number(r.avgError) || 0;
-                                            const medianErr = Number(r.medianError) || 0;
-                                            const w1min = Number(r.within1min) || 0;
-                                            const w2min = Number(r.within2min) || 0;
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="text-slate-500 uppercase border-b border-slate-800">
+                                            <tr>
+                                                <th className="text-left py-2 px-3">Route</th>
+                                                <th className="text-right py-2 px-3">Predictions</th>
+                                                <th className="text-right py-2 px-3">Avg Error</th>
+                                                <th className="text-right py-2 px-3">Median</th>
+                                                <th className="text-right py-2 px-3">&lt;1min</th>
+                                                <th className="text-right py-2 px-3">&lt;2min</th>
+                                                <th className="text-center py-2 px-3">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-800/50">
+                                            {routeStats.slice(0, 20).map((r) => {
+                                                // Convert to numbers in case API returns strings
+                                                const avgErr = Number(r.avgError) || 0;
+                                                const medianErr = Number(r.medianError) || 0;
+                                                const w1min = Number(r.within1min) || 0;
+                                                const w2min = Number(r.within2min) || 0;
 
-                                            const status = avgErr < 60 ? 'Excellent' : avgErr < 90 ? 'Good' : avgErr < 120 ? 'Fair' : 'Poor';
-                                            const statusColor = avgErr < 60 ? 'text-emerald-400 bg-emerald-950/50' :
-                                                avgErr < 90 ? 'text-green-400 bg-green-950/50' :
-                                                avgErr < 120 ? 'text-amber-400 bg-amber-950/50' : 'text-red-400 bg-red-950/50';
+                                                const status = avgErr < 60 ? 'Excellent' : avgErr < 90 ? 'Good' : avgErr < 120 ? 'Fair' : 'Poor';
+                                                const statusColor = avgErr < 60 ? 'text-emerald-400 bg-emerald-950/50' :
+                                                    avgErr < 90 ? 'text-green-400 bg-green-950/50' :
+                                                        avgErr < 120 ? 'text-amber-400 bg-amber-950/50' : 'text-red-400 bg-red-950/50';
 
-                                            return (
-                                                <tr key={r.route} className="hover:bg-slate-800/30">
-                                                    <td className="py-2 px-3 font-bold text-indigo-400">{r.route}</td>
-                                                    <td className="py-2 px-3 text-right text-slate-300">{r.predictions?.toLocaleString()}</td>
-                                                    <td className="py-2 px-3 text-right font-mono">{avgErr.toFixed(0)}s</td>
-                                                    <td className="py-2 px-3 text-right font-mono text-slate-500">{medianErr.toFixed(0)}s</td>
-                                                    <td className="py-2 px-3 text-right">{w1min.toFixed(0)}%</td>
-                                                    <td className="py-2 px-3 text-right">{w2min.toFixed(0)}%</td>
-                                                    <td className="py-2 px-3 text-center">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusColor}`}>
-                                                            {status}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                return (
+                                                    <tr key={r.route} className="hover:bg-slate-800/30">
+                                                        <td className="py-2 px-3 font-bold text-indigo-400">{r.route}</td>
+                                                        <td className="py-2 px-3 text-right text-slate-300">{r.predictions?.toLocaleString()}</td>
+                                                        <td className="py-2 px-3 text-right font-mono">{avgErr.toFixed(0)}s</td>
+                                                        <td className="py-2 px-3 text-right font-mono text-slate-500">{medianErr.toFixed(0)}s</td>
+                                                        <td className="py-2 px-3 text-right">{w1min.toFixed(0)}%</td>
+                                                        <td className="py-2 px-3 text-right">{w2min.toFixed(0)}%</td>
+                                                        <td className="py-2 px-3 text-center">
+                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusColor}`}>
+                                                                {status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
                         </Card>
 
@@ -654,6 +708,193 @@ export default function AnalyticsPage() {
                                 </div>
                             </Card>
                         )}
+                    </div>
+                )}
+
+                {/* TAB: A/B Test */}
+                {activeTab === 'abtest' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Drift Status */}
+                        <Card title="Model Drift Status" icon={driftStatus?.status === 'OK' ? ShieldCheck : driftStatus?.status === 'CRITICAL' ? ShieldX : ShieldAlert} className="lg:col-span-2">
+                            <div className="flex items-center gap-6">
+                                <div className={`flex items-center gap-3 px-4 py-3 rounded-lg ${driftStatus?.status === 'OK' ? 'bg-emerald-950/50 border border-emerald-800' :
+                                        driftStatus?.status === 'WARNING' ? 'bg-amber-950/50 border border-amber-800' :
+                                            driftStatus?.status === 'CRITICAL' ? 'bg-red-950/50 border border-red-800' :
+                                                'bg-slate-800 border border-slate-700'
+                                    }`}>
+                                    {driftStatus?.status === 'OK' && <ShieldCheck className="w-8 h-8 text-emerald-400" />}
+                                    {driftStatus?.status === 'WARNING' && <ShieldAlert className="w-8 h-8 text-amber-400" />}
+                                    {driftStatus?.status === 'CRITICAL' && <ShieldX className="w-8 h-8 text-red-400" />}
+                                    {(!driftStatus || driftStatus?.status === 'UNKNOWN') && <ShieldAlert className="w-8 h-8 text-slate-400" />}
+                                    <div>
+                                        <div className={`text-lg font-bold ${driftStatus?.status === 'OK' ? 'text-emerald-400' :
+                                                driftStatus?.status === 'WARNING' ? 'text-amber-400' :
+                                                    driftStatus?.status === 'CRITICAL' ? 'text-red-400' : 'text-slate-400'
+                                            }`}>
+                                            {driftStatus?.status || 'UNKNOWN'}
+                                        </div>
+                                        <div className="text-xs text-slate-500">Drift Status</div>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 grid grid-cols-4 gap-4 text-sm">
+                                    <div>
+                                        <div className="text-slate-500 text-xs">Baseline MAE</div>
+                                        <div className="font-bold text-white">{driftStatus?.baseline_mae_sec?.toFixed(0) || '-'}s</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-slate-500 text-xs">Current MAE (7d)</div>
+                                        <div className="font-bold text-white">{driftStatus?.current_mae_sec?.toFixed(0) || '-'}s</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-slate-500 text-xs">Drift</div>
+                                        <div className={`font-bold ${(driftStatus?.drift_pct ?? 0) > 10 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                            {driftStatus?.drift_pct != null ? `${driftStatus.drift_pct > 0 ? '+' : ''}${driftStatus.drift_pct.toFixed(1)}%` : '-'}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-slate-500 text-xs">Model Age</div>
+                                        <div className="font-bold text-white">{driftStatus?.model?.age_days ?? '-'} days</div>
+                                    </div>
+                                </div>
+                            </div>
+                            {driftStatus?.recommendation && (
+                                <div className="mt-3 p-2 bg-slate-800 rounded text-xs text-slate-400">
+                                    <strong className="text-white">Recommendation:</strong> {driftStatus.recommendation}
+                                </div>
+                            )}
+                        </Card>
+
+                        {/* MAE Comparison */}
+                        <Card title="ML vs API: MAE Comparison" icon={Target}>
+                            {!abTestResults || abTestResults.matched_predictions === 0 ? (
+                                <div className="h-[200px] flex items-center justify-center text-slate-500 text-sm flex-col gap-2">
+                                    <FlaskConical className="w-8 h-8 text-slate-600" />
+                                    <div>No A/B test data yet</div>
+                                    <div className="text-xs text-slate-600">Predictions will be compared when matched with actual arrivals</div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex gap-4 mb-4">
+                                        <div className="flex-1 bg-slate-800 rounded-lg p-3 text-center">
+                                            <div className="text-2xl font-bold text-red-400">{abTestResults.api_mae_sec?.toFixed(0) || '-'}s</div>
+                                            <div className="text-xs text-slate-500">API MAE</div>
+                                        </div>
+                                        <div className="flex-1 bg-slate-800 rounded-lg p-3 text-center">
+                                            <div className="text-2xl font-bold text-emerald-400">{abTestResults.ml_mae_sec?.toFixed(0) || '-'}s</div>
+                                            <div className="text-xs text-slate-500">ML MAE</div>
+                                        </div>
+                                        <div className="flex-1 bg-emerald-950/50 rounded-lg p-3 text-center border border-emerald-800">
+                                            <div className="text-2xl font-bold text-emerald-400">+{abTestResults.improvement_pct?.toFixed(0) || 0}%</div>
+                                            <div className="text-xs text-emerald-600">Improvement</div>
+                                        </div>
+                                    </div>
+                                    <ResponsiveContainer width="100%" height={150}>
+                                        <BarChart data={abTestResults.daily_breakdown?.slice(0, 7).reverse() || []}>
+                                            <XAxis dataKey="date" stroke="#475569" fontSize={10} tickFormatter={d => d?.slice(5, 10)} />
+                                            <YAxis stroke="#475569" fontSize={10} />
+                                            <Tooltip content={<CustomTooltip />} />
+                                            <Bar dataKey="api_mae" fill="#ef4444" name="API MAE" />
+                                            <Bar dataKey="ml_mae" fill="#10b981" name="ML MAE" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </>
+                            )}
+                        </Card>
+
+                        {/* Win Rate */}
+                        <Card title="ML Win Rate" icon={TrendingUp}>
+                            {!abTestResults || abTestResults.matched_predictions === 0 ? (
+                                <div className="h-[200px] flex items-center justify-center text-slate-500 text-sm">
+                                    No comparison data available
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="text-center">
+                                        <div className="text-5xl font-bold text-emerald-400">{abTestResults.ml_win_rate?.toFixed(0) || 0}%</div>
+                                        <div className="text-sm text-slate-500 mt-1">ML beats API</div>
+                                    </div>
+                                    <div className="relative h-4 bg-slate-800 rounded-full overflow-hidden">
+                                        <div
+                                            className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full transition-all"
+                                            style={{ width: `${abTestResults.ml_win_rate || 0}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between text-xs text-slate-500">
+                                        <span>ML Wins: {Math.round((abTestResults.matched_predictions * (abTestResults.ml_win_rate || 0)) / 100)}</span>
+                                        <span>API Wins: {Math.round(abTestResults.matched_predictions * (1 - (abTestResults.ml_win_rate || 0) / 100))}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                                        <div className="text-center">
+                                            <div className="text-lg font-bold text-white">{abTestResults.total_predictions?.toLocaleString()}</div>
+                                            <div className="text-xs text-slate-500">Total Predictions</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-lg font-bold text-white">{abTestResults.matched_predictions?.toLocaleString()}</div>
+                                            <div className="text-xs text-slate-500">Matched ({abTestResults.match_rate?.toFixed(0)}%)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </Card>
+
+                        {/* Coverage Comparison */}
+                        <Card title="Coverage Comparison" icon={BarChart3} className="lg:col-span-2">
+                            {!abTestResults?.coverage ? (
+                                <div className="h-[150px] flex items-center justify-center text-slate-500 text-sm">
+                                    No coverage data available
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <div className="text-sm text-slate-400 mb-2">Within 1 Minute</div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-red-400">API</span>
+                                                    <span>{abTestResults.coverage.api_within_1min?.toFixed(1) || 0}%</span>
+                                                </div>
+                                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-red-500" style={{ width: `${abTestResults.coverage.api_within_1min || 0}%` }} />
+                                                </div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-emerald-400">ML</span>
+                                                    <span>{abTestResults.coverage.ml_within_1min?.toFixed(1) || 0}%</span>
+                                                </div>
+                                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-emerald-500" style={{ width: `${abTestResults.coverage.ml_within_1min || 0}%` }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-slate-400 mb-2">Within 2 Minutes</div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-red-400">API</span>
+                                                    <span>{abTestResults.coverage.api_within_2min?.toFixed(1) || 0}%</span>
+                                                </div>
+                                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-red-500" style={{ width: `${abTestResults.coverage.api_within_2min || 0}%` }} />
+                                                </div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-emerald-400">ML</span>
+                                                    <span>{abTestResults.coverage.ml_within_2min?.toFixed(1) || 0}%</span>
+                                                </div>
+                                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-emerald-500" style={{ width: `${abTestResults.coverage.ml_within_2min || 0}%` }} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </Card>
                     </div>
                 )}
             </main>

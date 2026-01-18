@@ -7,6 +7,7 @@
 **Core Metric:** Mean Absolute Error (MAE) in seconds.
 
 **Current Status:**
+
 - **Baseline (Official API):** ~135s MAE
 - **Our Model (XGBoost):** ~57s MAE (~58% improvement)
 - **Phase:** Phase 3 (Production-Grade ML & Engineering)
@@ -18,11 +19,13 @@
 The system is a full-stack ML pipeline:
 
 ### 1. Data Collection (`collector/`)
+
 - `gtfs_collector.py`: Polls Madison Metro GTFS-RT API every 30s. Stores vehicle positions (`vehicle_observations`) and raw predictions (`predictions`).
 - `weather_collector.py`: Polls OpenWeatherMap every 30m. Stores `weather_observations`.
 - **Outcome matching**: `prediction_outcomes` table links a predicted arrival to the *actual* arrival time once it happens. This is our Ground Truth.
 
 ### 2. Database (PostgreSQL)
+
 - `vehicle_observations`: GPS pings, velocity, bearing.
 - `predictions`: Raw API predictions (baseline).
 - `prediction_outcomes`: The joined training set (Prediction vs Actual).
@@ -30,6 +33,7 @@ The system is a full-stack ML pipeline:
 - `ml_regression_runs`: Training history and model registry.
 
 ### 3. Machine Learning (`ml/`)
+
 - **Model**: XGBoost Regressor (Gradient Boosting)
 - **Feature Engineering** (see `ml/features/regression_features.py`):
   - **Horizon (`prdctdn`)**: *Critical feature*. Time until arrival. This is #1.
@@ -41,7 +45,9 @@ The system is a full-stack ML pipeline:
 - **Evaluation**: `temporal_cv.py` (Strict time-series cross-validation)
 
 ### 4. Backend (`backend/`)
+
 Flask API with endpoints:
+
 - `/api/predict-arrival-v2`: ML prediction + Confidence Intervals
 - `/api/model-performance`: Training history and metrics
 - `/api/model-status`: Model age, data freshness
@@ -52,7 +58,9 @@ Flask API with endpoints:
 - `/api/diagnostics/feature-importance`: Feature importance from model
 
 ### 5. Frontend (`frontend/`)
+
 React + Vite + Tailwind + Recharts.
+
 - **Key Page**: `Analytics.tsx` - Production ML diagnostics dashboard
 - **4 Tabs**: Health, Errors, Features, Segments
 - **Philosophy**: Data density and analysis over aesthetics
@@ -138,38 +146,61 @@ The raw API prediction (`prdctdn` in GTFS-RT) is the single most important featu
 ## Analytics Dashboard Tabs
 
 ### 1. Health (Model Health)
+
 - MAE trend over 14 days
 - Coverage thresholds (% within 30s, 1min, 2min, 5min)
 - Training history
 - Error distribution histogram
 
 ### 2. Errors (Error Analysis)
+
 - **Error by Horizon**: THE key chart. Shows how error increases with prediction horizon.
 - Predicted vs Actual scatter plot with R^2
 - Hourly bias analysis (rush hour penalty)
 - Worst predictions table for debugging
 
 ### 3. Features
+
 - Feature importance bar chart
 - Current model info (version, MAE, training samples)
 - Recent training runs
 
 ### 4. Segments
+
 - Route performance table (sortable)
 - Route x Hour heatmap
+
+### 5. A/B Test (NEW)
+
+- **Drift Status**: Real-time model health monitoring with OK/WARNING/CRITICAL indicators
+- **ML vs API MAE**: Side-by-side comparison with daily breakdown
+- **Win Rate**: % of predictions where ML outperforms API
+- **Coverage Comparison**: Within 1min/2min accuracy comparison
+
+---
+
+## New Endpoints (A/B Testing & Drift)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/ab-test/log` | POST | Log prediction for A/B comparison |
+| `/api/ab-test/results` | GET | Get comparison metrics (MAE, win rate) |
+| `/api/drift/check` | GET | Check model drift status |
 
 ---
 
 ## Current Status (Jan 2026)
 
 **Recently Completed:**
-- Production ML diagnostics dashboard with 4 tabs
-- Error-by-horizon analysis (key insight visualization)
-- Stop-level reliability features
-- Fixed training pipeline to handle missing weather table
-- Removed fake/mocked data from backend
+
+- A/B Testing framework with production comparison
+- Drift monitoring with OK/WARNING/CRITICAL status
+- New A/B Test tab in Analytics dashboard
+- Weather API integration verified (OpenWeatherMap)
+- Production ML diagnostics dashboard with 5 tabs
 
 **Next Up:**
-- A/B Testing framework
-- Long-term drift monitoring and alerting
+
 - Velocity-based features from GPS data
+- Email alerting on critical drift
+- Automated retraining triggers

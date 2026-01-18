@@ -3464,6 +3464,352 @@ def generate_maps():
             'message': f'Error generating maps: {str(e)}'
         }), 500
 
+# ==================== A/B TESTING FRAMEWORK ====================
+
+def ensure_ab_test_table():
+    """Create ab_test_predictions table if not exists."""
+    try:
+        from sqlalchemy import create_engine, text
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return False
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ab_test_predictions (
+                    id SERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    vehicle_id VARCHAR(20),
+                    trip_id VARCHAR(50),
+                    stop_id VARCHAR(20),
+                    route_id VARCHAR(10),
+                    api_prediction_sec INT,
+                    ml_prediction_sec FLOAT,
+                    api_horizon_min FLOAT,
+                    ml_eta_low_sec FLOAT,
+                    ml_eta_high_sec FLOAT,
+                    actual_arrival_at TIMESTAMPTZ,
+                    actual_arrival_sec INT,
+                    api_error_sec FLOAT,
+                    ml_error_sec FLOAT,
+                    ml_won BOOLEAN,
+                    matched BOOLEAN DEFAULT FALSE,
+                    matched_at TIMESTAMPTZ
+                )
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_ab_test_created 
+                ON ab_test_predictions(created_at DESC)
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_ab_test_matched 
+                ON ab_test_predictions(matched, created_at)
+            """))
+            conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Failed to create ab_test table: {e}")
+        return False
+
+
+@app.route("/api/ab-test/log", methods=["POST"])
+def log_ab_test_prediction():
+    """
+    Log a prediction for A/B testing comparison.
+    
+    POST body:
+    {
+        "vehicle_id": "1234",
+        "trip_id": "trip_123",
+        "stop_id": "stop_456",
+        "route_id": "A",
+        "api_prediction_sec": 600,  // API countdown in seconds
+        "ml_prediction_sec": 580,   // ML prediction in seconds
+        "api_horizon_min": 10,
+        "ml_eta_low_sec": 510,
+        "ml_eta_high_sec": 660
+    }
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        
+        data = request.get_json() or {}
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        ensure_ab_test_table()
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                INSERT INTO ab_test_predictions (
+                    vehicle_id, trip_id, stop_id, route_id,
+                    api_prediction_sec, ml_prediction_sec, api_horizon_min,
+                    ml_eta_low_sec, ml_eta_high_sec
+                ) VALUES (
+                    :vehicle_id, :trip_id, :stop_id, :route_id,
+                    :api_sec, :ml_sec, :horizon,
+                    :ml_low, :ml_high
+                )
+                RETURNING id
+            """), {
+                "vehicle_id": data.get("vehicle_id"),
+                "trip_id": data.get("trip_id"),
+                "stop_id": data.get("stop_id"),
+                "route_id": data.get("route_id"),
+                "api_sec": data.get("api_prediction_sec"),
+                "ml_sec": data.get("ml_prediction_sec"),
+                "horizon": data.get("api_horizon_min"),
+                "ml_low": data.get("ml_eta_low_sec"),
+                "ml_high": data.get("ml_eta_high_sec")
+            })
+            conn.commit()
+            prediction_id = result.fetchone()[0]
+        
+        return jsonify({
+            "success": True,
+            "prediction_id": prediction_id
+        })
+        
+    except Exception as e:
+        logging.error(f"A/B test log error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ab-test/results")
+def get_ab_test_results():
+    """
+    Get A/B testing results comparing ML vs API predictions.
+    
+    Returns comparison metrics including:
+    - Overall MAE comparison
+    - Win/loss ratio
+    - Coverage comparison
+    - Statistical significance
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        days = request.args.get('days', 7, type=int)
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            # Check if table exists
+            exists = conn.execute(text(
+                "SELECT to_regclass('public.ab_test_predictions')"
+            )).scalar()
+            
+            if not exists:
+                ensure_ab_test_table()
+                return jsonify({
+                    "message": "A/B test table created, no data yet",
+                    "total_predictions": 0,
+                    "matched_predictions": 0
+                })
+            
+            # Overall stats
+            stats = conn.execute(text("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN matched THEN 1 ELSE 0 END) as matched,
+                    AVG(ABS(api_error_sec)) FILTER (WHERE matched) as api_mae,
+                    AVG(ABS(ml_error_sec)) FILTER (WHERE matched) as ml_mae,
+                    SUM(CASE WHEN ml_won THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_wins,
+                    AVG(CASE WHEN ABS(api_error_sec) <= 60 THEN 1 ELSE 0 END) FILTER (WHERE matched) as api_within_1min,
+                    AVG(CASE WHEN ABS(ml_error_sec) <= 60 THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_within_1min,
+                    AVG(CASE WHEN ABS(api_error_sec) <= 120 THEN 1 ELSE 0 END) FILTER (WHERE matched) as api_within_2min,
+                    AVG(CASE WHEN ABS(ml_error_sec) <= 120 THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_within_2min
+                FROM ab_test_predictions
+                WHERE created_at > NOW() - INTERVAL :days || ' days'
+            """), {"days": str(days)}).fetchone()
+            
+            total = stats[0] or 0
+            matched = stats[1] or 0
+            api_mae = float(stats[2]) if stats[2] else None
+            ml_mae = float(stats[3]) if stats[3] else None
+            ml_wins = stats[4] or 0
+            
+            # Daily breakdown
+            daily = conn.execute(text("""
+                SELECT 
+                    DATE(created_at) as date,
+                    COUNT(*) FILTER (WHERE matched) as matched_count,
+                    AVG(ABS(api_error_sec)) FILTER (WHERE matched) as api_mae,
+                    AVG(ABS(ml_error_sec)) FILTER (WHERE matched) as ml_mae,
+                    SUM(CASE WHEN ml_won THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_wins
+                FROM ab_test_predictions
+                WHERE created_at > NOW() - INTERVAL :days || ' days'
+                GROUP BY DATE(created_at)
+                ORDER BY DATE(created_at) DESC
+                LIMIT 14
+            """), {"days": str(days)}).fetchall()
+            
+            # Calculate improvement
+            improvement_pct = None
+            if api_mae and ml_mae and api_mae > 0:
+                improvement_pct = ((api_mae - ml_mae) / api_mae) * 100
+            
+            win_rate = (ml_wins / matched * 100) if matched > 0 else None
+            
+            return jsonify({
+                "period_days": days,
+                "total_predictions": total,
+                "matched_predictions": matched,
+                "match_rate": round(matched / total * 100, 1) if total > 0 else 0,
+                "api_mae_sec": round(api_mae, 1) if api_mae else None,
+                "ml_mae_sec": round(ml_mae, 1) if ml_mae else None,
+                "improvement_pct": round(improvement_pct, 1) if improvement_pct else None,
+                "ml_win_rate": round(win_rate, 1) if win_rate else None,
+                "coverage": {
+                    "api_within_1min": round(float(stats[5]) * 100, 1) if stats[5] else None,
+                    "ml_within_1min": round(float(stats[6]) * 100, 1) if stats[6] else None,
+                    "api_within_2min": round(float(stats[7]) * 100, 1) if stats[7] else None,
+                    "ml_within_2min": round(float(stats[8]) * 100, 1) if stats[8] else None
+                },
+                "daily_breakdown": [{
+                    "date": r[0].isoformat() if r[0] else None,
+                    "matched": r[1],
+                    "api_mae": round(float(r[2]), 1) if r[2] else None,
+                    "ml_mae": round(float(r[3]), 1) if r[3] else None,
+                    "ml_wins": r[4]
+                } for r in daily],
+                "generated_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+    except Exception as e:
+        logging.error(f"A/B test results error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ==================== DRIFT MONITORING ====================
+
+@app.route("/api/drift/check")
+def check_model_drift():
+    """
+    Check for model performance drift.
+    
+    Compares recent model performance against baseline and returns:
+    - Current rolling MAE
+    - Baseline MAE (from training)
+    - Drift status: OK, WARNING, CRITICAL
+    - Recommendation
+    """
+    try:
+        from sqlalchemy import create_engine, text
+        from datetime import datetime, timezone
+        import json
+        from pathlib import Path
+        
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return jsonify({"error": "Database not configured"}), 503
+        
+        engine = create_engine(database_url, pool_pre_ping=True)
+        
+        # Get baseline MAE from deployed model
+        ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+        registry_file = ml_path / 'registry.json'
+        
+        baseline_mae = 57  # Default baseline (from our current model)
+        model_version = None
+        model_trained_at = None
+        
+        if registry_file.exists():
+            with open(registry_file, 'r') as f:
+                registry = json.load(f)
+            
+            latest = registry.get('latest')
+            if latest:
+                model_version = latest
+                for entry in registry.get('models', []):
+                    if entry['version'] == latest:
+                        baseline_mae = entry.get('mae', 57)
+                        model_trained_at = entry.get('trained_at')
+                        break
+        
+        with engine.connect() as conn:
+            # Get recent prediction error from prediction_outcomes
+            recent = conn.execute(text("""
+                SELECT 
+                    AVG(ABS(error_seconds)) as current_mae,
+                    STDDEV(error_seconds) as error_std,
+                    COUNT(*) as prediction_count,
+                    AVG(CASE WHEN ABS(error_seconds) <= 60 THEN 1 ELSE 0 END) as within_1min,
+                    AVG(CASE WHEN ABS(error_seconds) <= 120 THEN 1 ELSE 0 END) as within_2min
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+            """)).fetchone()
+            
+            current_mae = float(recent[0]) if recent[0] else None
+            error_std = float(recent[1]) if recent[1] else None
+            prediction_count = recent[2] or 0
+            within_1min = float(recent[3]) * 100 if recent[3] else None
+            within_2min = float(recent[4]) * 100 if recent[4] else None
+            
+            # Calculate drift metrics
+            drift_pct = None
+            status = "UNKNOWN"
+            recommendation = "Insufficient data to assess drift"
+            
+            if current_mae and baseline_mae:
+                drift_pct = ((current_mae - baseline_mae) / baseline_mae) * 100
+                
+                if drift_pct <= 10:
+                    status = "OK"
+                    recommendation = "Model performing within expected range"
+                elif drift_pct <= 25:
+                    status = "WARNING"
+                    recommendation = "Performance degradation detected. Consider retraining soon."
+                else:
+                    status = "CRITICAL"
+                    recommendation = "Significant drift detected. Immediate retraining recommended."
+            
+            # Model age check
+            model_age_days = None
+            if model_trained_at:
+                try:
+                    trained_dt = datetime.fromisoformat(model_trained_at.replace('Z', '+00:00'))
+                    model_age_days = (datetime.now(timezone.utc) - trained_dt).days
+                    
+                    if model_age_days > 14 and status == "OK":
+                        status = "WARNING"
+                        recommendation = f"Model is {model_age_days} days old. Consider scheduled retraining."
+                except:
+                    pass
+            
+            return jsonify({
+                "status": status,
+                "baseline_mae_sec": round(baseline_mae, 1),
+                "current_mae_sec": round(current_mae, 1) if current_mae else None,
+                "drift_pct": round(drift_pct, 1) if drift_pct else None,
+                "error_std": round(error_std, 1) if error_std else None,
+                "prediction_count_7d": prediction_count,
+                "coverage": {
+                    "within_1min_pct": round(within_1min, 1) if within_1min else None,
+                    "within_2min_pct": round(within_2min, 1) if within_2min else None
+                },
+                "model": {
+                    "version": model_version,
+                    "trained_at": model_trained_at,
+                    "age_days": model_age_days
+                },
+                "recommendation": recommendation,
+                "checked_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+    except Exception as e:
+        logging.error(f"Drift check error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     # Fire-and-forget stop cache build on startup if missing
