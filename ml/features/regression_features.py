@@ -63,10 +63,11 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 w.wind_speed_mps,
                 w.visibility_meters,
                 w.is_severe as is_severe_weather,
-                -- Velocity features (join to vehicle observations near prediction time)
-                v.avg_speed,
-                v.speed_stddev,
-                v.obs_count as velocity_samples
+                -- Velocity features (disabled temporarily - expensive query)
+                -- TODO: Add index on vehicle_observations(vid, collected_at) then re-enable
+                NULL::float as avg_speed,
+                NULL::float as speed_stddev,
+                0 as velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
             LEFT JOIN LATERAL (
@@ -77,17 +78,6 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 ORDER BY observed_at DESC
                 LIMIT 1
             ) w ON true
-            LEFT JOIN LATERAL (
-                -- Get velocity stats for this vehicle in 5-min window before prediction
-                SELECT 
-                    AVG(spd) as avg_speed,
-                    STDDEV(spd) as speed_stddev,
-                    COUNT(*) as obs_count
-                FROM vehicle_observations
-                WHERE vid = po.vid
-                  AND collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at
-                  AND spd IS NOT NULL
-            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
@@ -112,23 +102,12 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 NULL::float as wind_speed_mps,
                 NULL::float as visibility_meters,
                 NULL::boolean as is_severe_weather,
-                -- Velocity features (always available from vehicle_observations)
-                v.avg_speed,
-                v.speed_stddev,
-                v.obs_count as velocity_samples
+                -- Velocity features (disabled temporarily - need index first)
+                NULL::float as avg_speed,
+                NULL::float as speed_stddev,
+                0 as velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
-            LEFT JOIN LATERAL (
-                -- Get velocity stats for this vehicle in 5-min window before prediction
-                SELECT 
-                    AVG(spd) as avg_speed,
-                    STDDEV(spd) as speed_stddev,
-                    COUNT(*) as obs_count
-                FROM vehicle_observations
-                WHERE vid = po.vid
-                  AND collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at
-                  AND spd IS NOT NULL
-            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
