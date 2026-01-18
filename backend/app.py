@@ -3628,8 +3628,8 @@ def get_ab_test_results():
                     AVG(CASE WHEN ABS(api_error_sec) <= 120 THEN 1 ELSE 0 END) FILTER (WHERE matched) as api_within_2min,
                     AVG(CASE WHEN ABS(ml_error_sec) <= 120 THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_within_2min
                 FROM ab_test_predictions
-                WHERE created_at > NOW() - INTERVAL :days || ' days'
-            """), {"days": str(days)}).fetchone()
+                WHERE created_at > NOW() - make_interval(days => :days)
+            """), {"days": days}).fetchone()
             
             total = stats[0] or 0
             matched = stats[1] or 0
@@ -3646,11 +3646,11 @@ def get_ab_test_results():
                     AVG(ABS(ml_error_sec)) FILTER (WHERE matched) as ml_mae,
                     SUM(CASE WHEN ml_won THEN 1 ELSE 0 END) FILTER (WHERE matched) as ml_wins
                 FROM ab_test_predictions
-                WHERE created_at > NOW() - INTERVAL :days || ' days'
+                WHERE created_at > NOW() - make_interval(days => :days)
                 GROUP BY DATE(created_at)
                 ORDER BY DATE(created_at) DESC
                 LIMIT 14
-            """), {"days": str(days)}).fetchall()
+            """), {"days": days}).fetchall()
             
             # Calculate improvement
             improvement_pct = None
