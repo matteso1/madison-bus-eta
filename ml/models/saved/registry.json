@@ -99,7 +99,65 @@
         "is_morning_rush": "0.0"
       },
       "notes": "horizon_feature_breakthrough_57pct_mae_reduction"
+    },
+    {
+      "version": "20260118_190741",
+      "filename": "model_20260118_190741.pkl",
+      "created_at": "2026-01-18T19:07:41.456959+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 32637,
+        "test_samples": 8160
+      },
+      "feature_importance": {
+        "stop_avg_error": "0.17895727",
+        "predicted_minutes": "0.14962098",
+        "stop_error_std": "0.079270184",
+        "hr_route_error": "0.070056446",
+        "route_error_std": "0.062838964",
+        "route_encoded": "0.056210425",
+        "route_avg_error": "0.04656846",
+        "horizon_bucket": "0.03730671",
+        "hour_cos": "0.03411589",
+        "route_frequency": "0.033463463",
+        "day_cos": "0.03280851",
+        "day_sin": "0.030822994",
+        "is_weekend": "0.029577784",
+        "is_rush_hour": "0.027130816",
+        "hour_sin": "0.024835894",
+        "is_evening_rush": "0.022939013",
+        "horizon_min": "0.022783397",
+        "horizon_squared": "0.01923085",
+        "wind_speed": "0.015729768",
+        "temp_celsius": "0.013991515",
+        "is_cold": "0.011590514",
+        "is_morning_rush": "0.00015013946",
+        "month_sin": "0.0",
+        "month_cos": "0.0",
+        "is_holiday": "0.0",
+        "is_hot": "0.0",
+        "precipitation_mm": "0.0",
+        "snow_mm": "0.0",
+        "is_raining": "0.0",
+        "is_snowing": "0.0",
+        "is_precipitating": "0.0",
+        "is_windy": "0.0",
+        "visibility_km": "0.0",
+        "low_visibility": "0.0",
+        "is_severe_weather": "0.0",
+        "avg_speed": "0.0",
+        "speed_stddev": "0.0",
+        "speed_variability": "0.0",
+        "is_stopped": "0.0",
+        "is_slow": "0.0",
+        "is_moving_fast": "0.0",
+        "has_velocity_data": "0.0"
+      },
+      "notes": "improved_9s"
     }
   ],
-  "latest": "20260117_162857"
+  "latest": "20260118_190741"
 }
