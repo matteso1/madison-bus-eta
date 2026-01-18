@@ -2,6 +2,26 @@
 
 A machine learning-enhanced bus tracking system for Madison, WI. Predicts ETA errors by collecting ground truth arrival data and training regression models autonomously.
 
+**Live:** [madison-bus-eta.vercel.app](https://madison-bus-eta-production.up.railway.app)
+
+## Performance
+
+| Metric | Our Model | API Baseline | Improvement |
+|--------|-----------|--------------|-------------|
+| **MAE** | 48.4s | ~80s | **39.5%** |
+| **Coverage** | 87% within 2min | ~70% | **+17pp** |
+| **Predictions** | 41K/week | n/a | Continuous |
+
+---
+
+## Key Features
+
+- **Autonomous Retraining** - GitHub Actions trains nightly, auto-deploys improved models
+- **A/B Testing** - Side-by-side ML vs API comparison with win-rate tracking
+- **Drift Monitoring** - Real-time model health with OK/WARNING/CRITICAL status
+- **Route Reliability** - Per-route reliability scores and hourly breakdowns
+- **5-Tab Analytics Dashboard** - Health, Errors, Features, Segments, A/B Test
+
 ---
 
 ## Quick Start
@@ -345,6 +365,8 @@ madison-bus-eta/
 
 ## API Reference
 
+### Core Endpoints
+
 ```
 GET /health              System status and uptime
 GET /routes              All 29 Madison Metro routes
@@ -352,8 +374,35 @@ GET /vehicles            Live bus positions (60+ buses)
 GET /vehicles?rt=80      Filter by route
 GET /patterns?rt=A       Route geometry (polylines)
 GET /predictions?stpid=  Arrival predictions for stop
-GET /ml/status           Current model version and metrics
-POST /predict-arrival    Get corrected ETA prediction
+```
+
+### ML Endpoints
+
+```
+GET  /api/ml/status              Current model version and metrics
+POST /api/predict-arrival        Get corrected ETA prediction
+POST /api/predict-arrival-v2     Enhanced prediction with confidence intervals
+GET  /api/model-performance      Training history
+```
+
+### A/B Testing & Monitoring
+
+```
+POST /api/ab-test/log            Log prediction for A/B comparison
+GET  /api/ab-test/results        Get ML vs API comparison metrics
+GET  /api/drift/check            Check model drift status (OK/WARNING/CRITICAL)
+GET  /api/route-reliability      Per-route reliability scores
+GET  /api/route-reliability/<id> Detailed hourly breakdown for route
+```
+
+### Diagnostics
+
+```
+GET /api/diagnostics/error-by-horizon    Error breakdown by prediction horizon
+GET /api/diagnostics/predicted-vs-actual Scatter plot data with R²
+GET /api/diagnostics/worst-predictions   Debugging worst cases
+GET /api/diagnostics/hourly-bias         Time-of-day analysis
+GET /api/diagnostics/feature-importance  XGBoost feature importance
 ```
 
 ---
