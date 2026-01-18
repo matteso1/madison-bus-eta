@@ -44,7 +44,7 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
         ).scalar()
 
     if weather_table_exists:
-        # Full query with weather data
+        # Full query with weather data AND velocity data
         query = """
             SELECT
                 po.vid,
@@ -62,7 +62,11 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 w.snow_1h_mm,
                 w.wind_speed_mps,
                 w.visibility_meters,
-                w.is_severe as is_severe_weather
+                w.is_severe as is_severe_weather,
+                -- Velocity features (join to vehicle observations near prediction time)
+                v.avg_speed,
+                v.speed_stddev,
+                v.obs_count as velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
             LEFT JOIN LATERAL (
@@ -73,6 +77,17 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 ORDER BY observed_at DESC
                 LIMIT 1
             ) w ON true
+            LEFT JOIN LATERAL (
+                -- Get velocity stats for this vehicle in 5-min window before prediction
+                SELECT 
+                    AVG(spd) as avg_speed,
+                    STDDEV(spd) as speed_stddev,
+                    COUNT(*) as obs_count
+                FROM vehicle_observations
+                WHERE vid = po.vid
+                  AND collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at
+                  AND spd IS NOT NULL
+            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
@@ -96,9 +111,24 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 NULL::float as snow_1h_mm,
                 NULL::float as wind_speed_mps,
                 NULL::float as visibility_meters,
-                NULL::boolean as is_severe_weather
+                NULL::boolean as is_severe_weather,
+                -- Velocity features (always available from vehicle_observations)
+                v.avg_speed,
+                v.speed_stddev,
+                v.obs_count as velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
+            LEFT JOIN LATERAL (
+                -- Get velocity stats for this vehicle in 5-min window before prediction
+                SELECT 
+                    AVG(spd) as avg_speed,
+                    STDDEV(spd) as speed_stddev,
+                    COUNT(*) as obs_count
+                FROM vehicle_observations
+                WHERE vid = po.vid
+                  AND collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at
+                  AND spd IS NOT NULL
+            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
@@ -235,6 +265,35 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
         df['low_visibility'] = 0
         df['is_severe_weather'] = 0
     
+    # ====== VELOCITY FEATURES (from GPS speed data) ======
+    # Bus speed at prediction time is a strong indicator of traffic conditions
+    if 'avg_speed' in df.columns:
+        # Average speed in mph (API reports speed)
+        df['avg_speed'] = df['avg_speed'].fillna(15)  # Default to ~15 mph if no data
+        
+        # Speed variability (high = stop-and-go traffic)
+        df['speed_stddev'] = df['speed_stddev'].fillna(0)
+        df['speed_variability'] = df['speed_stddev'] / (df['avg_speed'] + 0.1)  # Coefficient of variation
+        
+        # Binary indicators
+        df['is_stopped'] = (df['avg_speed'] < 2).astype(int)  # Bus is stopped or crawling
+        df['is_slow'] = (df['avg_speed'] < 10).astype(int)    # Slow traffic
+        df['is_moving_fast'] = (df['avg_speed'] > 25).astype(int)  # Moving quickly
+        
+        # Velocity samples (more samples = more confidence)
+        df['velocity_samples'] = df['velocity_samples'].fillna(0) if 'velocity_samples' in df.columns else 0
+        df['has_velocity_data'] = (df['velocity_samples'] > 0).astype(int)
+    else:
+        # Fallback if velocity data not available
+        df['avg_speed'] = 15.0
+        df['speed_stddev'] = 5.0
+        df['speed_variability'] = 0.33
+        df['is_stopped'] = 0
+        df['is_slow'] = 0
+        df['is_moving_fast'] = 0
+        df['velocity_samples'] = 0
+        df['has_velocity_data'] = 0
+    
     return df
 
 
@@ -359,6 +418,15 @@ def get_regression_feature_columns() -> list:
         'visibility_km',         # Visibility in km
         'low_visibility',        # Binary: < 1km
         'is_severe_weather',     # Binary: severe weather alert
+
+        # ====== VELOCITY FEATURES (NEW - from GPS speed data) ======
+        'avg_speed',             # Average speed in mph
+        'speed_stddev',          # Speed standard deviation
+        'speed_variability',     # Coefficient of variation (high = stop-and-go)
+        'is_stopped',            # Binary: speed < 2 mph
+        'is_slow',               # Binary: speed < 10 mph
+        'is_moving_fast',        # Binary: speed > 25 mph
+        'has_velocity_data',     # Binary: has GPS speed data
     ]
 
 
