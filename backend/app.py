@@ -1502,6 +1502,32 @@ def predict_arrival_v2():
         
         interval_desc = f"Bus will arrive in {int(eta_low)}-{int(eta_high)} minutes (80% confidence)"
         
+        # Log to A/B test table for tracking ML vs API performance
+        try:
+            from sqlalchemy import create_engine, text as sql_text
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                engine = create_engine(database_url, pool_pre_ping=True)
+                with engine.connect() as conn:
+                    conn.execute(sql_text("""
+                        INSERT INTO ab_test_predictions 
+                        (vehicle_id, stop_id, route_id, api_prediction_sec, ml_prediction_sec, 
+                         api_horizon_min, ml_eta_low_sec, ml_eta_high_sec)
+                        VALUES (:vid, :stop, :route, :api_sec, :ml_sec, :horizon, :low_sec, :high_sec)
+                    """), {
+                        "vid": data.get('vehicle_id', 'unknown'),
+                        "stop": stop_id or 'unknown',
+                        "route": route or 'unknown',
+                        "api_sec": int(api_prediction * 60),
+                        "ml_sec": int(eta_median * 60),
+                        "horizon": api_prediction,
+                        "low_sec": int(eta_low * 60),
+                        "high_sec": int(eta_high * 60)
+                    })
+                    conn.commit()
+        except Exception as log_error:
+            logging.warning(f"A/B test logging failed: {log_error}")  # Non-blocking
+        
         return jsonify({
             "api_prediction_min": api_prediction,
             "eta_low_min": eta_low,
