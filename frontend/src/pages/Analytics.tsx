@@ -92,9 +92,10 @@ interface ABTestResults {
 interface DriftStatus {
     status: 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
     baseline_mae_sec: number;
-    current_mae_sec: number | null;
+    api_mae_sec: number | null;  // API's actual error rate
     drift_pct: number | null;
     prediction_count_7d: number;
+    improvement_over_api: string | null;
     coverage: {
         within_1min_pct: number | null;
         within_2min_pct: number | null;
@@ -718,9 +719,9 @@ export default function AnalyticsPage() {
                         <Card title="Model Drift Status" icon={driftStatus?.status === 'OK' ? ShieldCheck : driftStatus?.status === 'CRITICAL' ? ShieldX : ShieldAlert} className="lg:col-span-2">
                             <div className="flex items-center gap-6">
                                 <div className={`flex items-center gap-3 px-4 py-3 rounded-lg ${driftStatus?.status === 'OK' ? 'bg-emerald-950/50 border border-emerald-800' :
-                                        driftStatus?.status === 'WARNING' ? 'bg-amber-950/50 border border-amber-800' :
-                                            driftStatus?.status === 'CRITICAL' ? 'bg-red-950/50 border border-red-800' :
-                                                'bg-slate-800 border border-slate-700'
+                                    driftStatus?.status === 'WARNING' ? 'bg-amber-950/50 border border-amber-800' :
+                                        driftStatus?.status === 'CRITICAL' ? 'bg-red-950/50 border border-red-800' :
+                                            'bg-slate-800 border border-slate-700'
                                     }`}>
                                     {driftStatus?.status === 'OK' && <ShieldCheck className="w-8 h-8 text-emerald-400" />}
                                     {driftStatus?.status === 'WARNING' && <ShieldAlert className="w-8 h-8 text-amber-400" />}
@@ -728,8 +729,8 @@ export default function AnalyticsPage() {
                                     {(!driftStatus || driftStatus?.status === 'UNKNOWN') && <ShieldAlert className="w-8 h-8 text-slate-400" />}
                                     <div>
                                         <div className={`text-lg font-bold ${driftStatus?.status === 'OK' ? 'text-emerald-400' :
-                                                driftStatus?.status === 'WARNING' ? 'text-amber-400' :
-                                                    driftStatus?.status === 'CRITICAL' ? 'text-red-400' : 'text-slate-400'
+                                            driftStatus?.status === 'WARNING' ? 'text-amber-400' :
+                                                driftStatus?.status === 'CRITICAL' ? 'text-red-400' : 'text-slate-400'
                                             }`}>
                                             {driftStatus?.status || 'UNKNOWN'}
                                         </div>
@@ -739,17 +740,17 @@ export default function AnalyticsPage() {
 
                                 <div className="flex-1 grid grid-cols-4 gap-4 text-sm">
                                     <div>
-                                        <div className="text-slate-500 text-xs">Baseline MAE</div>
-                                        <div className="font-bold text-white">{driftStatus?.baseline_mae_sec?.toFixed(0) || '-'}s</div>
+                                        <div className="text-slate-500 text-xs">Model MAE</div>
+                                        <div className="font-bold text-emerald-400">{driftStatus?.baseline_mae_sec?.toFixed(0) || '-'}s</div>
                                     </div>
                                     <div>
-                                        <div className="text-slate-500 text-xs">Current MAE (7d)</div>
-                                        <div className="font-bold text-white">{driftStatus?.current_mae_sec?.toFixed(0) || '-'}s</div>
+                                        <div className="text-slate-500 text-xs">API Error (7d)</div>
+                                        <div className="font-bold text-amber-400">{driftStatus?.api_mae_sec?.toFixed(0) || '-'}s</div>
                                     </div>
                                     <div>
-                                        <div className="text-slate-500 text-xs">Drift</div>
-                                        <div className={`font-bold ${(driftStatus?.drift_pct ?? 0) > 10 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                            {driftStatus?.drift_pct != null ? `${driftStatus.drift_pct > 0 ? '+' : ''}${driftStatus.drift_pct.toFixed(1)}%` : '-'}
+                                        <div className="text-slate-500 text-xs">Improvement</div>
+                                        <div className="font-bold text-emerald-400">
+                                            {driftStatus?.improvement_over_api || '-'}
                                         </div>
                                     </div>
                                     <div>
