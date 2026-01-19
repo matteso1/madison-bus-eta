@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import DeckGL from '@deck.gl/react';
 import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
@@ -43,6 +43,10 @@ const ROUTE_COLORS: Record<string, [number, number, number]> = {
     '84': [51, 51, 102],
 };
 
+// Cache for ML predictions to avoid repeated API calls
+const predictionCache: Record<string, { prediction: any; timestamp: number }> = {};
+const CACHE_TTL = 60000; // 1 minute
+
 export default function MapView() {
     const [selectedRoute, setSelectedRoute] = useState<string>('ALL');
     const [liveData, setLiveData] = useState<any[]>([]);
@@ -51,6 +55,45 @@ export default function MapView() {
     const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
+
+    // Function to get ML prediction for a vehicle
+    const getMLPrediction = useCallback(async (vehicle: any) => {
+        const cacheKey = `${vehicle.vid}-${vehicle.route}`;
+        const cached = predictionCache[cacheKey];
+
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+            return cached.prediction;
+        }
+
+        try {
+            // Estimate horizon based on route (default ~10 min)
+            const apiPrediction = 10; // Default assumption
+
+            const response = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
+                route: vehicle.route,
+                stop_id: 'live_tracking',
+                vehicle_id: vehicle.vid,
+                api_prediction: apiPrediction
+            });
+
+            const prediction = response.data;
+            predictionCache[cacheKey] = { prediction, timestamp: Date.now() };
+            return prediction;
+        } catch (error) {
+            console.error('ML prediction error:', error);
+            return null;
+        }
+    }, [API_BASE]);
+
+    // Trigger ML predictions for visible vehicles (sample for A/B testing)
+    useEffect(() => {
+        const sampleSize = Math.min(5, liveData.length); // Sample 5 vehicles per refresh
+        const sampled = liveData.slice(0, sampleSize);
+
+        sampled.forEach(vehicle => {
+            getMLPrediction(vehicle); // Fire and forget - populates A/B test table
+        });
+    }, [liveData, getMLPrediction]);
 
     useEffect(() => {
         const fetchRoutesAndPatterns = async () => {
