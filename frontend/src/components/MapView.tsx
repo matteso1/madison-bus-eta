@@ -223,68 +223,72 @@ export default function MapView() {
                 getTooltip={({ object }) => {
                     if (!object) return null;
 
-                    // Compute delay probability based on bus properties
-                    const hour = new Date().getHours();
-                    const dayOfWeek = new Date().getDay();
-                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-                    const isRushHour = (hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19);
-                    const isRapid = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].includes(object.route);
+                    // Get cached ML prediction if available
+                    const cacheKey = `${object.vid}-${object.route}`;
+                    const cached = predictionCache[cacheKey];
+                    const mlPrediction = cached?.prediction;
 
-                    // Distance from downtown (affects delay probability)
-                    const distFromCenter = Math.sqrt(
-                        Math.pow(object.lat - 43.0731, 2) +
-                        Math.pow(object.lon - (-89.4012), 2)
-                    );
+                    // Build prediction display
+                    let predictionSection = '';
 
-                    // Calculate base probability
-                    let delayProb = 0.3; // Base 30%
-                    if (object.dly) delayProb += 0.35;
-                    if (isRushHour && !isWeekend) delayProb += 0.15;
-                    if (!isRapid) delayProb += 0.08;
-                    if (distFromCenter > 0.05) delayProb += 0.05;
-                    delayProb = Math.min(delayProb, 0.95);
+                    if (mlPrediction && mlPrediction.model_available) {
+                        // Real ML prediction available!
+                        const etaLow = Math.round(mlPrediction.eta_low_min);
+                        const etaHigh = Math.round(mlPrediction.eta_high_min);
+                        const etaMedian = Math.round(mlPrediction.eta_median_min);
+                        const apiEta = Math.round(mlPrediction.api_prediction_min);
 
-                    // Confidence based on factors available
-                    const confidence = Math.round((0.6 + (isRapid ? 0.15 : 0) + (object.dly !== undefined ? 0.1 : 0)) * 100);
+                        // Color based on ETA
+                        let etaColor = '#4ade80'; // green for short waits
+                        if (etaMedian > 15) etaColor = '#fbbf24'; // amber for longer waits
+                        if (etaMedian > 25) etaColor = '#f87171'; // red for long waits
 
-                    // Prediction message
-                    let predictionMsg;
-                    let predictionColor;
-                    if (delayProb >= 0.7) {
-                        predictionMsg = `High delay risk (+${Math.round(delayProb * 4)} min)`;
-                        predictionColor = '#f87171';
-                    } else if (delayProb >= 0.5) {
-                        predictionMsg = `Moderate delay risk (+${Math.round(delayProb * 3)} min)`;
-                        predictionColor = '#fbbf24';
-                    } else if (delayProb >= 0.35) {
-                        predictionMsg = 'Minor delays possible';
-                        predictionColor = '#a3e635';
+                        predictionSection = `
+                            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 2px;">
+                                <div style="font-size: 10px; color: #71717a; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #06b6d4);"></span>
+                                    ML-CORRECTED ETA
+                                </div>
+                                <div style="font-size: 20px; color: ${etaColor}; font-weight: 700; margin-bottom: 4px;">
+                                    ${etaLow}-${etaHigh} min
+                                </div>
+                                <div style="font-size: 11px; color: #71717a;">
+                                    API says ${apiEta} min • ML adjusts to ${etaMedian} min
+                                </div>
+                                <div style="font-size: 10px; color: #52525b; margin-top: 4px;">
+                                    80% confidence interval • Model v${mlPrediction.model_version || 'latest'}
+                                </div>
+                            </div>
+                        `;
                     } else {
-                        predictionMsg = 'Likely on schedule';
-                        predictionColor = '#4ade80';
+                        // Fallback - show loading or basic info
+                        const isDelayed = object.dly;
+                        predictionSection = `
+                            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 2px;">
+                                <div style="font-size: 10px; color: #71717a; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                                    <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #71717a;"></span>
+                                    PREDICTION
+                                </div>
+                                <div style="font-size: 12px; color: ${isDelayed ? '#fbbf24' : '#4ade80'}; font-weight: 500;">
+                                    ${isDelayed ? 'Expect delays on this route' : 'Running on schedule'}
+                                </div>
+                                <div style="font-size: 10px; color: #52525b; margin-top: 4px;">
+                                    Tap for detailed ML prediction
+                                </div>
+                            </div>
+                        `;
                     }
 
                     return {
                         html: `
-                            <div style="background: rgba(0,0,0,0.95); color: white; padding: 14px 18px; border-radius: 14px; font-family: system-ui; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px); min-width: 220px;">
+                            <div style="background: rgba(0,0,0,0.95); color: white; padding: 14px 18px; border-radius: 14px; font-family: system-ui; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px); min-width: 240px;">
                                 <div style="font-weight: 600; font-size: 15px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
                                     <span>Route ${object.route}</span>
                                     <span style="font-size: 10px; padding: 2px 8px; border-radius: 10px; background: ${object.dly ? 'rgba(248,113,113,0.2)' : 'rgba(74,222,128,0.2)'}; color: ${object.dly ? '#f87171' : '#4ade80'};">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
                                 </div>
-                                <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 10px;">${object.des || 'Unknown destination'}</div>
-                                <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 2px;">
-                                    <div style="font-size: 10px; color: #71717a; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: linear-gradient(135deg, #a855f7, #6366f1);"></span>
-                                        ML PREDICTION
-                                    </div>
-                                    <div style="font-size: 12px; color: ${predictionColor}; font-weight: 500;">
-                                        ${predictionMsg}
-                                    </div>
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-                                        <div style="font-size: 10px; color: #52525b;">Delay probability: ${Math.round(delayProb * 100)}%</div>
-                                        <div style="font-size: 10px; color: #71717a;">${confidence}% conf</div>
-                                    </div>
-                                </div>
+                                <div style="font-size: 12px; color: #a1a1aa; margin-bottom: 6px;">${object.des || 'Unknown destination'}</div>
+                                <div style="font-size: 10px; color: #52525b;">Vehicle ${object.vid}</div>
+                                ${predictionSection}
                             </div>
                         `,
                         style: { backgroundColor: 'transparent' }
