@@ -246,8 +246,38 @@ def get_directions():
 def get_stops():
     rt = request.args.get("rt")
     dir_ = request.args.get("dir")
-    if not rt or not dir_:
-        return jsonify({"error": "Missing params: rt or dir"}), 400
+    if not rt:
+        return jsonify({"error": "Missing param: rt"}), 400
+    
+    # If direction not specified, get stops for both directions
+    if not dir_:
+        cache_key = f"stops:{rt}:all"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+        
+        if OFFLINE_MODE:
+            data = fallback_stops(rt, "all")
+        else:
+            # Get both directions and combine stops
+            all_stops = []
+            seen_ids = set()
+            for direction in ["Inbound", "Outbound", "INBOUND", "OUTBOUND", "North", "South", "East", "West"]:
+                try:
+                    dir_data = api_get("getstops", rt=rt, dir=direction)
+                    stops = dir_data.get("bustime-response", {}).get("stops", [])
+                    for s in stops:
+                        if s.get("stpid") not in seen_ids:
+                            seen_ids.add(s.get("stpid"))
+                            all_stops.append(s)
+                except:
+                    pass
+            data = {"bustime-response": {"stops": all_stops}}
+        
+        cache_set(cache_key, data, 12 * 3600)
+        return jsonify(data)
+    
+    # Original behavior with direction specified
     cache_key = f"stops:{rt}:{dir_}"
     cached = cache_get(cache_key)
     if cached is not None:
