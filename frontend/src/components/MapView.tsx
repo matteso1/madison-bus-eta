@@ -6,7 +6,8 @@ import { Map } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import axios from 'axios';
-import { Bus, AlertTriangle, BarChart3, MapPin, X, Clock, TrendingUp } from 'lucide-react';
+import { Bus, AlertTriangle, BarChart3, MapPin, X, Clock, TrendingUp, Navigation } from 'lucide-react';
+import TripPlanner from './TripPlanner';
 
 const INITIAL_VIEW_STATE = {
     longitude: -89.384,
@@ -81,6 +82,9 @@ export default function MapView() {
 
     // Hover state for triggering ML prediction
     const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
+
+    // Trip planner state
+    const [showTripPlanner, setShowTripPlanner] = useState(false);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
@@ -581,6 +585,13 @@ export default function MapView() {
                                 </option>
                             ))}
                         </select>
+                        <button
+                            onClick={() => setShowTripPlanner(true)}
+                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white px-5 py-3 rounded-xl font-medium transition-all flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                        >
+                            <Navigation className="w-5 h-5" />
+                            <span className="hidden sm:inline">Trip Planner</span>
+                        </button>
                         <Link
                             to="/analytics"
                             className="bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white px-5 py-3 rounded-xl font-medium transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20"
@@ -625,6 +636,20 @@ export default function MapView() {
                     </Link>
                 </div>
             </div>
+
+            {/* Trip Planner Panel */}
+            {showTripPlanner && (
+                <div className="absolute top-0 left-0 bottom-0 z-60 flex items-start justify-start p-4 pt-20">
+                    <TripPlanner
+                        onClose={() => setShowTripPlanner(false)}
+                        onSelectTrip={(trip) => {
+                            console.log('Selected trip:', trip);
+                            // TODO: Track the selected bus
+                            setShowTripPlanner(false);
+                        }}
+                    />
+                </div>
+            )}
         </div>
     );
 }

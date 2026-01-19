@@ -347,6 +347,213 @@ def get_nearby_stops():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/search-stops")
+def search_stops():
+    """Search stops by name for autocomplete."""
+    try:
+        query = request.args.get("q", "").lower().strip()
+        if len(query) < 2:
+            return jsonify({"stops": [], "error": "Query too short"})
+        
+        limit = int(request.args.get("limit", 10))
+        
+        # Load stop cache
+        cache_path = _stop_cache_path()
+        if not cache_path.exists():
+            # Fallback to database
+            return jsonify({"stops": [], "error": "Stop cache not built"})
+        
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+        
+        stops_cache = cache_data.get('stops', {})
+        
+        # Search by name
+        matches = []
+        for stpid, stop_data in stops_cache.items():
+            name = stop_data.get('stpnm', '').lower()
+            if query in name:
+                score = 0
+                if name.startswith(query):
+                    score = 100  # Exact prefix match
+                elif ' ' + query in name:
+                    score = 50   # Word start match
+                else:
+                    score = 10   # Contains
+                
+                matches.append({
+                    'stpid': stpid,
+                    'stpnm': stop_data.get('stpnm', ''),
+                    'lat': stop_data.get('lat'),
+                    'lon': stop_data.get('lon'),
+                    'routes': stop_data.get('routes', []),
+                    'score': score
+                })
+        
+        # Sort by score then name
+        matches.sort(key=lambda x: (-x['score'], x['stpnm']))
+        
+        return jsonify({
+            "stops": matches[:limit],
+            "count": len(matches),
+            "query": query
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/plan-trip", methods=["POST"])
+def plan_trip():
+    """
+    Plan a trip from user location to destination with ML-optimized ETAs.
+    
+    Request: {
+        "from_lat": 43.073,
+        "from_lon": -89.401,
+        "to_stop_id": "1234"  // OR "to_lat", "to_lon"
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        from_lat = data.get('from_lat')
+        from_lon = data.get('from_lon')
+        to_stop_id = data.get('to_stop_id')
+        to_lat = data.get('to_lat')
+        to_lon = data.get('to_lon')
+        
+        if not from_lat or not from_lon:
+            return jsonify({"error": "from_lat and from_lon required"}), 400
+        
+        if not to_stop_id and not (to_lat and to_lon):
+            return jsonify({"error": "to_stop_id or to_lat/to_lon required"}), 400
+        
+        # Load stop cache
+        cache_path = _stop_cache_path()
+        if not cache_path.exists():
+            return jsonify({"error": "Stop cache not built"}), 503
+        
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+        stops_cache = cache_data.get('stops', {})
+        
+        # Get destination info
+        dest_stop = None
+        if to_stop_id:
+            dest_stop = stops_cache.get(str(to_stop_id))
+        
+        # Find nearby stops (within 0.3 miles / ~5 min walk)
+        def haversine(lat1, lon1, lat2, lon2):
+            R = 3959
+            dlat = math.radians(lat2 - lat1)
+            dlon = math.radians(lon2 - lon1)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+            return R * 2 * math.asin(math.sqrt(a))
+        
+        nearby_stops = []
+        for stpid, stop_data in stops_cache.items():
+            stop_lat = stop_data.get('lat')
+            stop_lon = stop_data.get('lon')
+            if stop_lat and stop_lon:
+                distance = haversine(from_lat, from_lon, stop_lat, stop_lon)
+                if distance <= 0.3:  # 0.3 miles ~ 5 min walk
+                    nearby_stops.append({
+                        'stpid': stpid,
+                        'stpnm': stop_data.get('stpnm', ''),
+                        'lat': stop_lat,
+                        'lon': stop_lon,
+                        'routes': stop_data.get('routes', []),
+                        'distance_miles': distance,
+                        'walk_time_min': round(distance * 20)  # ~3 mph walking
+                    })
+        
+        nearby_stops.sort(key=lambda x: x['distance_miles'])
+        nearby_stops = nearby_stops[:10]  # Limit to 10 closest
+        
+        if not nearby_stops:
+            return jsonify({
+                "options": [],
+                "error": "No stops within walking distance"
+            })
+        
+        # Get predictions for each nearby stop
+        trip_options = []
+        
+        for stop in nearby_stops:
+            try:
+                # Fetch real-time predictions for this stop
+                prd_response = api_get("getpredictions", stpid=stop['stpid'])
+                predictions = prd_response.get('bustime-response', {}).get('prd', [])
+                if not isinstance(predictions, list):
+                    predictions = [predictions] if predictions else []
+                
+                for prd in predictions[:3]:  # Top 3 predictions per stop
+                    api_minutes = int(prd.get('prdctdn', 0)) if prd.get('prdctdn', '').isdigit() else 99
+                    if api_minutes > 60:
+                        continue  # Skip predictions > 1 hour
+                    
+                    route = prd.get('rt', '')
+                    destination = prd.get('des', '')
+                    vid = prd.get('vid', '')
+                    
+                    # Get ML-corrected ETA
+                    ml_eta = api_minutes  # Default fallback
+                    ml_low = int(api_minutes * 0.8)
+                    ml_high = int(api_minutes * 1.3)
+                    
+                    try:
+                        # Quick ML prediction
+                        from ml.inference.predict import load_ensemble, predict_arrival_range
+                        ensemble = load_ensemble()
+                        if ensemble:
+                            ml_result = predict_arrival_range(
+                                ensemble, route, stop['stpid'], api_minutes
+                            )
+                            ml_eta = ml_result.get('median', api_minutes)
+                            ml_low = ml_result.get('low', ml_low)
+                            ml_high = ml_result.get('high', ml_high)
+                    except:
+                        pass  # Use defaults
+                    
+                    total_time = stop['walk_time_min'] + ml_eta
+                    
+                    trip_options.append({
+                        'route': route,
+                        'destination': destination,
+                        'departure_stop': stop['stpnm'],
+                        'departure_stop_id': stop['stpid'],
+                        'walk_time_min': stop['walk_time_min'],
+                        'walk_distance_mi': round(stop['distance_miles'], 2),
+                        'api_eta_min': api_minutes,
+                        'ml_eta_min': round(ml_eta),
+                        'ml_eta_low': ml_low,
+                        'ml_eta_high': ml_high,
+                        'total_time_min': round(total_time),
+                        'vehicle_id': vid,
+                        'delayed': prd.get('dly') == True or prd.get('dly') == 'true'
+                    })
+            except Exception as stop_error:
+                logging.warning(f"Error getting predictions for stop {stop['stpid']}: {stop_error}")
+                continue
+        
+        # Sort by total time
+        trip_options.sort(key=lambda x: x['total_time_min'])
+        
+        # Mark the fastest option
+        if trip_options:
+            trip_options[0]['fastest'] = True
+        
+        return jsonify({
+            "options": trip_options[:10],  # Top 10 options
+            "from": {"lat": from_lat, "lon": from_lon},
+            "to_stop": dest_stop,
+            "nearby_stops_checked": len(nearby_stops)
+        })
+    
+    except Exception as e:
+        logging.error(f"Plan trip error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/vehicles")
 def get_vehicles():
     import concurrent.futures

@@ -8,9 +8,10 @@
 
 **Current Status:**
 
-- **Baseline (Official API):** ~135s MAE
-- **Our Model (XGBoost):** ~57s MAE (~58% improvement)
-- **Phase:** Phase 3 (Production-Grade ML & Engineering)
+- **Baseline (Official API):** ~80s MAE
+- **Our Model (XGBoost):** ~48s MAE (**39.5% improvement**)
+- **Coverage:** 87% within 2 minutes
+- **Phase:** Phase 4 (Advanced Features & Monitoring)
 
 ---
 
@@ -56,6 +57,11 @@ Flask API with endpoints:
 - `/api/diagnostics/worst-predictions`: Debugging worst cases
 - `/api/diagnostics/hourly-bias`: Time-of-day analysis
 - `/api/diagnostics/feature-importance`: Feature importance from model
+- `/api/ab-test/log`: Log predictions for A/B testing
+- `/api/ab-test/results`: Get ML vs API comparison metrics
+- `/api/drift/check`: Check model drift status (OK/WARNING/CRITICAL)
+- `/api/route-reliability`: Per-route reliability scores and ratings
+- `/api/route-reliability/<id>`: Detailed hourly breakdown for a route
 
 ### 5. Frontend (`frontend/`)
 
@@ -193,14 +199,16 @@ The raw API prediction (`prdctdn` in GTFS-RT) is the single most important featu
 
 **Recently Completed:**
 
+- **Model improved to 48.4s MAE** (from 57s) - 15% improvement
 - A/B Testing framework with production comparison
 - Drift monitoring with OK/WARNING/CRITICAL status
-- New A/B Test tab in Analytics dashboard
-- Weather API integration verified (OpenWeatherMap)
-- Production ML diagnostics dashboard with 5 tabs
+- Route reliability endpoints with ratings
+- New A/B Test tab in Analytics dashboard (5 tabs total)
+- Weather API integration (OpenWeatherMap)
+- Velocity features prepared (awaiting DB index)
 
 **Next Up:**
 
-- Velocity-based features from GPS data
+- Add index on vehicle_observations for velocity features
 - Email alerting on critical drift
-- Automated retraining triggers
+- Automated retraining triggers based on drift
