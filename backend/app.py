@@ -978,7 +978,7 @@ def get_model_diagnostics_error_distribution():
                     FLOOR(error_seconds / 60.0) * 60 as error_bucket,
                     COUNT(*) as frequency
                 FROM prediction_outcomes
-                WHERE created_at > NOW() - INTERVAL '24 hours'
+                WHERE created_at > NOW() - INTERVAL '7 days'
                 AND ABS(error_seconds) < 1800  -- Filter outliers > 30 mins
                 GROUP BY error_bucket
                 ORDER BY error_bucket ASC
@@ -1002,7 +1002,7 @@ def get_model_diagnostics_error_distribution():
             return jsonify({
                 "bins": bins,
                 "total_samples": sum(r[1] for r in rows),
-                "interval": "24h"
+                "interval": "7d"
             })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
