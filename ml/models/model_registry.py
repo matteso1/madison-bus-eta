@@ -57,18 +57,29 @@ def save_model(model, metrics: Dict[str, Any], notes: str = "") -> str:
     
     # Update registry
     registry = _load_registry()
-    
+
     model_entry = {
         'version': version,
         'filename': model_filename,
         'created_at': timestamp.isoformat(),
         'metrics': {
+            # Classification metrics (legacy)
             'accuracy': metrics.get('accuracy'),
             'precision': metrics.get('precision'),
             'recall': metrics.get('recall'),
             'f1': metrics.get('f1'),
+            # Regression metrics (current)
+            'mae': metrics.get('mae'),
+            'rmse': metrics.get('rmse'),
+            'mae_minutes': metrics.get('mae_minutes'),
+            'rmse_minutes': metrics.get('rmse_minutes'),
+            'improvement_vs_baseline_pct': metrics.get('improvement_vs_baseline_pct'),
+            'bias_correction_seconds': metrics.get('bias_correction_seconds'),
+            # Common
             'train_samples': metrics.get('train_samples'),
             'test_samples': metrics.get('test_samples'),
+            'model_type': metrics.get('model_type'),
+            'target': metrics.get('target'),
         },
         'feature_importance': metrics.get('feature_importance', {}),
         'notes': notes

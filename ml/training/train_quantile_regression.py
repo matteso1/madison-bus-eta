@@ -169,10 +169,15 @@ def main():
     
     logger.info(f"Fetched {len(df)} records from last {days} days")
     
-    # Step 2: Feature engineering
-    logger.info("Step 2: Engineering features...")
+    # Step 2: Feature engineering with temporal split
+    logger.info("Step 2: Engineering features with temporal split...")
     try:
-        X_train, X_test, y_train, y_test, feature_names = prepare_regression_training_data(df)
+        X_train, X_test, y_train, y_test, feature_names, split_info = prepare_regression_training_data(
+            df,
+            test_days=3,  # Use 3 days for quantile (more test data)
+            use_temporal_split=True
+        )
+        logger.info(f"Split: {split_info.get('split_type', 'unknown')}")
     except Exception as e:
         logger.error(f"Feature engineering failed: {e}")
         import traceback

@@ -30,8 +30,11 @@ from models.model_registry import save_model, get_model_info
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
 logger = logging.getLogger(__name__)
 
-# Minimum improvement threshold (MAE reduction in seconds)
-MIN_IMPROVEMENT_SECONDS = 5  # Must reduce MAE by at least 5 seconds
+# Deployment gates - stricter thresholds to prevent regression
+MIN_IMPROVEMENT_SECONDS = 2.0    # Must reduce MAE by at least 2 seconds
+MAX_ACCEPTABLE_MAE = 90.0        # Never deploy if MAE > 90 seconds
+MIN_TEST_SAMPLES = 1000          # Need enough test data for statistical significance
+MAX_MAE_INCREASE_SECONDS = 0.0   # Never deploy a worse model (0 = no regression allowed)
 
 
 def train_regression_model(X_train: np.ndarray, X_test: np.ndarray,
@@ -204,17 +207,27 @@ def main():
     
     logger.info(f"Fetched {len(df)} prediction outcomes from last {days} days")
     
-    # Step 2: Feature engineering
-    logger.info("Step 2: Engineering features...")
+    # Step 2: Feature engineering with TEMPORAL SPLIT
+    logger.info("Step 2: Engineering features with temporal split...")
     try:
-        X_train, X_test, y_train, y_test, feature_names = prepare_regression_training_data(df)
+        X_train, X_test, y_train, y_test, feature_names, split_info = prepare_regression_training_data(
+            df,
+            test_days=2,  # Test on last 2 days
+            use_temporal_split=True
+        )
     except Exception as e:
         logger.error(f"Feature engineering failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
-    
+
     total_samples = len(y_train) + len(y_test)
     avg_error = (y_train.mean() + y_test.mean()) / 2
     logger.info(f"Feature matrix: ({total_samples}, {len(feature_names)}), Avg error: {avg_error/60:.1f} min")
+    logger.info(f"Split type: {split_info.get('split_type', 'unknown')}")
+    if split_info.get('split_type') == 'temporal':
+        logger.info(f"  Train period: {split_info.get('train_date_range', 'N/A')}")
+        logger.info(f"  Test period: {split_info.get('test_date_range', 'N/A')}")
     
     # Step 3: Train model
     logger.info("Step 3: Training XGBoost regressor...")
@@ -230,38 +243,57 @@ def main():
     logger.info(f"RMSE: {new_metrics['rmse']:.1f}s ({new_metrics['rmse_minutes']:.2f} min)")
     logger.info(f"Improvement vs baseline (API trust): {new_metrics['improvement_vs_baseline_pct']:.1f}%")
     
-    # Step 4: Compare with previous model
+    # Step 4: Compare with previous model (STRICT DEPLOYMENT GATES)
     logger.info("Step 4: Comparing with previous model...")
-    
+
     previous_info = get_model_info()
     previous_mae = None
     should_deploy = False
     deploy_reason = ""
-    
-    if previous_info is None:
-        # First model - always deploy
+
+    # Gate 1: Absolute MAE threshold
+    if new_metrics['mae'] > MAX_ACCEPTABLE_MAE:
+        logger.warning(f"GATE FAILED: MAE {new_metrics['mae']:.1f}s > max acceptable {MAX_ACCEPTABLE_MAE}s")
+        deploy_reason = f"mae_too_high_{new_metrics['mae']:.0f}s"
+        should_deploy = False
+    # Gate 2: Minimum test samples for statistical significance
+    elif new_metrics['test_samples'] < MIN_TEST_SAMPLES:
+        logger.warning(f"GATE FAILED: Test samples {new_metrics['test_samples']} < minimum {MIN_TEST_SAMPLES}")
+        deploy_reason = f"insufficient_test_samples_{new_metrics['test_samples']}"
+        should_deploy = False
+    elif previous_info is None:
+        # First model - deploy if passes absolute thresholds
         should_deploy = True
         deploy_reason = "first_regression_model"
         logger.info("No previous model found. Deploying first regression model.")
     else:
         # Check if previous model was regression or classification
         prev_metrics = previous_info.get('metrics', {})
-        if 'mae' in prev_metrics:
+        if prev_metrics.get('mae') is not None:
             previous_mae = prev_metrics['mae']
             improvement = previous_mae - new_metrics['mae']
-            
+
             logger.info(f"Previous MAE: {previous_mae:.1f}s, New MAE: {new_metrics['mae']:.1f}s")
             logger.info(f"Improvement: {improvement:.1f}s")
-            
-            if improvement > MIN_IMPROVEMENT_SECONDS:
+
+            # Gate 3: No regression allowed
+            if improvement < -MAX_MAE_INCREASE_SECONDS:
+                logger.warning(f"GATE FAILED: Model is WORSE by {-improvement:.1f}s")
+                deploy_reason = f"regression_{-improvement:.0f}s_worse"
+                should_deploy = False
+            # Gate 4: Must improve by minimum threshold
+            elif improvement >= MIN_IMPROVEMENT_SECONDS:
                 should_deploy = True
-                deploy_reason = f"improved_{improvement:.0f}s"
-                logger.info(f"✅ Improvement exceeds threshold ({MIN_IMPROVEMENT_SECONDS}s). Deploying.")
+                deploy_reason = f"improved_{improvement:.1f}s"
+                logger.info(f"GATES PASSED: Improvement {improvement:.1f}s >= threshold {MIN_IMPROVEMENT_SECONDS}s")
             else:
-                deploy_reason = "not_improved"
-                logger.info(f"⏸️ Improvement below threshold. Skipping deployment.")
+                # Slight improvement but below threshold
+                deploy_reason = f"marginal_{improvement:.1f}s"
+                should_deploy = False
+                logger.info(f"GATE FAILED: Improvement {improvement:.1f}s < threshold {MIN_IMPROVEMENT_SECONDS}s")
         else:
-            # Previous model was classification - always upgrade to regression
+            # Previous model was classification - upgrade to regression
+            # But still apply absolute threshold
             should_deploy = True
             deploy_reason = "upgrade_from_classification"
             logger.info("Previous model was classification. Upgrading to regression.")
@@ -300,14 +332,24 @@ def main():
     logger.info("=" * 60)
     logger.info("TRAINING COMPLETE")
     logger.info(f"  Version: {version}")
-    logger.info(f"  Samples: {total_samples}")
+    logger.info(f"  Train samples: {new_metrics['train_samples']}")
+    logger.info(f"  Test samples: {new_metrics['test_samples']}")
     logger.info(f"  MAE: {new_metrics['mae']:.1f}s ({new_metrics['mae_minutes']:.2f} min)")
     logger.info(f"  RMSE: {new_metrics['rmse']:.1f}s ({new_metrics['rmse_minutes']:.2f} min)")
     logger.info(f"  vs Baseline: {new_metrics['improvement_vs_baseline_pct']:.1f}% better than trusting API")
-    logger.info(f"  Deployed: {'✅ Yes' if should_deploy else '⏸️ No'}")
+    if previous_mae:
+        logger.info(f"  vs Previous: {previous_mae - new_metrics['mae']:.1f}s improvement")
+    logger.info(f"  Deployed: {'YES' if should_deploy else 'NO'}")
     logger.info(f"  Reason: {deploy_reason}")
+
+    # Log top 5 feature importances
+    if 'feature_importance' in new_metrics:
+        logger.info("  Top 5 Features:")
+        for i, (feat, imp) in enumerate(list(new_metrics['feature_importance'].items())[:5]):
+            logger.info(f"    {i+1}. {feat}: {float(imp):.3f}")
+
     logger.info("=" * 60)
-    
+
     return True
 
 

@@ -9,8 +9,8 @@ Target variable: error_seconds (actual_arrival - predicted_arrival)
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
-from typing import Tuple, Dict
+from datetime import datetime, timezone, timedelta
+from typing import Tuple, Dict, Optional
 from sklearn.model_selection import train_test_split
 
 
@@ -276,42 +276,73 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def compute_historical_eta_aggregates(train_df: pd.DataFrame) -> Dict[str, dict]:
+def compute_historical_eta_aggregates(train_df: pd.DataFrame, min_samples: int = 10) -> Dict[str, dict]:
     """
     Compute historical ETA error aggregates from TRAINING DATA ONLY.
 
     These features capture patterns without leaking future information.
+
+    Args:
+        train_df: Training DataFrame
+        min_samples: Minimum samples required for a reliable aggregate.
+                    Groups with fewer samples fall back to global average.
+                    This prevents overfitting to rare stops/routes.
     """
     aggregates = {}
 
+    global_avg = train_df['error_seconds'].mean()
+    global_std = train_df['error_seconds'].std()
+
+    # Global fallback (always available)
+    aggregates['global_avg_error'] = global_avg
+    aggregates['global_error_std'] = global_std
+
     # Route-level average ETA error (in seconds)
-    aggregates['route_avg_error'] = train_df.groupby('rt')['error_seconds'].mean().to_dict()
+    # Only use routes with enough samples
+    route_stats = train_df.groupby('rt')['error_seconds'].agg(['mean', 'std', 'count'])
+    route_avg = route_stats[route_stats['count'] >= min_samples]['mean'].to_dict()
+    route_std = route_stats[route_stats['count'] >= min_samples]['std'].to_dict()
+    aggregates['route_avg_error'] = route_avg
+    aggregates['route_error_std'] = route_std
 
-    # Route-level error standard deviation (volatility)
-    aggregates['route_error_std'] = train_df.groupby('rt')['error_seconds'].std().to_dict()
-
-    # Hour-route average error
-    aggregates['hour_route_error'] = train_df.groupby(['rt', 'hour'])['error_seconds'].mean().to_dict()
+    # Hour-route average error (need more samples for this granular level)
+    hr_route_stats = train_df.groupby(['rt', 'hour'])['error_seconds'].agg(['mean', 'count'])
+    hr_route_avg = hr_route_stats[hr_route_stats['count'] >= min_samples]['mean'].to_dict()
+    aggregates['hour_route_error'] = hr_route_avg
 
     # Stop-level reliability (average error by stop)
+    # IMPORTANT: Require more samples for stop-level to prevent memorization
     if 'stpid' in train_df.columns:
-        aggregates['stop_avg_error'] = train_df.groupby('stpid')['error_seconds'].mean().to_dict()
-        aggregates['stop_error_std'] = train_df.groupby('stpid')['error_seconds'].std().to_dict()
+        stop_stats = train_df.groupby('stpid')['error_seconds'].agg(['mean', 'std', 'count'])
+        # Shrinkage: blend stop average with global average based on sample size
+        # This prevents overfitting to stops with few observations
+        stop_avg = {}
+        stop_std = {}
+        shrinkage_threshold = 50  # Full trust only after 50 samples
+
+        for stpid, row in stop_stats.iterrows():
+            n = row['count']
+            if n >= min_samples:
+                # Shrinkage factor: weight towards global mean for small samples
+                shrinkage = min(n / shrinkage_threshold, 1.0)
+                blended_avg = shrinkage * row['mean'] + (1 - shrinkage) * global_avg
+                stop_avg[stpid] = blended_avg
+                stop_std[stpid] = row['std'] if not pd.isna(row['std']) else global_std
+
+        aggregates['stop_avg_error'] = stop_avg
+        aggregates['stop_error_std'] = stop_std
 
     # Horizon bucket reliability (how reliable are predictions at each horizon?)
     if 'horizon_min' in train_df.columns:
-        # Create temp buckets for aggregation
         train_df_temp = train_df.copy()
         train_df_temp['_horizon_bucket'] = pd.cut(
             train_df_temp['horizon_min'].fillna(10),
             bins=[0, 2, 5, 10, 20, 60],
             labels=['0-2', '2-5', '5-10', '10-20', '20+']
         )
-        aggregates['horizon_bucket_error'] = train_df_temp.groupby('_horizon_bucket')['error_seconds'].mean().to_dict()
-
-    # Global fallback
-    aggregates['global_avg_error'] = train_df['error_seconds'].mean()
-    aggregates['global_error_std'] = train_df['error_seconds'].std()
+        horizon_stats = train_df_temp.groupby('_horizon_bucket', observed=False)['error_seconds'].agg(['mean', 'count'])
+        horizon_avg = horizon_stats[horizon_stats['count'] >= min_samples]['mean'].to_dict()
+        aggregates['horizon_bucket_error'] = horizon_avg
 
     return aggregates
 
@@ -415,51 +446,81 @@ def get_regression_target_column() -> str:
 
 
 def prepare_regression_training_data(
-    df: pd.DataFrame, 
-    test_size: float = 0.2, 
-    random_state: int = 42
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list]:
+    df: pd.DataFrame,
+    test_days: int = 2,
+    use_temporal_split: bool = True
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list, Dict]:
     """
     Prepare train/test splits for regression model training.
-    
+
+    IMPORTANT: Uses TEMPORAL split to prevent data leakage.
+    Train on older data, test on newer data - mimics real deployment.
+
     Args:
         df: DataFrame from fetch_regression_training_data()
-        test_size: Fraction for test set
-        random_state: Random seed
-    
+        test_days: Number of most recent days to use for testing
+        use_temporal_split: If True, use time-based split. If False, random split.
+
     Returns:
-        (X_train, X_test, y_train, y_test, feature_cols)
+        (X_train, X_test, y_train, y_test, feature_cols, split_info)
     """
     # Step 1: Apply base features
     df_base = engineer_regression_features(df)
-    
+
     feature_cols = get_regression_feature_columns()
     target_col = get_regression_target_column()
-    
-    # Step 2: Split before computing historical features
-    train_idx, test_idx = train_test_split(
-        df_base.index,
-        test_size=test_size,
-        random_state=random_state
-    )
-    
-    train_df = df_base.loc[train_idx].copy()
-    test_df = df_base.loc[test_idx].copy()
-    
+
+    # Step 2: TEMPORAL SPLIT - train on past, test on future
+    if use_temporal_split:
+        # Sort by time
+        df_base = df_base.sort_values('created_at').reset_index(drop=True)
+
+        # Find cutoff: test_days before the max date
+        max_date = df_base['created_at'].max()
+        cutoff_date = max_date - timedelta(days=test_days)
+
+        train_mask = df_base['created_at'] < cutoff_date
+        test_mask = df_base['created_at'] >= cutoff_date
+
+        train_df = df_base[train_mask].copy()
+        test_df = df_base[test_mask].copy()
+
+        split_info = {
+            'split_type': 'temporal',
+            'cutoff_date': cutoff_date.isoformat(),
+            'train_date_range': f"{train_df['created_at'].min()} to {train_df['created_at'].max()}",
+            'test_date_range': f"{test_df['created_at'].min()} to {test_df['created_at'].max()}",
+            'test_days': test_days
+        }
+    else:
+        # Fallback to random split (not recommended for production)
+        train_idx, test_idx = train_test_split(
+            df_base.index,
+            test_size=0.2,
+            random_state=42
+        )
+        train_df = df_base.loc[train_idx].copy()
+        test_df = df_base.loc[test_idx].copy()
+        split_info = {'split_type': 'random', 'test_size': 0.2}
+
     # Step 3: Compute historical aggregates from TRAINING DATA ONLY
+    # This is critical - aggregates must come from past data only
     aggregates = compute_historical_eta_aggregates(train_df)
-    
+
     # Step 4: Apply aggregates to both sets
     train_df = apply_historical_eta_features(train_df, aggregates)
     test_df = apply_historical_eta_features(test_df, aggregates)
-    
+
     # Step 5: Extract features and target
     train_clean = train_df[feature_cols + [target_col]].dropna()
     test_clean = test_df[feature_cols + [target_col]].dropna()
-    
+
     X_train = train_clean[feature_cols].values
     y_train = train_clean[target_col].values
     X_test = test_clean[feature_cols].values
     y_test = test_clean[target_col].values
-    
-    return X_train, X_test, y_train, y_test, feature_cols
+
+    split_info['train_samples'] = len(X_train)
+    split_info['test_samples'] = len(X_test)
+
+    return X_train, X_test, y_train, y_test, feature_cols, split_info
