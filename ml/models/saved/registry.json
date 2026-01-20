@@ -273,7 +273,65 @@
         "has_velocity_data": "0.0"
       },
       "notes": "upgrade_from_classification"
+    },
+    {
+      "version": "20260120_161346",
+      "filename": "model_20260120_161346.pkl",
+      "created_at": "2026-01-20T16:13:46.126067+00:00",
+      "metrics": {
+        "accuracy": null,
+        "precision": null,
+        "recall": null,
+        "f1": null,
+        "train_samples": 30585,
+        "test_samples": 7647
+      },
+      "feature_importance": {
+        "stop_avg_error": "0.15579878",
+        "predicted_minutes": "0.10998495",
+        "wind_speed": "0.07695117",
+        "stop_error_std": "0.0674188",
+        "route_encoded": "0.05409684",
+        "route_avg_error": "0.046808805",
+        "hr_route_error": "0.04633503",
+        "route_error_std": "0.038716316",
+        "is_cold": "0.037749175",
+        "temp_celsius": "0.03267999",
+        "route_frequency": "0.031172229",
+        "day_cos": "0.029317515",
+        "horizon_bucket": "0.028823309",
+        "is_morning_rush": "0.028098347",
+        "hour_cos": "0.028091593",
+        "is_holiday": "0.027450584",
+        "is_evening_rush": "0.02737025",
+        "is_weekend": "0.027012104",
+        "day_sin": "0.025027115",
+        "hour_sin": "0.022541594",
+        "is_rush_hour": "0.022294885",
+        "horizon_min": "0.018146636",
+        "horizon_squared": "0.018113991",
+        "month_sin": "0.0",
+        "month_cos": "0.0",
+        "is_hot": "0.0",
+        "precipitation_mm": "0.0",
+        "snow_mm": "0.0",
+        "is_raining": "0.0",
+        "is_snowing": "0.0",
+        "is_precipitating": "0.0",
+        "is_windy": "0.0",
+        "visibility_km": "0.0",
+        "low_visibility": "0.0",
+        "is_severe_weather": "0.0",
+        "avg_speed": "0.0",
+        "speed_stddev": "0.0",
+        "speed_variability": "0.0",
+        "is_stopped": "0.0",
+        "is_slow": "0.0",
+        "is_moving_fast": "0.0",
+        "has_velocity_data": "0.0"
+      },
+      "notes": "upgrade_from_classification"
     }
   ],
-  "latest": "20260120_092227"
+  "latest": "20260120_161346"
 }
