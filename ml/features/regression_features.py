@@ -45,6 +45,7 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
 
     if weather_table_exists:
         # Full query with weather data AND velocity data
+        # Requires index: CREATE INDEX idx_vehicle_obs_vid_collected ON vehicle_observations(vid, collected_at DESC)
         query = """
             SELECT
                 po.vid,
@@ -63,11 +64,10 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 w.wind_speed_mps,
                 w.visibility_meters,
                 w.is_severe as is_severe_weather,
-                -- Velocity features (disabled temporarily - expensive query)
-                -- TODO: Add index on vehicle_observations(vid, collected_at) then re-enable
-                NULL::float as avg_speed,
-                NULL::float as speed_stddev,
-                0 as velocity_samples
+                -- Velocity features: get bus speed around prediction time
+                v.avg_speed,
+                v.speed_stddev,
+                v.velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
             LEFT JOIN LATERAL (
@@ -78,12 +78,26 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 ORDER BY observed_at DESC
                 LIMIT 1
             ) w ON true
+            LEFT JOIN LATERAL (
+                -- Get vehicle speed stats from observations within 5 minutes of prediction
+                SELECT
+                    AVG(spd)::float as avg_speed,
+                    STDDEV(spd)::float as speed_stddev,
+                    COUNT(*)::int as velocity_samples
+                FROM vehicle_observations vo
+                WHERE vo.vid = po.vid
+                AND vo.collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at + INTERVAL '1 minute'
+                AND vo.spd IS NOT NULL
+                AND vo.spd > 0
+                AND vo.spd < 80  -- Filter unrealistic speeds
+            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
         """
     else:
         # Query without weather data (table doesn't exist yet)
+        # Still includes velocity features
         query = """
             SELECT
                 po.vid,
@@ -102,12 +116,24 @@ def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
                 NULL::float as wind_speed_mps,
                 NULL::float as visibility_meters,
                 NULL::boolean as is_severe_weather,
-                -- Velocity features (disabled temporarily - need index first)
-                NULL::float as avg_speed,
-                NULL::float as speed_stddev,
-                0 as velocity_samples
+                -- Velocity features: get bus speed around prediction time
+                v.avg_speed,
+                v.speed_stddev,
+                v.velocity_samples
             FROM prediction_outcomes po
             LEFT JOIN predictions p ON po.prediction_id = p.id
+            LEFT JOIN LATERAL (
+                SELECT
+                    AVG(spd)::float as avg_speed,
+                    STDDEV(spd)::float as speed_stddev,
+                    COUNT(*)::int as velocity_samples
+                FROM vehicle_observations vo
+                WHERE vo.vid = po.vid
+                AND vo.collected_at BETWEEN po.created_at - INTERVAL '5 minutes' AND po.created_at + INTERVAL '1 minute'
+                AND vo.spd IS NOT NULL
+                AND vo.spd > 0
+                AND vo.spd < 80
+            ) v ON true
             WHERE po.created_at > :cutoff
             AND ABS(po.error_seconds) < 1200  -- Filter extreme outliers (>20 min)
             ORDER BY po.created_at
@@ -187,21 +213,29 @@ def engineer_regression_features(df: pd.DataFrame) -> pd.DataFrame:
     # Longer predictions naturally have more error - this is the key insight
     if 'prediction_horizon_min' in df.columns:
         df['horizon_min'] = df['prediction_horizon_min'].fillna(10).clip(0, 60)
-        
+
         # Squared term captures non-linear relationship (error grows faster at longer horizons)
         df['horizon_squared'] = df['horizon_min'] ** 2
-        
+
+        # Log transform for diminishing returns at high horizons
+        df['horizon_log'] = np.log1p(df['horizon_min'])
+
         # Bucket for categorical effects
         df['horizon_bucket'] = pd.cut(
-            df['horizon_min'], 
+            df['horizon_min'],
             bins=[0, 2, 5, 10, 20, np.inf],
             labels=[0, 1, 2, 3, 4]  # 0-2, 2-5, 5-10, 10-20, 20+
         ).astype(float).fillna(2)  # Default to middle bucket
+
+        # Is this a "long" prediction (>15 min)? These are inherently less reliable
+        df['is_long_horizon'] = (df['horizon_min'] > 15).astype(int)
     else:
         # Fallback if horizon not available (shouldn't happen with new data)
         df['horizon_min'] = 10.0
         df['horizon_squared'] = 100.0
+        df['horizon_log'] = np.log1p(10.0)
         df['horizon_bucket'] = 2.0
+        df['is_long_horizon'] = 0
     
     # ====== WEATHER FEATURES ======
     # Weather has significant impact on bus delays (rain, snow, visibility)
@@ -344,6 +378,23 @@ def compute_historical_eta_aggregates(train_df: pd.DataFrame, min_samples: int =
         horizon_avg = horizon_stats[horizon_stats['count'] >= min_samples]['mean'].to_dict()
         aggregates['horizon_bucket_error'] = horizon_avg
 
+        # Route-Horizon interaction: some routes are more unreliable at longer horizons
+        route_horizon_stats = train_df_temp.groupby(['rt', '_horizon_bucket'], observed=False)['error_seconds'].agg(['mean', 'std', 'count'])
+        route_horizon_avg = {}
+        route_horizon_std = {}
+        for (rt, hb), row in route_horizon_stats.iterrows():
+            if row['count'] >= min_samples:
+                route_horizon_avg[(rt, hb)] = row['mean']
+                route_horizon_std[(rt, hb)] = row['std'] if not pd.isna(row['std']) else global_std
+        aggregates['route_horizon_error'] = route_horizon_avg
+        aggregates['route_horizon_std'] = route_horizon_std
+
+    # Day-of-week patterns (weekday vs weekend already captured, but specific days matter)
+    if 'day_of_week' in train_df.columns:
+        dow_stats = train_df.groupby('day_of_week')['error_seconds'].agg(['mean', 'count'])
+        dow_avg = dow_stats[dow_stats['count'] >= min_samples]['mean'].to_dict()
+        aggregates['day_of_week_error'] = dow_avg
+
     return aggregates
 
 
@@ -379,6 +430,39 @@ def apply_historical_eta_features(df: pd.DataFrame, aggregates: Dict[str, dict])
         df['stop_avg_error'] = global_error
         df['stop_error_std'] = global_std
 
+    # Route-Horizon interaction error
+    route_horizon_error = aggregates.get('route_horizon_error', {})
+    route_horizon_std = aggregates.get('route_horizon_std', {})
+
+    if route_horizon_error and 'horizon_bucket' in df.columns:
+        # Map horizon_bucket numeric back to labels for lookup
+        bucket_labels = {0: '0-2', 1: '2-5', 2: '5-10', 3: '10-20', 4: '20+'}
+        df['_hb_label'] = df['horizon_bucket'].map(bucket_labels).fillna('5-10')
+
+        df['route_horizon_error'] = df.apply(
+            lambda x: route_horizon_error.get(
+                (x['rt'], x['_hb_label']),
+                route_error.get(x['rt'], global_error)
+            ), axis=1
+        )
+        df['route_horizon_std'] = df.apply(
+            lambda x: route_horizon_std.get(
+                (x['rt'], x['_hb_label']),
+                route_std.get(x['rt'], global_std)
+            ), axis=1
+        )
+        df.drop('_hb_label', axis=1, inplace=True)
+    else:
+        df['route_horizon_error'] = global_error
+        df['route_horizon_std'] = global_std
+
+    # Day-of-week error pattern
+    dow_error = aggregates.get('day_of_week_error', {})
+    if dow_error and 'day_of_week' in df.columns:
+        df['dow_avg_error'] = df['day_of_week'].map(dow_error).fillna(global_error)
+    else:
+        df['dow_avg_error'] = global_error
+
     return df
 
 
@@ -388,7 +472,9 @@ def get_regression_feature_columns() -> list:
         # ====== PREDICTION HORIZON (MOST IMPORTANT) ======
         'horizon_min',           # Raw horizon in minutes
         'horizon_squared',       # Quadratic term for non-linearity
+        'horizon_log',           # Log transform for diminishing returns
         'horizon_bucket',        # Categorical bucket
+        'is_long_horizon',       # Binary: horizon > 15 min
 
         # Temporal Cyclical
         'hour_sin', 'hour_cos',
@@ -410,7 +496,14 @@ def get_regression_feature_columns() -> list:
         'route_error_std',       # Route error volatility
         'hr_route_error',        # Hour + route error
 
-        # Stop-level reliability (NEW - high impact expected)
+        # Route-Horizon interaction (KEY NEW FEATURE)
+        'route_horizon_error',   # Route-specific error at this horizon bucket
+        'route_horizon_std',     # Route-specific volatility at this horizon
+
+        # Day-of-week patterns
+        'dow_avg_error',         # Day-specific average error
+
+        # Stop-level reliability
         'stop_avg_error',        # Stop average error
         'stop_error_std',        # Stop error volatility
 

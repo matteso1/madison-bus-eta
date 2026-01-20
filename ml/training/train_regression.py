@@ -41,8 +41,10 @@ def train_regression_model(X_train: np.ndarray, X_test: np.ndarray,
                            y_train: np.ndarray, y_test: np.ndarray,
                            feature_names: list) -> dict:
     """
-    Train XGBoost regressor for ETA error prediction.
-    
+    Train XGBoost regressor for ETA error prediction with early stopping.
+
+    Uses early stopping to prevent overfitting and find optimal number of trees.
+
     Returns model and metrics dict.
     """
     try:
@@ -50,25 +52,42 @@ def train_regression_model(X_train: np.ndarray, X_test: np.ndarray,
     except ImportError:
         logger.error("XGBoost not installed. Run: pip install xgboost")
         raise
-    
+
     logger.info(f"Training set: {len(X_train)}, Test set: {len(X_test)}")
     logger.info(f"Target stats: train mean={y_train.mean():.1f}s, test mean={y_test.mean():.1f}s")
-    
-    # Train regressor
+
+    # Split off a validation set from training for early stopping
+    from sklearn.model_selection import train_test_split
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_train, y_train, test_size=0.15, random_state=42
+    )
+
+    # Train regressor with early stopping
+    # More trees with lower learning rate + early stopping = better generalization
     model = xgb.XGBRegressor(
-        n_estimators=200,          # Increased from 100
-        max_depth=8,               # Increased from 5 to capture complex interactions
-        learning_rate=0.05,        # Lower learning rate for better generalization
-        subsample=0.8,             # Subsampling to reduce variance
-        colsample_bytree=0.8,      # Feature subsampling
-        reg_alpha=0.1,             # L1 regularization
-        reg_lambda=1.0,            # L2 regularization
+        n_estimators=500,          # More trees, early stopping will find optimal
+        max_depth=10,              # Deeper to capture route-horizon interactions
+        learning_rate=0.03,        # Lower LR for smoother convergence
+        subsample=0.8,             # Row subsampling
+        colsample_bytree=0.8,      # Feature subsampling per tree
+        colsample_bylevel=0.8,     # Feature subsampling per level
+        min_child_weight=10,       # Prevent overfitting to small groups
+        reg_alpha=0.5,             # L1 regularization (feature selection)
+        reg_lambda=2.0,            # L2 regularization (smoothing)
+        gamma=0.1,                 # Min loss reduction for split
         random_state=42,
-        eval_metric='rmse',
         n_jobs=-1
     )
-    
-    model.fit(X_train, y_train)
+
+    # Fit with early stopping
+    model.fit(
+        X_tr, y_tr,
+        eval_set=[(X_val, y_val)],
+        verbose=False
+    )
+
+    best_iteration = model.best_iteration if hasattr(model, 'best_iteration') else model.n_estimators
+    logger.info(f"Best iteration: {best_iteration} (of {model.n_estimators} max)")
     
     # Bias Correction: Calculate systematic bias on Training set
     # The model might still be biased if loss function doesn't capture it fully

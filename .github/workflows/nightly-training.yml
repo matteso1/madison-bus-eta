@@ -27,7 +27,25 @@ jobs:
       - name: Install dependencies
         run: |
           pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv holidays
-      
+
+      - name: Ensure DB indexes exist
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -c "
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ['DATABASE_URL'])
+          with engine.connect() as conn:
+              # Index for fast vehicle speed lookups during training
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_vehicle_obs_vid_collected
+                  ON vehicle_observations(vid, collected_at DESC)
+              '''))
+              conn.commit()
+              print('DB indexes verified')
+          "
+
       - name: Run ML Training (Regression)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
