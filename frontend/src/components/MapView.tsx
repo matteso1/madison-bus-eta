@@ -82,6 +82,7 @@ interface MapViewProps {
     userLocation: [number, number] | null;
     trackedBus: TrackedBus | null;
     activeTripPlan: TripPlan | null;
+    highlightedStops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>;
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
@@ -90,13 +91,14 @@ interface MapViewProps {
 
 
 export default function MapView({
-    selectedRoute, userLocation, trackedBus, activeTripPlan,
+    selectedRoute, userLocation, trackedBus, activeTripPlan, highlightedStops,
     onRoutesLoaded, onLiveDataUpdated, onStopClick, onMapClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [patternsData, setPatternsData] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
     const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
+    const [stopPredictions, setStopPredictions] = useState<Record<string, {route: string; minutes: number; destination: string}[]>>({});
     const mapRef = useRef<maplibregl.Map | null>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
@@ -136,6 +138,32 @@ export default function MapView({
             })));
         }).catch(() => setStopsData([]));
     }, [selectedRoute, API_BASE]);
+
+    // Fetch route-level predictions for stop tooltips
+    useEffect(() => {
+        if (selectedRoute === 'ALL' || activeTripPlan) { setStopPredictions({}); return; }
+        const fetchPredictions = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/predictions?rt=${selectedRoute}`);
+                const preds = res.data?.['bustime-response']?.prd;
+                if (!preds) return;
+                const arr = Array.isArray(preds) ? preds : [preds];
+                const grouped: Record<string, {route: string; minutes: number; destination: string}[]> = {};
+                arr.forEach((p: any) => {
+                    const stpid = p.stpid;
+                    const mins = parseInt(p.prdctdn === 'DUE' ? '0' : p.prdctdn, 10);
+                    if (!grouped[stpid]) grouped[stpid] = [];
+                    if (grouped[stpid].length < 3) {
+                        grouped[stpid].push({ route: p.rt, minutes: mins, destination: p.des || '' });
+                    }
+                });
+                setStopPredictions(grouped);
+            } catch { setStopPredictions({}); }
+        };
+        fetchPredictions();
+        const timer = setInterval(fetchPredictions, 30000);
+        return () => clearInterval(timer);
+    }, [selectedRoute, activeTripPlan, API_BASE]);
 
     // Load routes + patterns ONCE (no routeReliability dependency = no double-render)
     useEffect(() => {
@@ -183,7 +211,7 @@ export default function MapView({
 
     // Live vehicle polling — faster when tracking
     useEffect(() => {
-        const interval = trackedBus ? 8000 : 15000;
+        const interval = trackedBus ? 5000 : 15000;
         const fetchLive = async () => {
             try {
                 const res = await axios.get(`${API_BASE}/vehicles`);
@@ -506,6 +534,32 @@ export default function MapView({
             }));
         }
 
+        // 7b) Nearby stops highlights — visible when NearbyStops panel is active
+        if (highlightedStops.length > 0 && !activeTripPlan) {
+            L.push(new ScatterplotLayer({
+                id: 'nearby-stops',
+                data: highlightedStops.map(s => ({
+                    position: [s.lon, s.lat],
+                    stpid: s.stpid,
+                    stpnm: s.stpnm,
+                    routes: s.routes,
+                })),
+                pickable: true,
+                getPosition: (d: any) => d.position,
+                getFillColor: [16, 185, 129],
+                getLineColor: [255, 255, 255],
+                getRadius: 40,
+                radiusMinPixels: 7,
+                radiusMaxPixels: 14,
+                stroked: true,
+                lineWidthMinPixels: 2,
+                opacity: 1,
+                onClick: ({ object }) => {
+                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.routes?.[0] || '' });
+                }
+            }));
+        }
+
         // 8) Bus dots — hidden during trip mode for clean map
         const nonTracked = trackedBus
             ? filteredLive.filter(v => v.vid !== trackedBus.vid)
@@ -532,7 +586,7 @@ export default function MapView({
 
         return L;
     }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
-        trackedBus, activeTripPlan, tripData, tripWalkPaths]);
+        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops]);
 
     return (
         <DeckGL
@@ -549,11 +603,20 @@ export default function MapView({
                 if (!object) return null;
 
                 if (object.stpid) {
+                    const preds = stopPredictions[object.stpid];
+                    let predsHtml = '';
+                    if (preds?.length) {
+                        predsHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #1e1e2e;">` +
+                            preds.map((p: {destination: string; minutes: number}) => `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:3px;">
+                                <span style="font-size:11px;color:#94a3b8;">${p.destination}</span>
+                                <span style="font-size:12px;font-weight:600;color:#00d4ff;font-family:JetBrains Mono,monospace;">${p.minutes === 0 ? 'DUE' : p.minutes + ' min'}</span>
+                            </div>`).join('') + `</div>`;
+                    }
                     return {
                         html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:10px 14px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;">
                             <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${object.stpnm}</div>
                             <div style="font-size:10px;color:#64748b;font-family:JetBrains Mono,monospace;">Stop #${object.stpid}</div>
-                            <div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for ML predictions</div>
+                            ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for ML predictions</div>'}
                         </div>`,
                         style: { backgroundColor: 'transparent' }
                     };

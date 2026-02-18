@@ -24,6 +24,7 @@ interface ContextPanelProps {
   onTripPlanSelect: (plan: TripPlan) => void;
   onTripPlanClear: () => void;
   activeTripPlan: TripPlan | null;
+  onNearbyStopsLoaded: (stops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>) => void;
 }
 
 export default function ContextPanel({
@@ -41,6 +42,7 @@ export default function ContextPanel({
   onTripPlanSelect,
   onTripPlanClear,
   activeTripPlan,
+  onNearbyStopsLoaded,
 }: ContextPanelProps) {
   const [showNearby, setShowNearby] = useState(false);
   const [showTripPlanner, setShowTripPlanner] = useState(false);
@@ -82,6 +84,7 @@ export default function ContextPanel({
                 setShowNearby(false);
                 onStopSelect({ stpid, stpnm, route });
               }}
+              onStopsLoaded={onNearbyStopsLoaded}
             />
           ) : selectedRoute !== 'ALL' ? (
             <RouteDrilldown route={selectedRoute} onClose={() => handleRouteSelect('ALL')} />

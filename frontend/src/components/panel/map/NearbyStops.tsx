@@ -6,6 +6,7 @@ interface NearbyStopsProps {
   onBack: () => void;
   onUserLocation: (lat: number, lon: number) => void;
   onStopSelect: (stpid: string, stpnm: string, route: string) => void;
+  onStopsLoaded: (stops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>) => void;
 }
 
 interface NearbyStop {
@@ -32,7 +33,7 @@ interface StopWithArrivals extends NearbyStop {
   loading: boolean;
 }
 
-export default function NearbyStops({ onBack, onUserLocation, onStopSelect }: NearbyStopsProps) {
+export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onStopsLoaded }: NearbyStopsProps) {
   const [locError, setLocError] = useState<string | null>(null);
   const [locating, setLocating] = useState(true);
   const [stops, setStops] = useState<StopWithArrivals[]>([]);
@@ -101,6 +102,7 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect }: Ne
 
           // Init with loading state
           setStops(nearbyStops.map(s => ({ ...s, arrivals: [], loading: true })));
+          onStopsLoaded(nearbyStops.map(s => ({ stpid: s.stpid, stpnm: s.stpnm, lat: s.lat, lon: s.lon, routes: s.routes })));
 
           // Auto-expand first stop and load its arrivals
           if (nearbyStops.length > 0) {
@@ -125,7 +127,9 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect }: Ne
       },
       { timeout: 8000, maximumAge: 30000 }
     );
-  }, [API_BASE, onUserLocation, loadArrivals]);
+
+    return () => { onStopsLoaded([]); };
+  }, [API_BASE, onUserLocation, loadArrivals, onStopsLoaded]);
 
   const handleExpand = async (stop: StopWithArrivals) => {
     if (expanded === stop.stpid) {
