@@ -82,6 +82,11 @@ html, body, #root {
 .maplibregl-marker {
   z-index: 10 !important;
 }
+/* Lift the MapLibre overlay container above the DeckGL canvas */
+.maplibregl-map .maplibregl-overlays,
+.maplibregl-map .maplibregl-marker {
+  z-index: 10 !important;
+}
 
 /* ── User Location Pulsing Marker ── */
 .user-loc-marker {

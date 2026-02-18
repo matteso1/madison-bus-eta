@@ -273,7 +273,7 @@ export default function MapView({
 
         let bestSegment: [number, number][] | null = null;
         let bestFullPath: [number, number][] | null = null;
-        let bestStops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
+        let segmentStops: { stpid: string; stpnm: string; pos: [number, number] }[] = [];
 
         for (const pattern of routePatterns) {
             const path = pattern.path as [number, number][];
@@ -282,19 +282,20 @@ export default function MapView({
             const dStop = stops.find((s: any) => s.stpid === dId);
 
             if (oStop && dStop && oStop.idx !== dStop.idx) {
-                // Found both stops in this pattern — extract segment
-                const segment = oStop.idx < dStop.idx
-                    ? path.slice(oStop.idx, dStop.idx + 1)
-                    : path.slice(dStop.idx, oStop.idx + 1).reverse();
-                bestSegment = segment;
+                const lo = Math.min(oStop.idx, dStop.idx);
+                const hi = Math.max(oStop.idx, dStop.idx);
+                bestSegment = oStop.idx < dStop.idx
+                    ? path.slice(lo, hi + 1)
+                    : path.slice(lo, hi + 1).reverse();
                 bestFullPath = path;
-                bestStops = stops;
+                // Only include stops BETWEEN origin and dest on this segment
+                segmentStops = stops
+                    .filter((s: any) => s.idx >= lo && s.idx <= hi && s.stpid !== oId && s.stpid !== dId)
+                    .map((s: any) => ({ stpid: s.stpid, stpnm: s.stpnm, pos: s.pos }));
                 break;
             }
-            // Track best full path as fallback
             if (!bestFullPath) {
                 bestFullPath = path;
-                bestStops = stops;
             }
         }
 
@@ -304,53 +305,65 @@ export default function MapView({
             const dPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
             for (const pattern of routePatterns) {
                 const path = pattern.path as [number, number][];
-                let oIdx = 0, dIdx = 0, oDist = Infinity, dDist = Infinity;
+                let oi = 0, di = 0, od = Infinity, dd = Infinity;
                 for (let i = 0; i < path.length; i++) {
                     const d1 = Math.hypot(path[i][0] - oPos[0], path[i][1] - oPos[1]);
                     const d2 = Math.hypot(path[i][0] - dPos[0], path[i][1] - dPos[1]);
-                    if (d1 < oDist) { oDist = d1; oIdx = i; }
-                    if (d2 < dDist) { dDist = d2; dIdx = i; }
+                    if (d1 < od) { od = d1; oi = i; }
+                    if (d2 < dd) { dd = d2; di = i; }
                 }
-                if (oIdx !== dIdx) {
-                    bestSegment = oIdx < dIdx
-                        ? path.slice(oIdx, dIdx + 1)
-                        : path.slice(dIdx, oIdx + 1).reverse();
+                if (oi !== di) {
+                    bestSegment = oi < di ? path.slice(oi, di + 1) : path.slice(di, oi + 1).reverse();
                     bestFullPath = path;
-                    bestStops = pattern.stops || [];
+                    const lo = Math.min(oi, di), hi = Math.max(oi, di);
+                    segmentStops = (pattern.stops || [])
+                        .filter((s: any) => s.idx >= lo && s.idx <= hi && s.stpid !== oId && s.stpid !== dId)
+                        .map((s: any) => ({ stpid: s.stpid, stpnm: s.stpnm, pos: s.pos }));
                     break;
                 }
             }
         }
 
-        // Ultimate fallback: full route pattern
         if (!bestSegment && bestFullPath) {
             bestSegment = bestFullPath;
         }
 
-        return {
-            segment: bestSegment,
-            fullPath: bestFullPath,
-            routeStops: bestStops,
-        };
+        return { segment: bestSegment, fullPath: bestFullPath, segmentStops };
     }, [activeTripPlan, patternsData]);
 
-    // Walking paths for trip
-    const tripWalkPaths = useMemo(() => {
-        if (!activeTripPlan || !userLocation) return [];
-        const paths: { path: [number, number][]; label: string }[] = [];
+    // Walking routes via OSRM (actual street-following paths)
+    const [tripWalkPaths, setTripWalkPaths] = useState<{ path: [number, number][]; label: string }[]>([]);
 
-        const originPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
-        paths.push({ path: [userLocation, originPos], label: 'walk-to' });
+    useEffect(() => {
+        if (!activeTripPlan || !userLocation) { setTripWalkPaths([]); return; }
 
-        const fd = activeTripPlan.finalDestination;
-        const destStopPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
-        const finalDestPos: [number, number] = [fd.lon, fd.lat];
-        const destDelta = Math.abs(destStopPos[0] - finalDestPos[0]) + Math.abs(destStopPos[1] - finalDestPos[1]);
-        if (destDelta > 0.0001) {
-            paths.push({ path: [destStopPos, finalDestPos], label: 'walk-from' });
-        }
+        const fetchWalkRoute = async (from: [number, number], to: [number, number]): Promise<[number, number][]> => {
+            try {
+                const url = `https://router.project-osrm.org/route/v1/foot/${from[0]},${from[1]};${to[0]},${to[1]}?overview=full&geometries=geojson`;
+                const res = await axios.get(url);
+                const coords = res.data?.routes?.[0]?.geometry?.coordinates;
+                if (coords?.length >= 2) return coords as [number, number][];
+            } catch { /* fall through */ }
+            return [from, to]; // straight line fallback
+        };
 
-        return paths;
+        const load = async () => {
+            const paths: { path: [number, number][]; label: string }[] = [];
+            const originPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
+            const walkTo = await fetchWalkRoute(userLocation, originPos);
+            paths.push({ path: walkTo, label: 'walk-to' });
+
+            const fd = activeTripPlan.finalDestination;
+            const destStopPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
+            const finalDestPos: [number, number] = [fd.lon, fd.lat];
+            const delta = Math.abs(destStopPos[0] - finalDestPos[0]) + Math.abs(destStopPos[1] - finalDestPos[1]);
+            if (delta > 0.0001) {
+                const walkFrom = await fetchWalkRoute(destStopPos, finalDestPos);
+                paths.push({ path: walkFrom, label: 'walk-from' });
+            }
+            setTripWalkPaths(paths);
+        };
+        load();
     }, [activeTripPlan, userLocation]);
 
     // Tracking line path
@@ -457,42 +470,42 @@ export default function MapView({
 
         // ── Everything below here renders ON TOP of all lines ──
 
-        // 6) Stop dots — shown for selected route AND during trip mode
-        if (stopsData.length > 0 && !trackedBus) {
+        // 6) Stop dots — normal route view only (not during trip)
+        if (stopsData.length > 0 && !trackedBus && !activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'stops',
                 data: stopsData,
-                pickable: !activeTripPlan,
-                opacity: activeTripPlan ? 0.5 : 0.9,
+                pickable: true,
+                opacity: 0.9,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: activeTripPlan ? 4 : 5,
-                radiusMaxPixels: activeTripPlan ? 8 : 12,
-                lineWidthMinPixels: 1,
+                radiusMinPixels: 5,
+                radiusMaxPixels: 12,
+                lineWidthMinPixels: 1.5,
                 getPosition: (d: any) => d.position,
                 getRadius: 25,
                 getFillColor: [15, 15, 26],
-                getLineColor: activeTripPlan ? [66, 133, 244] : [0, 212, 255],
+                getLineColor: [0, 212, 255],
                 onClick: ({ object }) => {
-                    if (object && !activeTripPlan) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route });
+                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route });
                 }
             }));
         }
 
-        // Also show route stops from pattern data during trip (catches stops not in stopsData)
-        if (activeTripPlan && tripData?.routeStops?.length) {
+        // 6b) Trip: only stops along the segment between origin and dest
+        if (activeTripPlan && tripData?.segmentStops?.length) {
             L.push(new ScatterplotLayer({
-                id: 'trip-route-stops',
-                data: tripData.routeStops,
+                id: 'trip-segment-stops',
+                data: tripData.segmentStops,
                 getPosition: (d: any) => d.pos,
                 getFillColor: [15, 15, 26],
-                getLineColor: [66, 133, 244, 120],
-                getRadius: 20,
-                radiusMinPixels: 3,
-                radiusMaxPixels: 6,
+                getLineColor: [66, 133, 244],
+                getRadius: 25,
+                radiusMinPixels: 4,
+                radiusMaxPixels: 8,
                 stroked: true,
-                lineWidthMinPixels: 1,
-                opacity: 0.6,
+                lineWidthMinPixels: 1.5,
+                opacity: 0.85,
             }));
         }
 
