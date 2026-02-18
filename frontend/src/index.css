@@ -78,6 +78,11 @@ html, body, #root {
   animation: fade-in 0.2s ease-out;
 }
 
+/* Force MapLibre markers above DeckGL canvas overlay */
+.maplibregl-marker {
+  z-index: 10 !important;
+}
+
 /* ── User Location Pulsing Marker ── */
 .user-loc-marker {
   position: relative;

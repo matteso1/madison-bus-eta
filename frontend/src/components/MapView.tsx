@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
 import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { Map, Marker } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
@@ -254,6 +253,12 @@ export default function MapView({
         return liveData.find(v => v.vid === trackedBus.vid) || null;
     }, [liveData, trackedBus]);
 
+    // Delayed buses for all-routes view (clean red dots instead of heatmap)
+    const delayedBuses = useMemo(() => {
+        if (selectedRoute !== 'ALL') return [];
+        return liveData.filter(v => v.dly);
+    }, [liveData, selectedRoute]);
+
     // Extract the bus route segment between origin and dest stops
     const tripRouteSegment = useMemo(() => {
         if (!activeTripPlan) return null;
@@ -276,14 +281,29 @@ export default function MapView({
                 if (d2 < dDist) { dDist = d2; dIdx = i; }
             }
 
-            if (oIdx < dIdx && (dIdx - oIdx) > 1) {
+            // Forward direction: origin appears before dest in the pattern
+            if (oIdx < dIdx) {
                 const score = oDist + dDist;
                 if (score < bestScore) {
                     bestScore = score;
                     bestSegment = path.slice(oIdx, dIdx + 1);
                 }
             }
+            // Reverse direction: origin appears after dest, so reverse the slice
+            if (dIdx < oIdx) {
+                const score = oDist + dDist;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestSegment = path.slice(dIdx, oIdx + 1).reverse();
+                }
+            }
         }
+
+        // Fallback: straight line between origin and dest stops
+        if (!bestSegment) {
+            bestSegment = [oPos, dPos];
+        }
+
         return bestSegment;
     }, [activeTripPlan, patternsData]);
 
@@ -332,52 +352,48 @@ export default function MapView({
             }));
         }
 
-        // 2) Real-time delay heatmap — city-wide view only
-        if (selectedRoute === 'ALL' && liveData.length > 0) {
-            L.push(new HeatmapLayer({
-                id: 'delay-heatmap',
-                data: liveData,
+        // 2) Delayed bus indicators — clean red dots on all-routes view
+        if (delayedBuses.length > 0) {
+            L.push(new ScatterplotLayer({
+                id: 'delayed-indicators',
+                data: delayedBuses,
                 getPosition: (d: any) => d.position,
-                getWeight: (d: any) => d.dly ? 3 : 0.15,
-                radiusPixels: 50,
-                intensity: 1.2,
-                threshold: 0.05,
-                colorRange: [
-                    [254, 235, 170],
-                    [254, 204, 92],
-                    [253, 141, 60],
-                    [227, 74, 51],
-                    [189, 0, 38],
-                ],
-                opacity: 0.45,
+                getFillColor: [239, 68, 68],
+                getLineColor: [255, 255, 255],
+                getRadius: 60,
+                radiusMinPixels: 7,
+                radiusMaxPixels: 16,
+                stroked: true,
+                lineWidthMinPixels: 2,
+                opacity: 0.9,
             }));
         }
 
-        // 3) Trip bus route segment — highlighted
+        // 3) Trip bus route segment — highlighted bright cyan
         if (tripRouteSegment) {
             L.push(new PathLayer({
                 id: 'trip-segment',
                 data: [{ path: tripRouteSegment }],
                 getPath: (d: any) => d.path,
-                getColor: [0, 212, 255, 220],
-                getWidth: 6,
-                widthMinPixels: 4,
+                getColor: [0, 212, 255, 255],
+                getWidth: 7,
+                widthMinPixels: 5,
                 capRounded: true,
                 jointRounded: true,
             }));
         }
 
-        // 4) Trip walking dashed lines
+        // 4) Trip walking dashed lines — bright white
         if (tripWalkPaths.length > 0) {
             L.push(new PathLayer({
                 id: 'trip-walk-paths',
                 data: tripWalkPaths,
                 getPath: (d: any) => d.path,
-                getColor: [255, 255, 255, 140],
-                getWidth: 4,
-                widthMinPixels: 3,
+                getColor: [255, 255, 255, 200],
+                getWidth: 5,
+                widthMinPixels: 4,
                 capRounded: true,
-                getDashArray: [6, 4],
+                getDashArray: [8, 6],
                 dashJustified: true,
                 extensions: [dashExtension],
             }));
@@ -467,7 +483,7 @@ export default function MapView({
         }
 
         return L;
-    }, [filteredPatterns, filteredLive, stopsData, liveData, selectedRoute, onStopClick,
+    }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
         trackedBus, trackingPath, activeTripPlan, tripRouteSegment, tripWalkPaths]);
 
     return (
