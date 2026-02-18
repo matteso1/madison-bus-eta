@@ -88,7 +88,6 @@ interface MapViewProps {
     onMapClick?: (lngLat: [number, number]) => void;
 }
 
-const dashExtension = new PathStyleExtension({ dash: true });
 
 export default function MapView({
     selectedRoute, userLocation, trackedBus, activeTripPlan,
@@ -366,12 +365,6 @@ export default function MapView({
         load();
     }, [activeTripPlan, userLocation]);
 
-    // Tracking line path
-    const trackingPath = useMemo(() => {
-        if (!trackedVehicle || !trackedBus?.stopPosition) return null;
-        return [{ path: [trackedVehicle.position, trackedBus.stopPosition] }];
-    }, [trackedVehicle, trackedBus]);
-
     // ── Layers (order = render order: first = bottom, last = top) ──
 
     const layers = useMemo(() => {
@@ -449,22 +442,6 @@ export default function MapView({
                 getDashArray: [2, 3],
                 dashJustified: true,
                 extensions: [new PathStyleExtension({ dash: true })],
-            }));
-        }
-
-        // 5) Tracking dashed line (bus → stop)
-        if (trackingPath) {
-            L.push(new PathLayer({
-                id: 'tracking-path',
-                data: trackingPath,
-                getPath: (d: any) => d.path,
-                getColor: [0, 212, 255, 100],
-                getWidth: 3,
-                widthMinPixels: 2,
-                capRounded: true,
-                getDashArray: [8, 6],
-                dashJustified: true,
-                extensions: [dashExtension],
             }));
         }
 
@@ -555,7 +532,7 @@ export default function MapView({
 
         return L;
     }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
-        trackedBus, trackingPath, activeTripPlan, tripData, tripWalkPaths]);
+        trackedBus, activeTripPlan, tripData, tripWalkPaths]);
 
     return (
         <DeckGL

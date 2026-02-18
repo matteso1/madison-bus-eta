@@ -78,14 +78,20 @@ html, body, #root {
   animation: fade-in 0.2s ease-out;
 }
 
-/* Force MapLibre markers above DeckGL canvas overlay */
+/* Force MapLibre markers above DeckGL canvas overlay.
+   DeckGL renders a canvas div on top of MapLibre. We need the
+   marker container to sit above it. */
 .maplibregl-marker {
   z-index: 10 !important;
 }
-/* Lift the MapLibre overlay container above the DeckGL canvas */
-.maplibregl-map .maplibregl-overlays,
-.maplibregl-map .maplibregl-marker {
-  z-index: 10 !important;
+#deckgl-overlay {
+  z-index: 1 !important;
+}
+.maplibregl-map .maplibregl-canvas-container ~ div:not(.maplibregl-control-container) {
+  z-index: 1 !important;
+}
+.maplibregl-map .maplibregl-canvas-container + div {
+  z-index: 1 !important;
 }
 
 /* ── User Location Pulsing Marker ── */
