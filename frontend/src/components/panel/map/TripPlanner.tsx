@@ -17,7 +17,14 @@ interface StopResult {
   lat: number;
   lon: number;
   routes: string[];
-  distance_miles?: number;
+}
+
+interface PlaceResult {
+  name: string;
+  fullName: string;
+  lat: number;
+  lon: number;
+  type: string;
 }
 
 interface TripOption {
@@ -33,20 +40,27 @@ interface TripOption {
   mlEta?: { low: number; median: number; high: number };
 }
 
+interface Destination {
+  lat: number;
+  lon: number;
+  name: string;
+}
+
 export default function TripPlanner({ userLocation, onBack, onTripSelect, onUserLocation, activePlan }: TripPlannerProps) {
   const [query, setQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<StopResult[]>([]);
+  const [stopResults, setStopResults] = useState<StopResult[]>([]);
+  const [placeResults, setPlaceResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedDest, setSelectedDest] = useState<StopResult | null>(null);
+  const [destination, setDestination] = useState<Destination | null>(null);
   const [tripOptions, setTripOptions] = useState<TripOption[]>([]);
   const [loadingTrip, setLoadingTrip] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchTimer = useRef<number | null>(null);
+  const showDropdown = stopResults.length > 0 || placeResults.length > 0;
 
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
-  // Request location if not available
   useEffect(() => {
     if (userLocation) return;
     setLocating(true);
@@ -68,76 +82,105 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
     );
   }, [userLocation, onUserLocation]);
 
-  const searchStops = useCallback(async (q: string) => {
-    if (q.length < 2) { setSearchResults([]); return; }
+  // Search both stops and places
+  const searchAll = useCallback(async (q: string) => {
+    if (q.length < 2) { setStopResults([]); setPlaceResults([]); return; }
     setSearching(true);
-    try {
-      const res = await axios.get(`${API_BASE}/api/stops/search`, { params: { q, limit: 10 } });
-      setSearchResults(res.data.stops || []);
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
+
+    const stopsProm = axios
+      .get(`${API_BASE}/api/stops/search`, { params: { q, limit: 5 } })
+      .then(res => res.data.stops || [])
+      .catch(() => []);
+
+    const placesProm = q.length >= 3
+      ? axios
+          .get('https://nominatim.openstreetmap.org/search', {
+            params: {
+              q: `${q}, Madison, WI`,
+              format: 'json',
+              limit: 5,
+              viewbox: '-89.6,43.2,-89.1,42.95',
+              bounded: 1,
+            },
+          })
+          .then(res =>
+            (res.data || []).map((r: any) => ({
+              name: r.display_name.split(',')[0].trim(),
+              fullName: r.display_name.split(',').slice(0, 3).join(',').trim(),
+              lat: parseFloat(r.lat),
+              lon: parseFloat(r.lon),
+              type: r.type || r.class || '',
+            }))
+          )
+          .catch(() => [])
+      : Promise.resolve([]);
+
+    const [stops, places] = await Promise.all([stopsProm, placesProm]);
+    setStopResults(stops);
+    setPlaceResults(places);
+    setSearching(false);
   }, [API_BASE]);
 
   const handleQueryChange = (val: string) => {
     setQuery(val);
-    setSelectedDest(null);
+    setDestination(null);
     setTripOptions([]);
     setError(null);
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = window.setTimeout(() => searchStops(val), 300);
+    searchTimer.current = window.setTimeout(() => searchAll(val), 400);
   };
 
-  const handleSelectDest = async (stop: StopResult) => {
-    setSelectedDest(stop);
-    setQuery(stop.stpnm);
-    setSearchResults([]);
-
-    if (!userLocation) {
-      setError('Location not available');
-      return;
-    }
-
+  const planTrip = async (dest: Destination) => {
+    if (!userLocation) { setError('Location not available'); return; }
     setLoadingTrip(true);
     setError(null);
     try {
       const res = await axios.get(`${API_BASE}/api/trip-plan`, {
-        params: {
-          olat: userLocation[1],
-          olon: userLocation[0],
-          dlat: stop.lat,
-          dlon: stop.lon,
-        }
+        params: { olat: userLocation[1], olon: userLocation[0], dlat: dest.lat, dlon: dest.lon },
       });
       const options: TripOption[] = (res.data.options || []).slice(0, 5);
       setTripOptions(options);
-
       if (options.length === 0) {
-        setError('No direct bus routes found between these locations. Try a destination closer to a bus route.');
+        setError('No direct bus routes found. Try a destination closer to a bus route, or try a different search.');
       }
-    } catch (e) {
+    } catch {
       setError('Could not plan trip. Try again.');
     } finally {
       setLoadingTrip(false);
     }
   };
 
+  const handleSelectStop = (stop: StopResult) => {
+    const dest = { lat: stop.lat, lon: stop.lon, name: stop.stpnm };
+    setQuery(stop.stpnm);
+    setStopResults([]);
+    setPlaceResults([]);
+    setDestination(dest);
+    planTrip(dest);
+  };
+
+  const handleSelectPlace = (place: PlaceResult) => {
+    const dest = { lat: place.lat, lon: place.lon, name: place.name };
+    setQuery(place.name);
+    setStopResults([]);
+    setPlaceResults([]);
+    setDestination(dest);
+    planTrip(dest);
+  };
+
   const handleSelectTrip = (opt: TripOption) => {
+    if (!destination) return;
     onTripSelect({
       routeId: opt.routeId,
-      originStop: { stpid: opt.originStop.stpid, stpnm: opt.originStop.stpnm, lat: opt.originStop.lat, lon: opt.originStop.lon },
-      destStop: { stpid: opt.destStop.stpid, stpnm: opt.destStop.stpnm, lat: opt.destStop.lat, lon: opt.destStop.lon },
+      originStop: opt.originStop,
+      destStop: opt.destStop,
+      finalDestination: destination,
       walkToMin: opt.walkToMin,
       walkFromMin: opt.walkFromMin,
     });
   };
 
-  const walkTimeStr = (min: number) => {
-    if (min < 1) return '<1 min walk';
-    return `${Math.round(min)} min walk`;
-  };
+  const walkTimeStr = (min: number) => min < 1 ? '<1 min walk' : `${Math.round(min)} min walk`;
 
   return (
     <div className="fade-in" style={{ padding: '14px' }}>
@@ -146,7 +189,7 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Where to?</div>
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
-            Find the best bus route
+            Search any place or bus stop
           </div>
         </div>
         <button
@@ -179,7 +222,6 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
         </div>
       </div>
 
-      {/* Vertical connector */}
       <div style={{ width: 1, height: 16, background: 'var(--border-bright)', marginLeft: 4.5, marginBottom: 8 }} />
 
       {/* Destination search */}
@@ -190,14 +232,14 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
         <input
           type="text"
           className="trip-search-input"
-          placeholder="Search for a stop..."
+          placeholder="Search stops, restaurants, places..."
           value={query}
           onChange={e => handleQueryChange(e.target.value)}
           autoFocus
         />
 
-        {/* Search results dropdown */}
-        {searchResults.length > 0 && (
+        {/* Combined search results dropdown */}
+        {showDropdown && (
           <div style={{
             position: 'absolute',
             top: '100%',
@@ -209,53 +251,88 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
             borderRadius: 10,
             overflow: 'hidden',
             zIndex: 20,
-            maxHeight: 240,
+            maxHeight: 300,
             overflowY: 'auto',
             boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-          }}>
-            {searchResults.map(stop => (
-              <button
-                key={stop.stpid}
-                onClick={() => handleSelectDest(stop)}
-                style={{
-                  width: '100%',
-                  background: 'transparent',
-                  border: 'none',
+          }} className="panel-scroll">
+            {/* Stops section */}
+            {stopResults.length > 0 && (
+              <>
+                <div style={{
+                  padding: '6px 14px',
+                  fontSize: 9,
+                  fontFamily: 'var(--font-data)',
+                  color: 'var(--text-dim)',
+                  letterSpacing: '0.1em',
+                  background: 'var(--surface-2)',
                   borderBottom: '1px solid var(--border)',
-                  padding: '10px 14px',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              >
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 2 }}>
-                    {stop.stpnm}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    {stop.routes.slice(0, 5).map(rt => (
-                      <span key={rt} className="data-num" style={{
-                        fontSize: 9,
-                        background: 'var(--signal-dim)',
-                        color: 'var(--signal)',
-                        borderRadius: 3,
-                        padding: '1px 4px',
-                      }}>
-                        {rt}
-                      </span>
-                    ))}
-                  </div>
+                }}>
+                  BUS STOPS
                 </div>
-                <span className="data-num" style={{ fontSize: 10, color: 'var(--text-dim)' }}>
-                  #{stop.stpid}
-                </span>
-              </button>
-            ))}
+                {stopResults.map(stop => (
+                  <button
+                    key={`stop-${stop.stpid}`}
+                    onClick={() => handleSelectStop(stop)}
+                    style={dropdownItemStyle}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {stop.stpnm}
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {stop.routes.slice(0, 5).map(rt => (
+                          <span key={rt} className="data-num" style={{
+                            fontSize: 9, background: 'var(--signal-dim)', color: 'var(--signal)',
+                            borderRadius: 3, padding: '1px 4px',
+                          }}>
+                            {rt}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, marginLeft: 8, flexShrink: 0 }}>&#128655;</span>
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Places section */}
+            {placeResults.length > 0 && (
+              <>
+                <div style={{
+                  padding: '6px 14px',
+                  fontSize: 9,
+                  fontFamily: 'var(--font-data)',
+                  color: 'var(--text-dim)',
+                  letterSpacing: '0.1em',
+                  background: 'var(--surface-2)',
+                  borderBottom: '1px solid var(--border)',
+                }}>
+                  PLACES
+                </div>
+                {placeResults.map((place, i) => (
+                  <button
+                    key={`place-${i}`}
+                    onClick={() => handleSelectPlace(place)}
+                    style={dropdownItemStyle}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {place.name}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {place.fullName}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, marginLeft: 8, flexShrink: 0 }}>&#128205;</span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
@@ -318,7 +395,6 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                   onMouseEnter={e => { if (!isActive) e.currentTarget.style.borderColor = 'var(--border-bright)'; }}
                   onMouseLeave={e => { if (!isActive) e.currentTarget.style.borderColor = 'var(--border)'; }}
                 >
-                  {/* Route header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span className="data-num" style={{
@@ -328,9 +404,7 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                         {opt.routeId}
                       </span>
                       {opt.routeName && (
-                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                          {opt.routeName}
-                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{opt.routeName}</span>
                       )}
                     </div>
                     {opt.totalMin != null && (
@@ -343,9 +417,7 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                     )}
                   </div>
 
-                  {/* Trip steps */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {/* Walk to stop */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 20, textAlign: 'center', fontSize: 12 }}>&#128694;</div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -353,7 +425,6 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                       </div>
                     </div>
 
-                    {/* Bus ride */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 20, textAlign: 'center', fontSize: 12 }}>&#128652;</div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -366,30 +437,24 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                       </div>
                     </div>
 
-                    {/* ML ETA */}
                     {opt.mlEta && (
                       <div style={{ marginLeft: 28, marginTop: 2 }}>
                         <ConfidenceBand low={opt.mlEta.low} median={opt.mlEta.median} high={opt.mlEta.high} />
                       </div>
                     )}
 
-                    {/* Walk from stop */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 20, textAlign: 'center', fontSize: 12 }}>&#128694;</div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                        {walkTimeStr(opt.walkFromMin)} to <span style={{ color: 'var(--signal)' }}>{selectedDest?.stpnm || 'destination'}</span>
+                        {walkTimeStr(opt.walkFromMin)} to <span style={{ color: 'var(--signal)' }}>{destination?.name || 'destination'}</span>
                       </div>
                     </div>
                   </div>
 
                   {isActive && (
                     <div style={{
-                      marginTop: 10,
-                      textAlign: 'center',
-                      fontSize: 10,
-                      color: 'var(--signal)',
-                      fontWeight: 600,
-                      letterSpacing: '0.08em',
+                      marginTop: 10, textAlign: 'center', fontSize: 10,
+                      color: 'var(--signal)', fontWeight: 600, letterSpacing: '0.08em',
                     }}>
                       VIEWING ON MAP
                     </div>
@@ -401,19 +466,28 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
         </div>
       )}
 
-      {/* Empty state hint */}
-      {!selectedDest && !loadingTrip && !error && searchResults.length === 0 && query.length === 0 && (
+      {!destination && !loadingTrip && !error && !showDropdown && query.length === 0 && (
         <div style={{
-          textAlign: 'center',
-          padding: '32px 16px',
-          color: 'var(--text-dim)',
-          fontSize: 12,
-          lineHeight: 1.6,
+          textAlign: 'center', padding: '32px 16px',
+          color: 'var(--text-dim)', fontSize: 12, lineHeight: 1.6,
         }}>
-          <div style={{ fontSize: 28, marginBottom: 12 }}>&#128652;</div>
-          Search for a bus stop to find the best route from your current location.
+          <div style={{ fontSize: 28, marginBottom: 12 }}>&#128205;</div>
+          Search for a restaurant, building, address, or bus stop — we'll find the best bus route there.
         </div>
       )}
     </div>
   );
 }
+
+const dropdownItemStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '1px solid var(--border)',
+  padding: '10px 14px',
+  cursor: 'pointer',
+  textAlign: 'left',
+  display: 'flex',
+  alignItems: 'center',
+  transition: 'background 0.1s',
+};
