@@ -351,8 +351,8 @@ export default function MapView({
             }));
         }
 
-        // 2) Delayed bus indicators — clean red dots on all-routes view
-        if (delayedBuses.length > 0) {
+        // 2) Delayed bus indicators — only on all-routes view, hidden during trip/tracking
+        if (delayedBuses.length > 0 && !activeTripPlan && !trackedBus) {
             L.push(new ScatterplotLayer({
                 id: 'delayed-indicators',
                 data: delayedBuses,
