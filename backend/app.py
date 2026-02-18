@@ -4139,16 +4139,17 @@ def get_route_reliability():
     User-facing feature for helping riders choose reliable routes.
     """
     try:
+        from sqlalchemy import create_engine, text
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
             return jsonify({"error": "Database not configured"}), 500
-        
+
         engine = create_engine(database_url, pool_pre_ping=True)
-        
+
         with engine.connect() as conn:
             # Get reliability metrics by route
             result = conn.execute(text("""
-                SELECT 
+                SELECT
                     rt as route,
                     COUNT(*) as prediction_count,
                     AVG(ABS(error_seconds)) as avg_error_sec,
@@ -4159,10 +4160,10 @@ def get_route_reliability():
                 FROM prediction_outcomes
                 WHERE created_at > NOW() - INTERVAL '7 days'
                 GROUP BY rt
-                HAVING COUNT(*) >= 50
+                HAVING COUNT(*) >= 10
                 ORDER BY avg_error_sec ASC
             """)).fetchall()
-            
+
             routes = []
             for row in result:
                 route = row[0]
