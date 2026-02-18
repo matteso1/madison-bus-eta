@@ -78,6 +78,7 @@ export default function App() {
 
   const handleTripPlanClear = useCallback(() => {
     setActiveTripPlan(null);
+    setSelectedRoute('ALL');
   }, []);
 
   return (
