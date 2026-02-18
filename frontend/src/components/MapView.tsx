@@ -178,7 +178,7 @@ export default function MapView({
             const stops = res.data?.['bustime-response']?.stops || [];
             setStopsData(stops.map((s: any) => ({
                 position: [parseFloat(s.lon), parseFloat(s.lat)],
-                stpid: s.stpid,
+                stpid: String(s.stpid),
                 stpnm: s.stpnm,
                 route: selectedRoute
             })));
@@ -196,7 +196,7 @@ export default function MapView({
                 const arr = Array.isArray(preds) ? preds : [preds];
                 const grouped: Record<string, {route: string; minutes: number; destination: string}[]> = {};
                 arr.forEach((p: any) => {
-                    const stpid = p.stpid;
+                    const stpid = String(p.stpid);
                     const mins = parseInt(p.prdctdn === 'DUE' ? '0' : p.prdctdn, 10);
                     if (!grouped[stpid]) grouped[stpid] = [];
                     if (grouped[stpid].length < 3) {
@@ -550,17 +550,17 @@ export default function MapView({
 
         // ── Everything below here renders ON TOP of all lines ──
 
-        // 6) Stop dots — normal route view only (not during trip)
-        if (stopsData.length > 0 && !trackedBus && !activeTripPlan) {
+        // 6) Stop dots — visible during route view and tracking, hidden during trip
+        if (stopsData.length > 0 && !activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'stops',
                 data: stopsData,
                 pickable: true,
-                opacity: 0.9,
+                opacity: trackedBus ? 0.5 : 0.9,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: 5,
-                radiusMaxPixels: 12,
+                radiusMinPixels: trackedBus ? 4 : 5,
+                radiusMaxPixels: trackedBus ? 8 : 12,
                 lineWidthMinPixels: 1.5,
                 getPosition: (d: any) => d.position,
                 getRadius: 25,

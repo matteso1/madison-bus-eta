@@ -57,12 +57,14 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchTimer = useRef<number | null>(null);
+  const tripRequestId = useRef(0);
   const showDropdown = stopResults.length > 0 || placeResults.length > 0;
 
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
     if (userLocation) return;
+    let cancelled = false;
     setLocating(true);
     if (!navigator.geolocation) {
       setError('Geolocation not supported');
@@ -71,16 +73,25 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (cancelled) return;
         onUserLocation(pos.coords.latitude, pos.coords.longitude);
         setLocating(false);
       },
       () => {
+        if (cancelled) return;
         setError('Could not get your location. Enable location access to plan trips.');
         setLocating(false);
       },
       { timeout: 10000, maximumAge: 30000 }
     );
+    return () => { cancelled = true; };
   }, [userLocation, onUserLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
 
   // Search both stops and places — keep previous results if new search returns empty
   const searchAll = useCallback(async (q: string) => {
@@ -153,21 +164,25 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
 
   const planTrip = async (dest: Destination) => {
     if (!userLocation) { setError('Location not available'); return; }
+    const requestId = ++tripRequestId.current;
     setLoadingTrip(true);
+    setTripOptions([]);
     setError(null);
     try {
       const res = await axios.get(`${API_BASE}/api/trip-plan`, {
         params: { olat: userLocation[1], olon: userLocation[0], dlat: dest.lat, dlon: dest.lon },
       });
+      if (requestId !== tripRequestId.current) return;
       const options: TripOption[] = (res.data.options || []).slice(0, 5);
       setTripOptions(options);
       if (options.length === 0) {
         setError('No direct bus routes found. Try a destination closer to a bus route, or try a different search.');
       }
     } catch {
+      if (requestId !== tripRequestId.current) return;
       setError('Could not plan trip. Try again.');
     } finally {
-      setLoadingTrip(false);
+      if (requestId === tripRequestId.current) setLoadingTrip(false);
     }
   };
 

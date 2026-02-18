@@ -13,10 +13,14 @@ export default function RouteDrilldown({ route, onClose }: RouteDrilldownProps) 
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
+    let cancelled = false;
+    setRouteData(null);
     axios.get(`${API_BASE}/api/route-reliability`).then(res => {
+      if (cancelled) return;
       const found = (res.data.routes || []).find((r: any) => r.route_id === route);
       setRouteData(found || null);
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [route, API_BASE]);
 
   const score = routeData?.reliability_score ?? 0;
@@ -72,7 +76,7 @@ export default function RouteDrilldown({ route, onClose }: RouteDrilldownProps) 
 
       {!routeData && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '24px 0', textAlign: 'center' }}>
-          No reliability data for route {route} yet
+          Loading route {route} data...
         </div>
       )}
     </div>

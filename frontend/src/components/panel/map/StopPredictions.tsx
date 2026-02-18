@@ -27,20 +27,23 @@ export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredi
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setPredictions([]);
+    setStopLatLon(null);
 
     const load = async () => {
       try {
-        // Fetch stop position for tracking
         try {
           const stopsRes = await axios.get(`${API_BASE}/stops?rt=${stop.route}`);
           const allStops = stopsRes.data?.['bustime-response']?.stops || [];
           const thisStop = allStops.find((s: any) => String(s.stpid) === String(stop.stpid));
-          if (thisStop) {
+          if (thisStop && !cancelled) {
             setStopLatLon([parseFloat(thisStop.lon), parseFloat(thisStop.lat)]);
           }
         } catch {}
+
+        if (cancelled) return;
 
         const res = await axios.get(`${API_BASE}/predictions?stpid=${stop.stpid}`);
         const prdArray = res.data?.['bustime-response']?.prd || [];
@@ -48,13 +51,14 @@ export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredi
 
         const results: Prediction[] = [];
         for (const prd of prds.slice(0, 5)) {
-          const apiMinutes = parseInt(prd.prdctdn) || 0;
+          if (cancelled) return;
+          const apiMinutes = prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0);
           try {
             const mlRes = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
               route: prd.rt,
               stop_id: stop.stpid,
               vehicle_id: prd.vid,
-              api_prediction: apiMinutes
+              api_prediction: apiMinutes,
             });
             results.push({
               route: prd.rt,
@@ -79,15 +83,16 @@ export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredi
             });
           }
         }
-        setPredictions(results);
+        if (!cancelled) setPredictions(results);
       } catch (e) {
         console.error('Stop predictions error:', e);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     load();
+    return () => { cancelled = true; };
   }, [stop.stpid, stop.route, API_BASE]);
 
   const handleTrack = (pred: Prediction) => {
@@ -143,9 +148,9 @@ export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredi
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {predictions.map((pred, idx) => (
+          {predictions.map((pred) => (
             <div
-              key={idx}
+              key={`${pred.vid}-${pred.route}`}
               style={{
                 background: 'var(--surface-2)',
                 border: '1px solid var(--border)',

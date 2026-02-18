@@ -84,6 +84,8 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onSt
   }, [API_BASE]);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!navigator.geolocation) {
       setLocError('Geolocation not supported by your browser');
       setLocating(false);
@@ -92,32 +94,37 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onSt
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        if (cancelled) return;
         const { latitude: lat, longitude: lon } = pos.coords;
         setLocating(false);
         onUserLocation(lat, lon);
 
         try {
           const res = await axios.get(`${API_BASE}/stops/nearby?lat=${lat}&lon=${lon}&radius=0.4`);
+          if (cancelled) return;
           const nearbyStops: NearbyStop[] = (res.data.stops || []).slice(0, 6);
 
-          // Init with loading state
           setStops(nearbyStops.map(s => ({ ...s, arrivals: [], loading: true })));
           onStopsLoaded(nearbyStops.map(s => ({ stpid: s.stpid, stpnm: s.stpnm, lat: s.lat, lon: s.lon, routes: s.routes })));
 
-          // Auto-expand first stop and load its arrivals
           if (nearbyStops.length > 0) {
             setExpanded(nearbyStops[0].stpid);
             const firstArrivals = await loadArrivals(nearbyStops[0]);
-            setStops(prev => prev.map(s =>
-              s.stpid === nearbyStops[0].stpid ? { ...s, arrivals: firstArrivals, loading: false } : s
-            ));
+            if (!cancelled) {
+              setStops(prev => prev.map(s =>
+                s.stpid === nearbyStops[0].stpid ? { ...s, arrivals: firstArrivals, loading: false } : s
+              ));
+            }
           }
         } catch {
-          setLocError('Could not load nearby stops. The stop cache may be building — try again in a moment.');
-          setLocating(false);
+          if (!cancelled) {
+            setLocError('Could not load nearby stops. The stop cache may be building — try again in a moment.');
+            setLocating(false);
+          }
         }
       },
       (err) => {
+        if (cancelled) return;
         setLocating(false);
         if (err.code === err.PERMISSION_DENIED) {
           setLocError('Location access denied. Enable location in your browser to see nearby stops.');
@@ -128,7 +135,7 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onSt
       { timeout: 8000, maximumAge: 30000 }
     );
 
-    return () => { onStopsLoaded([]); };
+    return () => { cancelled = true; onStopsLoaded([]); };
   }, [API_BASE, onUserLocation, loadArrivals, onStopsLoaded]);
 
   const handleExpand = async (stop: StopWithArrivals) => {

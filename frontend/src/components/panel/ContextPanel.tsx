@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { TabId } from '../layout/BottomTabs';
 import type { StopClickEvent, TrackedBus, TripPlan } from '../MapView';
 import CityOverview from './map/CityOverview';
@@ -46,6 +46,13 @@ export default function ContextPanel({
 }: ContextPanelProps) {
   const [showNearby, setShowNearby] = useState(false);
   const [showTripPlanner, setShowTripPlanner] = useState(false);
+
+  useEffect(() => {
+    if (selectedRoute !== 'ALL' || selectedStop) {
+      setShowNearby(false);
+      setShowTripPlanner(false);
+    }
+  }, [selectedRoute, selectedStop]);
 
   const handleRouteSelect = (rt: string) => {
     setShowNearby(false);

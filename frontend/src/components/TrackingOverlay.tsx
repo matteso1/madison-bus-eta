@@ -13,16 +13,28 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
     const vehicle = vehicles.find(v => v.vid === trackedBus.vid);
+    const vehicleFound = !!vehicle;
 
     useEffect(() => {
-        if (!vehicle) return;
+        if (!vehicleFound) return;
         const fetchEta = async () => {
             try {
+                let apiMinutes = 10;
+                try {
+                    const predRes = await axios.get(`${API_BASE}/predictions?stpid=${trackedBus.stopId}`);
+                    const prdData = predRes.data?.['bustime-response']?.prd;
+                    const prds = Array.isArray(prdData) ? prdData : prdData ? [prdData] : [];
+                    const match = prds.find((p: any) => p.vid === trackedBus.vid);
+                    if (match) {
+                        apiMinutes = match.prdctdn === 'DUE' ? 0 : (parseInt(match.prdctdn) || 10);
+                    }
+                } catch { /* use fallback */ }
+
                 const res = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
                     route: trackedBus.route,
                     stop_id: trackedBus.stopId,
                     vehicle_id: trackedBus.vid,
-                    api_prediction: 10
+                    api_prediction: apiMinutes,
                 });
                 if (res.data?.eta_low_min != null) {
                     setEta({
@@ -36,7 +48,7 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
         fetchEta();
         const timer = setInterval(fetchEta, 15000);
         return () => clearInterval(timer);
-    }, [vehicle, trackedBus, API_BASE]);
+    }, [vehicleFound, trackedBus.vid, trackedBus.route, trackedBus.stopId, API_BASE]);
 
     if (!vehicle) {
         return (
@@ -76,7 +88,6 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                {/* Big ETA */}
                 <div style={{ flex: 1 }}>
                     {eta ? (
                         <>
@@ -84,7 +95,7 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                                 {eta.median}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                                min &middot; {eta.low}–{eta.high} range
+                                min &middot; {eta.low}&ndash;{eta.high} range
                             </div>
                         </>
                     ) : (
@@ -94,7 +105,6 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                     )}
                 </div>
 
-                {/* Status badge */}
                 <div style={{
                     padding: '6px 12px',
                     borderRadius: 8,
@@ -111,7 +121,6 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                 </div>
             </div>
 
-            {/* Progress bar */}
             <div style={{ marginTop: 12, height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
                 <div style={{
                     height: '100%',
