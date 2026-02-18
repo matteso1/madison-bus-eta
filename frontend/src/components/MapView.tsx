@@ -336,15 +336,14 @@ export default function MapView({
 
     const layers = useMemo(() => {
         const L: any[] = [];
-        const isTripOrTracking = !!(trackedBus || activeTripPlan);
 
-        // 1) Background route paths — always at bottom
-        if (filteredPatterns.length > 0) {
+        // 1) Background route paths — hidden entirely during trip mode for clean Google Maps look
+        if (filteredPatterns.length > 0 && !activeTripPlan) {
             L.push(new PathLayer({
                 id: 'route-paths',
                 data: filteredPatterns,
                 getPath: (d: any) => d.path,
-                getColor: (d: any) => [...d.color, isTripOrTracking ? 50 : 160],
+                getColor: (d: any) => [...d.color, trackedBus ? 50 : 160],
                 getWidth: 3,
                 widthMinPixels: 1.5,
                 capRounded: true,
@@ -417,8 +416,8 @@ export default function MapView({
 
         // ── Everything below here renders ON TOP of all lines ──
 
-        // 6) Stop dots
-        if (stopsData.length > 0 && !trackedBus) {
+        // 6) Stop dots — hidden during trip mode and tracking for clean map
+        if (stopsData.length > 0 && !trackedBus && !activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'stops',
                 data: stopsData,
@@ -439,7 +438,7 @@ export default function MapView({
             }));
         }
 
-        // 7) Trip origin/dest stop markers
+        // 7) Trip origin/dest stop markers — large and prominent like Google Maps
         if (activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'trip-stops',
@@ -450,20 +449,21 @@ export default function MapView({
                 getPosition: (d: any) => d.position,
                 getFillColor: (d: any) => d.label === 'origin' ? [16, 185, 129] : [0, 212, 255],
                 getLineColor: [255, 255, 255],
-                getRadius: 50,
-                radiusMinPixels: 8,
-                radiusMaxPixels: 14,
+                getRadius: 80,
+                radiusMinPixels: 12,
+                radiusMaxPixels: 20,
                 stroked: true,
-                lineWidthMinPixels: 2.5,
+                lineWidthMinPixels: 3,
+                opacity: 1,
             }));
         }
 
-        // 8) Bus dots — always topmost DeckGL layer
+        // 8) Bus dots — hidden during trip mode for clean map
         const nonTracked = trackedBus
             ? filteredLive.filter(v => v.vid !== trackedBus.vid)
             : filteredLive;
 
-        if (nonTracked.length > 0) {
+        if (nonTracked.length > 0 && !activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'live-buses',
                 data: nonTracked,
