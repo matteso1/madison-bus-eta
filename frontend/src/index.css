@@ -1,32 +1,79 @@
 @import "tailwindcss";
 
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: dark;
-  background-color: #111;
-  color: rgba(255, 255, 255, 0.87);
+  --bg: #080810;
+  --surface: #0f0f1a;
+  --surface-2: #13131f;
+  --border: #1e1e2e;
+  --border-bright: #2a2a3e;
+  --signal: #00d4ff;
+  --signal-dim: rgba(0, 212, 255, 0.15);
+  --signal-glow: rgba(0, 212, 255, 0.4);
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --success: #10b981;
+  --text-primary: #e2e8f0;
+  --text-secondary: #64748b;
+  --text-dim: #374151;
+  --font-data: 'JetBrains Mono', monospace;
+  --font-ui: 'Inter', system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-  touch-action: manipulation;
-  overscroll-behavior-y: none;
-  -webkit-tap-highlight-color: transparent;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
-#root {
-  width: 100%;
-  height: 100vh;
+html, body, #root {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+/* Scrollable panel areas */
+.panel-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-bright) transparent;
+}
+.panel-scroll::-webkit-scrollbar { width: 4px; }
+.panel-scroll::-webkit-scrollbar-track { background: transparent; }
+.panel-scroll::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+/* Data numbers always monospaced */
+.data-num {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Live pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+.live-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Signal glow on data elements */
+.signal-glow {
+  text-shadow: 0 0 12px var(--signal-glow);
+}
+
+/* Fade-in for panel content */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fade-in 0.2s ease-out;
 }
