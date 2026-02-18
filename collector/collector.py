@@ -227,6 +227,62 @@ def fetch_all_stops(routes: list) -> list:
     return all_stops
 
 
+def _update_ab_test_matches(outcomes: list) -> None:
+    """
+    Update ab_test_predictions table when arrivals are detected.
+    
+    This closes the feedback loop: predictions logged at inference time
+    get matched to actual arrivals so drift detection and A/B comparison work.
+    """
+    if not DB_AVAILABLE or not DATABASE_URL:
+        return
+
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        matched_count = 0
+        with engine.connect() as conn:
+            for outcome in outcomes:
+                try:
+                    result = conn.execute(sa_text("""
+                        UPDATE ab_test_predictions
+                        SET matched = true,
+                            actual_arrival_sec = EXTRACT(EPOCH FROM :actual_arrival::timestamptz),
+                            api_error_sec = ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                              - EXTRACT(EPOCH FROM :predicted_arrival::timestamptz)),
+                            ml_error_sec = CASE
+                                WHEN ml_prediction_sec IS NOT NULL
+                                THEN ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                       - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec))
+                                ELSE NULL END,
+                            ml_won = CASE
+                                WHEN ml_prediction_sec IS NOT NULL
+                                THEN ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                       - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec))
+                                     < ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                         - EXTRACT(EPOCH FROM :predicted_arrival::timestamptz))
+                                ELSE false END
+                        WHERE vehicle_id = :vid
+                          AND stop_id = :stpid
+                          AND matched = false
+                          AND created_at > NOW() - INTERVAL '30 minutes'
+                    """), {
+                        'vid': str(outcome.get('vid', '')),
+                        'stpid': str(outcome.get('stpid', '')),
+                        'actual_arrival': outcome.get('actual_arrival'),
+                        'predicted_arrival': outcome.get('predicted_arrival'),
+                    })
+                    if result.rowcount > 0:
+                        matched_count += 1
+                except Exception:
+                    pass
+            conn.commit()
+        if matched_count:
+            logger.info(f"A/B test: matched {matched_count} predictions to arrivals")
+    except Exception as e:
+        logger.warning(f"A/B test match update failed (non-critical): {e}")
+
+
 def process_arrivals(vehicles: list) -> None:
     """
     Detect vehicle arrivals at stops and match to predictions.
@@ -267,6 +323,9 @@ def process_arrivals(vehicles: list) -> None:
     if outcomes:
         outcomes_saved = save_prediction_outcomes_to_db(outcomes)
         stats['predictions_matched'] += outcomes_saved
+        
+        # Update A/B test records for matched arrivals
+        _update_ab_test_matches(outcomes)
         
         # Log summary
         avg_error = sum(o['error_seconds'] for o in outcomes) / len(outcomes)

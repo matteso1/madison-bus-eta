@@ -125,22 +125,25 @@ def _get_route_stats() -> dict:
             """)).fetchall()
 
             # Route x horizon bucket stats
+            # JOIN predictions to get prdctdn (countdown in minutes) since
+            # prediction_outcomes has no api_prediction_sec column
             rh_rows = conn.execute(sa_text("""
                 SELECT
-                    rt,
+                    po.rt,
                     CASE
-                        WHEN api_prediction_sec/60.0 <= 2 THEN 0
-                        WHEN api_prediction_sec/60.0 <= 5 THEN 1
-                        WHEN api_prediction_sec/60.0 <= 10 THEN 2
-                        WHEN api_prediction_sec/60.0 <= 20 THEN 3
+                        WHEN COALESCE(p.prdctdn, 10) <= 2 THEN 0
+                        WHEN COALESCE(p.prdctdn, 10) <= 5 THEN 1
+                        WHEN COALESCE(p.prdctdn, 10) <= 10 THEN 2
+                        WHEN COALESCE(p.prdctdn, 10) <= 20 THEN 3
                         ELSE 4
                     END as hbucket,
-                    AVG(ABS(error_seconds)) as avg_error,
-                    STDDEV(error_seconds) as error_std
-                FROM prediction_outcomes
-                WHERE created_at > NOW() - INTERVAL '7 days'
-                  AND api_prediction_sec IS NOT NULL
-                GROUP BY rt, hbucket
+                    AVG(ABS(po.error_seconds)) as avg_error,
+                    STDDEV(po.error_seconds) as error_std
+                FROM prediction_outcomes po
+                LEFT JOIN predictions p ON po.prediction_id = p.id
+                WHERE po.created_at > NOW() - INTERVAL '7 days'
+                  AND po.prediction_id IS NOT NULL
+                GROUP BY po.rt, hbucket
                 HAVING COUNT(*) >= 5
             """)).fetchall()
 
@@ -423,10 +426,18 @@ def get_stops():
         if OFFLINE_MODE:
             data = fallback_stops(rt, "all")
         else:
-            # Get both directions and combine stops
             all_stops = []
             seen_ids = set()
-            for direction in ["Inbound", "Outbound", "INBOUND", "OUTBOUND", "North", "South", "East", "West"]:
+            # Fetch actual direction names from the API instead of guessing
+            try:
+                dir_resp = api_get("getdirections", rt=rt)
+                directions = dir_resp.get("bustime-response", {}).get("directions", [])
+                dir_names = [d.get("dir", d) if isinstance(d, dict) else d for d in directions]
+            except Exception as e:
+                logging.warning(f"Failed to fetch directions for route {rt}: {e}")
+                dir_names = []
+
+            for direction in dir_names:
                 try:
                     dir_data = api_get("getstops", rt=rt, dir=direction)
                     stops = dir_data.get("bustime-response", {}).get("stops", [])
@@ -434,8 +445,9 @@ def get_stops():
                         if s.get("stpid") not in seen_ids:
                             seen_ids.add(s.get("stpid"))
                             all_stops.append(s)
-                except:
-                    pass
+                except Exception as e:
+                    logging.warning(f"Failed to get stops for route {rt} dir {direction}: {e}")
+
             data = {"bustime-response": {"stops": all_stops}}
         
         cache_set(cache_key, data, 12 * 3600)

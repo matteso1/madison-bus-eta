@@ -47,6 +47,16 @@ jobs:
                   CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_created_at
                   ON prediction_outcomes(created_at DESC)
               '''))
+              # Indexes for A/B test matching and drift detection
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_ab_test_created
+                  ON ab_test_predictions(created_at DESC)
+              '''))
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_ab_test_matched_created
+                  ON ab_test_predictions(matched, created_at DESC)
+                  WHERE matched = true
+              '''))
               conn.commit()
               print('DB indexes verified')
           "
