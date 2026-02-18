@@ -18,29 +18,74 @@ const INITIAL_VIEW_STATE = {
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
 const ROUTE_COLORS: Record<string, [number, number, number]> = {
-    'A': [238, 51, 37],
+    'A': [238, 67, 52],
     'B': [128, 188, 0],
-    'C': [51, 51, 102],
-    'D': [51, 51, 102],
-    'E': [34, 114, 181],
-    'F': [34, 114, 181],
-    'G': [34, 114, 181],
-    'H': [34, 114, 181],
-    'J': [34, 114, 181],
+    'C': [120, 120, 200],
+    'D': [120, 120, 200],
+    'E': [60, 150, 220],
+    'F': [60, 150, 220],
+    'G': [60, 150, 220],
+    'H': [60, 150, 220],
+    'J': [60, 150, 220],
     'L': [194, 163, 255],
     'O': [194, 163, 255],
-    'P': [34, 114, 181],
+    'P': [60, 150, 220],
     'R': [194, 163, 255],
     'S': [194, 163, 255],
-    'W': [34, 114, 181],
-    '28': [34, 114, 181],
-    '38': [34, 114, 181],
-    '55': [194, 163, 255],
-    '80': [51, 51, 102],
-    '81': [51, 51, 102],
-    '82': [51, 51, 102],
-    '84': [51, 51, 102],
+    'W': [60, 150, 220],
+    '0': [255, 167, 38],
+    '2': [255, 167, 38],
+    '4': [255, 167, 38],
+    '5': [255, 167, 38],
+    '6': [255, 167, 38],
+    '7': [255, 167, 38],
+    '8': [255, 167, 38],
+    '10': [0, 188, 212],
+    '13': [0, 188, 212],
+    '15': [0, 188, 212],
+    '18': [0, 188, 212],
+    '19': [0, 188, 212],
+    '21': [0, 188, 212],
+    '22': [0, 188, 212],
+    '25': [0, 188, 212],
+    '28': [0, 188, 212],
+    '29': [0, 188, 212],
+    '30': [255, 112, 67],
+    '31': [255, 112, 67],
+    '32': [255, 112, 67],
+    '33': [255, 112, 67],
+    '34': [255, 112, 67],
+    '35': [255, 112, 67],
+    '37': [255, 112, 67],
+    '38': [255, 112, 67],
+    '39': [255, 112, 67],
+    '44': [171, 71, 188],
+    '47': [171, 71, 188],
+    '50': [171, 71, 188],
+    '51': [171, 71, 188],
+    '52': [171, 71, 188],
+    '55': [171, 71, 188],
+    '56': [171, 71, 188],
+    '57': [171, 71, 188],
+    '58': [171, 71, 188],
+    '61': [76, 175, 80],
+    '62': [76, 175, 80],
+    '63': [76, 175, 80],
+    '64': [76, 175, 80],
+    '67': [76, 175, 80],
+    '70': [38, 166, 154],
+    '71': [38, 166, 154],
+    '72': [38, 166, 154],
+    '73': [38, 166, 154],
+    '75': [38, 166, 154],
+    '78': [38, 166, 154],
+    '80': [120, 120, 200],
+    '81': [120, 120, 200],
+    '82': [120, 120, 200],
+    '84': [120, 120, 200],
 };
+
+const DEFAULT_ROUTE_COLOR: [number, number, number] = [140, 180, 220];
 
 const predictionCache: Record<string, { prediction: any; timestamp: number }> = {};
 const CACHE_TTL = 60000;
@@ -183,7 +228,7 @@ export default function MapView({
                 patternResponses.forEach((res, i) => {
                     if (!res?.data?.['bustime-response']?.ptr) return;
                     const rt = routeList[i].rt;
-                    const color = ROUTE_COLORS[rt] || [100, 100, 100];
+                    const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
 
                     const ptrs = res.data['bustime-response'].ptr;
                     const patterns = Array.isArray(ptrs) ? ptrs : [ptrs];
@@ -224,7 +269,7 @@ export default function MapView({
                     vid: v.vid,
                     des: v.des,
                     dly: v.dly === true || v.dly === 'true',
-                    color: ROUTE_COLORS[v.rt] || [150, 150, 150],
+                    color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
                 }));
                 setLiveData(mapped);
                 onLiveDataUpdated(mapped, mapped.filter(v => v.dly).length);
@@ -398,15 +443,16 @@ export default function MapView({
     const layers = useMemo(() => {
         const L: any[] = [];
 
-        // 1) Background route paths — hidden entirely during trip mode for clean Google Maps look
+        // 1) Route paths — hidden during trip mode, bolder when a single route is selected
         if (filteredPatterns.length > 0 && !activeTripPlan) {
+            const isSingleRoute = selectedRoute !== 'ALL' || !!trackedBus;
             L.push(new PathLayer({
                 id: 'route-paths',
                 data: filteredPatterns,
                 getPath: (d: any) => d.path,
-                getColor: (d: any) => [...d.color, trackedBus ? 50 : 160],
-                getWidth: 3,
-                widthMinPixels: 1.5,
+                getColor: (d: any) => [...d.color, trackedBus ? 80 : (isSingleRoute ? 220 : 160)],
+                getWidth: isSingleRoute ? 5 : 3,
+                widthMinPixels: isSingleRoute ? 3 : 1.5,
                 capRounded: true,
                 jointRounded: true,
             }));
@@ -586,7 +632,7 @@ export default function MapView({
 
         return L;
     }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
-        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops]);
+        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute]);
 
     return (
         <DeckGL
