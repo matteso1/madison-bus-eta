@@ -52,6 +52,170 @@ CACHE = {}
 
 COLLECTOR_STATUS_PATH = Path(__file__).parent / 'collector_status.json'
 
+# ── Model singleton ───────────────────────────────────────────────────────────
+import pickle as _pickle
+
+_model_cache: dict = {'ensemble': None, 'mtime': 0.0}
+
+def _get_model():
+    """Load quantile ensemble once; reload only when file changes on disk."""
+    ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+    model_path = ml_path / 'quantile_latest.pkl'
+    if not model_path.exists():
+        return None
+    mtime = model_path.stat().st_mtime
+    if _model_cache['ensemble'] is None or mtime != _model_cache['mtime']:
+        with open(model_path, 'rb') as f:
+            _model_cache['ensemble'] = _pickle.load(f)
+        _model_cache['mtime'] = mtime
+    return _model_cache['ensemble']
+
+
+# ── Route stats cache (for ML inference) ─────────────────────────────────────
+_route_stats_cache: dict = {'data': {}, 'loaded_at': 0.0}
+_ROUTE_STATS_TTL = 300  # 5 minutes
+
+def _get_route_stats() -> dict:
+    """
+    Returns dict keyed by route string with per-route ML feature stats.
+    Cached for 5 minutes, falls back to stale cache on DB failure.
+    """
+    if time.time() - _route_stats_cache['loaded_at'] < _ROUTE_STATS_TTL:
+        return _route_stats_cache['data']
+
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        return _route_stats_cache.get('data', {})
+
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            rows = conn.execute(sa_text("""
+                SELECT
+                    rt,
+                    COUNT(*) as freq,
+                    AVG(ABS(error_seconds)) as avg_error,
+                    STDDEV(error_seconds) as error_std
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY rt
+                HAVING COUNT(*) >= 20
+            """)).fetchall()
+
+            hr_rows = conn.execute(sa_text("""
+                SELECT
+                    rt,
+                    EXTRACT(HOUR FROM created_at) as hr,
+                    AVG(ABS(error_seconds)) as avg_error
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY rt, hr
+                HAVING COUNT(*) >= 5
+            """)).fetchall()
+
+            dow_rows = conn.execute(sa_text("""
+                SELECT
+                    EXTRACT(DOW FROM created_at) as dow,
+                    AVG(ABS(error_seconds)) as avg_error
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY dow
+                HAVING COUNT(*) >= 10
+            """)).fetchall()
+
+            # Route x horizon bucket stats
+            rh_rows = conn.execute(sa_text("""
+                SELECT
+                    rt,
+                    CASE
+                        WHEN api_prediction_sec/60.0 <= 2 THEN 0
+                        WHEN api_prediction_sec/60.0 <= 5 THEN 1
+                        WHEN api_prediction_sec/60.0 <= 10 THEN 2
+                        WHEN api_prediction_sec/60.0 <= 20 THEN 3
+                        ELSE 4
+                    END as hbucket,
+                    AVG(ABS(error_seconds)) as avg_error,
+                    STDDEV(error_seconds) as error_std
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                  AND api_prediction_sec IS NOT NULL
+                GROUP BY rt, hbucket
+                HAVING COUNT(*) >= 5
+            """)).fetchall()
+
+            # Stop-level reliability
+            stop_rows = conn.execute(sa_text("""
+                SELECT
+                    stpid,
+                    COUNT(*) as cnt,
+                    AVG(ABS(error_seconds)) as avg_error,
+                    STDDEV(error_seconds) as error_std
+                FROM prediction_outcomes
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                  AND stpid IS NOT NULL
+                GROUP BY stpid
+                HAVING COUNT(*) >= 10
+            """)).fetchall()
+
+        global_error = 60.0
+        global_std = 45.0
+        if rows:
+            all_errors = [float(r.avg_error) for r in rows if r.avg_error]
+            if all_errors:
+                global_error = sum(all_errors) / len(all_errors)
+
+        stats: dict = {}
+        for i, row in enumerate(rows):
+            stats[row.rt] = {
+                'route_frequency': int(row.freq),
+                'route_avg_error': float(row.avg_error),
+                'route_error_std': float(row.error_std) if row.error_std else global_std,
+                'route_encoded': i % 30,
+                'hr_errors': {},
+                'horizon_errors': {},
+                'horizon_stds': {},
+            }
+        for row in hr_rows:
+            rt = row.rt
+            if rt in stats:
+                stats[rt]['hr_errors'][int(row.hr)] = float(row.avg_error)
+        for row in rh_rows:
+            rt = row.rt
+            if rt in stats:
+                stats[rt]['horizon_errors'][int(row.hbucket)] = float(row.avg_error)
+                stats[rt]['horizon_stds'][int(row.hbucket)] = float(row.error_std) if row.error_std else global_std
+
+        # DOW stats stored globally
+        dow_errors = {}
+        for row in dow_rows:
+            dow_errors[int(row.dow)] = float(row.avg_error)
+
+        # Stop stats
+        stop_errors = {}
+        stop_stds = {}
+        for row in stop_rows:
+            # Shrinkage: blend toward global for stops with few samples
+            n = int(row.cnt)
+            shrink = n / (n + 50)
+            stop_errors[row.stpid] = shrink * float(row.avg_error) + (1 - shrink) * global_error
+            stop_stds[row.stpid] = float(row.error_std) if row.error_std else global_std
+
+        _route_stats_cache['data'] = {
+            'routes': stats,
+            'dow_errors': dow_errors,
+            'stop_errors': stop_errors,
+            'stop_stds': stop_stds,
+            'global_error': global_error,
+            'global_std': global_std,
+        }
+        _route_stats_cache['loaded_at'] = time.time()
+        return _route_stats_cache['data']
+    except Exception as e:
+        print(f"[route_stats] DB error: {e}")
+        return _route_stats_cache.get('data', {})
+
+
 def cache_get(key: str):
     item = CACHE.get(key)
     if not item:
@@ -345,213 +509,6 @@ def get_nearby_stops():
             "radius_miles": radius
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/search-stops")
-def search_stops():
-    """Search stops by name for autocomplete."""
-    try:
-        query = request.args.get("q", "").lower().strip()
-        if len(query) < 2:
-            return jsonify({"stops": [], "error": "Query too short"})
-        
-        limit = int(request.args.get("limit", 10))
-        
-        # Load stop cache
-        cache_path = _stop_cache_path()
-        if not cache_path.exists():
-            # Fallback to database
-            return jsonify({"stops": [], "error": "Stop cache not built"})
-        
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
-        
-        stops_cache = cache_data.get('stops', {})
-        
-        # Search by name
-        matches = []
-        for stpid, stop_data in stops_cache.items():
-            name = stop_data.get('stpnm', '').lower()
-            if query in name:
-                score = 0
-                if name.startswith(query):
-                    score = 100  # Exact prefix match
-                elif ' ' + query in name:
-                    score = 50   # Word start match
-                else:
-                    score = 10   # Contains
-                
-                matches.append({
-                    'stpid': stpid,
-                    'stpnm': stop_data.get('stpnm', ''),
-                    'lat': stop_data.get('lat'),
-                    'lon': stop_data.get('lon'),
-                    'routes': stop_data.get('routes', []),
-                    'score': score
-                })
-        
-        # Sort by score then name
-        matches.sort(key=lambda x: (-x['score'], x['stpnm']))
-        
-        return jsonify({
-            "stops": matches[:limit],
-            "count": len(matches),
-            "query": query
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/plan-trip", methods=["POST"])
-def plan_trip():
-    """
-    Plan a trip from user location to destination with ML-optimized ETAs.
-    
-    Request: {
-        "from_lat": 43.073,
-        "from_lon": -89.401,
-        "to_stop_id": "1234"  // OR "to_lat", "to_lon"
-    }
-    """
-    try:
-        data = request.get_json() or {}
-        from_lat = data.get('from_lat')
-        from_lon = data.get('from_lon')
-        to_stop_id = data.get('to_stop_id')
-        to_lat = data.get('to_lat')
-        to_lon = data.get('to_lon')
-        
-        if not from_lat or not from_lon:
-            return jsonify({"error": "from_lat and from_lon required"}), 400
-        
-        if not to_stop_id and not (to_lat and to_lon):
-            return jsonify({"error": "to_stop_id or to_lat/to_lon required"}), 400
-        
-        # Load stop cache
-        cache_path = _stop_cache_path()
-        if not cache_path.exists():
-            return jsonify({"error": "Stop cache not built"}), 503
-        
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            cache_data = json.load(f)
-        stops_cache = cache_data.get('stops', {})
-        
-        # Get destination info
-        dest_stop = None
-        if to_stop_id:
-            dest_stop = stops_cache.get(str(to_stop_id))
-        
-        # Find nearby stops (within 0.3 miles / ~5 min walk)
-        def haversine(lat1, lon1, lat2, lon2):
-            R = 3959
-            dlat = math.radians(lat2 - lat1)
-            dlon = math.radians(lon2 - lon1)
-            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-            return R * 2 * math.asin(math.sqrt(a))
-        
-        nearby_stops = []
-        for stpid, stop_data in stops_cache.items():
-            stop_lat = stop_data.get('lat')
-            stop_lon = stop_data.get('lon')
-            if stop_lat and stop_lon:
-                distance = haversine(from_lat, from_lon, stop_lat, stop_lon)
-                if distance <= 0.3:  # 0.3 miles ~ 5 min walk
-                    nearby_stops.append({
-                        'stpid': stpid,
-                        'stpnm': stop_data.get('stpnm', ''),
-                        'lat': stop_lat,
-                        'lon': stop_lon,
-                        'routes': stop_data.get('routes', []),
-                        'distance_miles': distance,
-                        'walk_time_min': round(distance * 20)  # ~3 mph walking
-                    })
-        
-        nearby_stops.sort(key=lambda x: x['distance_miles'])
-        nearby_stops = nearby_stops[:10]  # Limit to 10 closest
-        
-        if not nearby_stops:
-            return jsonify({
-                "options": [],
-                "error": "No stops within walking distance"
-            })
-        
-        # Get predictions for each nearby stop
-        trip_options = []
-        
-        for stop in nearby_stops:
-            try:
-                # Fetch real-time predictions for this stop
-                prd_response = api_get("getpredictions", stpid=stop['stpid'])
-                predictions = prd_response.get('bustime-response', {}).get('prd', [])
-                if not isinstance(predictions, list):
-                    predictions = [predictions] if predictions else []
-                
-                for prd in predictions[:3]:  # Top 3 predictions per stop
-                    api_minutes = int(prd.get('prdctdn', 0)) if prd.get('prdctdn', '').isdigit() else 99
-                    if api_minutes > 60:
-                        continue  # Skip predictions > 1 hour
-                    
-                    route = prd.get('rt', '')
-                    destination = prd.get('des', '')
-                    vid = prd.get('vid', '')
-                    
-                    # Get ML-corrected ETA
-                    ml_eta = api_minutes  # Default fallback
-                    ml_low = int(api_minutes * 0.8)
-                    ml_high = int(api_minutes * 1.3)
-                    
-                    try:
-                        # Quick ML prediction
-                        from ml.inference.predict import load_ensemble, predict_arrival_range
-                        ensemble = load_ensemble()
-                        if ensemble:
-                            ml_result = predict_arrival_range(
-                                ensemble, route, stop['stpid'], api_minutes
-                            )
-                            ml_eta = ml_result.get('median', api_minutes)
-                            ml_low = ml_result.get('low', ml_low)
-                            ml_high = ml_result.get('high', ml_high)
-                    except:
-                        pass  # Use defaults
-                    
-                    total_time = stop['walk_time_min'] + ml_eta
-                    
-                    trip_options.append({
-                        'route': route,
-                        'destination': destination,
-                        'departure_stop': stop['stpnm'],
-                        'departure_stop_id': stop['stpid'],
-                        'walk_time_min': stop['walk_time_min'],
-                        'walk_distance_mi': round(stop['distance_miles'], 2),
-                        'api_eta_min': api_minutes,
-                        'ml_eta_min': round(ml_eta),
-                        'ml_eta_low': ml_low,
-                        'ml_eta_high': ml_high,
-                        'total_time_min': round(total_time),
-                        'vehicle_id': vid,
-                        'delayed': prd.get('dly') == True or prd.get('dly') == 'true'
-                    })
-            except Exception as stop_error:
-                logging.warning(f"Error getting predictions for stop {stop['stpid']}: {stop_error}")
-                continue
-        
-        # Sort by total time
-        trip_options.sort(key=lambda x: x['total_time_min'])
-        
-        # Mark the fastest option
-        if trip_options:
-            trip_options[0]['fastest'] = True
-        
-        return jsonify({
-            "options": trip_options[:10],  # Top 10 options
-            "from": {"lat": from_lat, "lon": from_lon},
-            "to_stop": dest_stop,
-            "nearby_stops_checked": len(nearby_stops)
-        })
-    
-    except Exception as e:
-        logging.error(f"Plan trip error: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route("/vehicles")
@@ -1642,11 +1599,9 @@ def predict_arrival_v2():
     }
     """
     try:
-        from pathlib import Path
         from datetime import datetime, timezone
-        import pickle
         import numpy as np
-        
+
         data = request.get_json() or {}
         route = data.get('route')
         api_prediction = data.get('api_prediction')  # Countdown in minutes
@@ -1655,11 +1610,10 @@ def predict_arrival_v2():
         if api_prediction is None:
             return jsonify({"error": "Missing api_prediction (countdown minutes)"}), 400
         
-        # Load quantile ensemble
-        ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
-        quantile_model_path = ml_path / 'quantile_latest.pkl'
-        
-        if not quantile_model_path.exists():
+        # Load quantile ensemble (singleton - no per-request pickle.load)
+        ensemble = _get_model()
+
+        if ensemble is None:
             # Fallback: return API prediction with default intervals
             return jsonify({
                 "api_prediction_min": api_prediction,
@@ -1670,10 +1624,7 @@ def predict_arrival_v2():
                 "model_available": False,
                 "interval_description": f"Bus estimated in {int(api_prediction * 0.85)}-{int(api_prediction * 1.3)} minutes (estimated)"
             })
-        
-        with open(quantile_model_path, 'rb') as f:
-            ensemble = pickle.load(f)
-        
+
         models = ensemble['models']  # {0.1: model, 0.5: model, 0.9: model}
         
         # Build feature vector - must match training features
@@ -1699,27 +1650,91 @@ def predict_arrival_v2():
         # Horizon features (from api_prediction)
         horizon_min = min(api_prediction, 60)
         horizon_squared = horizon_min ** 2
+        horizon_log = np.log1p(horizon_min)
         horizon_bucket = (
-            0 if horizon_min <= 2 else 
-            1 if horizon_min <= 5 else 
-            2 if horizon_min <= 10 else 
+            0 if horizon_min <= 2 else
+            1 if horizon_min <= 5 else
+            2 if horizon_min <= 10 else
             3 if horizon_min <= 20 else 4
         )
+        is_long_horizon = 1 if horizon_min > 15 else 0
         
-        # Route features (approximate - in production would look up from DB)
-        route_frequency = 1000
-        route_encoded = hash(str(route)) % 30 if route else 0
+        # Route + stop features from DB-backed cache (real values, not hardcoded)
+        rs = _get_route_stats()
+        rt_data = rs.get('routes', {}).get(str(route) if route else '', {})
+        global_error = rs.get('global_error', 60.0)
+        global_std = rs.get('global_std', 45.0)
+
+        route_frequency = rt_data.get('route_frequency', 1000)
+        route_encoded = rt_data.get('route_encoded', hash(str(route)) % 30 if route else 0)
+        route_avg_error = rt_data.get('route_avg_error', global_error)
+        route_error_std = rt_data.get('route_error_std', global_std)
+        hr_route_error = rt_data.get('hr_errors', {}).get(hour, route_avg_error)
+
+        # Route-horizon interaction
+        route_horizon_error = rt_data.get('horizon_errors', {}).get(horizon_bucket, route_avg_error)
+        route_horizon_std = rt_data.get('horizon_stds', {}).get(horizon_bucket, global_std)
+
+        # Day-of-week error
+        dow_avg_error = rs.get('dow_errors', {}).get(day_of_week, global_error)
+
+        # Stop-level reliability
+        stop_avg_error_val = rs.get('stop_errors', {}).get(str(stop_id) if stop_id else '', global_error)
+        stop_error_std = rs.get('stop_stds', {}).get(str(stop_id) if stop_id else '', global_std)
+
         predicted_minutes = api_prediction
-        route_avg_error = 60  # Default 60s avg error
-        hr_route_error = 90 if is_rush_hour else 45
-        
+
+        # Weather defaults (no live weather at inference; model handles nulls via 0-fill)
+        temp_celsius = 10.0
+        is_cold = 0
+        is_hot = 0
+        precipitation_mm = 0.0
+        snow_mm = 0.0
+        is_raining = 0
+        is_snowing = 0
+        is_precipitating = 0
+        wind_speed = 0.0
+        is_windy = 0
+        visibility_km = 10.0
+        low_visibility = 0
+        is_severe_weather = 0
+
+        # Vehicle speed defaults (not available at predict time)
+        avg_speed = 15.0
+        speed_stddev = 5.0
+        speed_variability = speed_stddev / max(avg_speed, 1.0)
+        is_stopped = 0
+        is_slow = 0
+        is_moving_fast = 0
+        has_velocity_data = 0
+
         # Feature vector - order MUST match get_regression_feature_columns()
         features = np.array([[
-            horizon_min, horizon_squared, horizon_bucket,
+            # Horizon features
+            horizon_min, horizon_squared, horizon_log, horizon_bucket, is_long_horizon,
+            # Temporal cyclical
             hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
+            # Temporal flags
             is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
-            route_frequency, route_encoded, predicted_minutes,
-            route_avg_error, hr_route_error
+            # Route
+            route_frequency, route_encoded,
+            # Constraint
+            predicted_minutes,
+            # Historical ETA patterns
+            route_avg_error, route_error_std, hr_route_error,
+            # Route-horizon interaction
+            route_horizon_error, route_horizon_std,
+            # Day-of-week
+            dow_avg_error,
+            # Stop-level
+            stop_avg_error_val, stop_error_std,
+            # Weather
+            temp_celsius, is_cold, is_hot, precipitation_mm, snow_mm,
+            is_raining, is_snowing, is_precipitating,
+            wind_speed, is_windy, visibility_km, low_visibility, is_severe_weather,
+            # Velocity
+            avg_speed, speed_stddev, speed_variability,
+            is_stopped, is_slow, is_moving_fast, has_velocity_data,
         ]])
         
         # Predict error at each quantile
@@ -3999,11 +4014,29 @@ def check_model_drift():
                         model_trained_at = entry.get('trained_at')
                         break
         
+        # Model age
+        model_age_days = None
+        if model_trained_at:
+            try:
+                trained_dt = datetime.fromisoformat(model_trained_at.replace('Z', '+00:00'))
+                model_age_days = (datetime.now(timezone.utc) - trained_dt).days
+            except Exception:
+                pass
+
         with engine.connect() as conn:
-            # Get recent API prediction error from prediction_outcomes
-            # Note: This is the API's error, NOT our model's error
-            recent = conn.execute(text("""
-                SELECT 
+            # Recent ML MAE from ab_test_predictions (matched = actual outcome recorded)
+            ml_recent = conn.execute(text("""
+                SELECT
+                    AVG(ABS(ml_error_sec)) as recent_ml_mae,
+                    COUNT(*) as matched_count
+                FROM ab_test_predictions
+                WHERE matched = true
+                  AND matched_at > NOW() - INTERVAL '48 hours'
+            """)).fetchone()
+
+            # API error distribution from prediction_outcomes
+            po_recent = conn.execute(text("""
+                SELECT
                     AVG(ABS(error_seconds)) as api_mae,
                     STDDEV(error_seconds) as error_std,
                     COUNT(*) as prediction_count,
@@ -4012,72 +4045,59 @@ def check_model_drift():
                 FROM prediction_outcomes
                 WHERE created_at > NOW() - INTERVAL '7 days'
             """)).fetchone()
-            
-            api_current_mae = float(recent[0]) if recent[0] else None
-            error_std = float(recent[1]) if recent[1] else None
-            prediction_count = recent[2] or 0
-            within_1min = float(recent[3]) * 100 if recent[3] else None
-            within_2min = float(recent[4]) * 100 if recent[4] else None
-            
-            # Calculate drift metrics
-            # Compare our model's expected performance against the API baseline we're beating
+
+            api_mae = float(po_recent[0]) if po_recent[0] else None
+            error_std = float(po_recent[1]) if po_recent[1] else None
+            prediction_count = po_recent[2] or 0
+            within_1min = float(po_recent[3]) * 100 if po_recent[3] else None
+            within_2min = float(po_recent[4]) * 100 if po_recent[4] else None
+
+            recent_ml_mae = float(ml_recent[0]) if ml_recent and ml_recent[0] else None
+            matched_count = int(ml_recent[1]) if ml_recent and ml_recent[1] else 0
+
+            # Performance-based drift: compare recent ML MAE vs trained baseline
             drift_pct = None
             status = "UNKNOWN"
             recommendation = "Insufficient data to assess drift"
-            
-            # Our model should beat the API by ~40%, so if API MAE is 130s, our model does ~80s
-            if api_current_mae and baseline_mae:
-                # Model drift = how much worse is our trained MAE compared to when we trained?
-                # Since we don't have live ML predictions tracked, we use model age as proxy
-                
-                # Check model freshness as proxy for drift
-                model_age_days_check = None
-                if model_trained_at:
-                    try:
-                        trained_dt = datetime.fromisoformat(model_trained_at.replace('Z', '+00:00'))
-                        model_age_days_check = (datetime.now(timezone.utc) - trained_dt).days
-                    except:
-                        pass
-                
-                if model_age_days_check is not None:
-                    if model_age_days_check <= 3:
-                        status = "OK"
-                        recommendation = f"Model is fresh ({model_age_days_check}d old). Expected MAE: ~{int(baseline_mae)}s"
-                    elif model_age_days_check <= 7:
-                        status = "OK"
-                        recommendation = f"Model is {model_age_days_check}d old, still within acceptable refresh window"
-                    elif model_age_days_check <= 14:
-                        status = "WARNING"
-                        recommendation = f"Model is {model_age_days_check}d old. Consider retraining to capture recent patterns."
-                    else:
-                        status = "CRITICAL"
-                        recommendation = f"Model is {model_age_days_check}d old. Immediate retraining recommended."
-                        drift_pct = (model_age_days_check - 7) * 3  # Approximate drift per week
-                else:
+
+            if recent_ml_mae and baseline_mae and baseline_mae > 0:
+                drift_pct = (recent_ml_mae - baseline_mae) / baseline_mae * 100
+                if drift_pct < 10:
                     status = "OK"
-                    recommendation = "Model age unknown, assuming fresh"
-            
-            # Model age check
-            model_age_days = None
-            if model_trained_at:
-                try:
-                    trained_dt = datetime.fromisoformat(model_trained_at.replace('Z', '+00:00'))
-                    model_age_days = (datetime.now(timezone.utc) - trained_dt).days
-                    
-                    if model_age_days > 14 and status == "OK":
-                        status = "WARNING"
-                        recommendation = f"Model is {model_age_days} days old. Consider scheduled retraining."
-                except:
-                    pass
-            
+                    recommendation = f"Model performing within 10% of baseline ({recent_ml_mae:.0f}s vs {baseline_mae:.0f}s trained MAE)"
+                elif drift_pct < 25:
+                    status = "WARNING"
+                    recommendation = f"Model MAE drifted {drift_pct:.1f}% above baseline. Consider retraining."
+                else:
+                    status = "CRITICAL"
+                    recommendation = f"Model MAE drifted {drift_pct:.1f}% above baseline. Retraining required."
+            elif model_age_days is not None:
+                # Fallback to age-based when no matched predictions available yet
+                if model_age_days <= 7:
+                    status = "OK"
+                    recommendation = f"Model is {model_age_days}d old. No matched predictions for performance drift yet."
+                elif model_age_days <= 14:
+                    status = "WARNING"
+                    recommendation = f"Model is {model_age_days}d old and no matched predictions available. Consider retraining."
+                else:
+                    status = "CRITICAL"
+                    drift_pct = float((model_age_days - 7) * 3)
+                    recommendation = f"Model is {model_age_days}d old. Retraining recommended."
+
+            # Hard override: model age > 14 days bumps status to WARNING minimum
+            if model_age_days and model_age_days > 14 and status == "OK":
+                status = "WARNING"
+                recommendation += f" Model is also {model_age_days}d old."
+
             return jsonify({
                 "status": status,
-                "baseline_mae_sec": round(baseline_mae, 1),  # Our model's expected performance
-                "api_mae_sec": round(api_current_mae, 1) if api_current_mae else None,  # API's actual error
-                "drift_pct": round(drift_pct, 1) if drift_pct else 0,
+                "baseline_mae_sec": round(baseline_mae, 1),
+                "recent_ml_mae_sec": round(recent_ml_mae, 1) if recent_ml_mae else None,
+                "api_mae_sec": round(api_mae, 1) if api_mae else None,
+                "drift_pct": round(drift_pct, 1) if drift_pct is not None else None,
+                "matched_predictions_48h": matched_count,
                 "error_std": round(error_std, 1) if error_std else None,
                 "prediction_count_7d": prediction_count,
-                "improvement_over_api": f"{round(((api_current_mae - baseline_mae) / api_current_mae) * 100, 1)}%" if api_current_mae and baseline_mae else None,
                 "coverage": {
                     "within_1min_pct": round(within_1min, 1) if within_1min else None,
                     "within_2min_pct": round(within_2min, 1) if within_2min else None

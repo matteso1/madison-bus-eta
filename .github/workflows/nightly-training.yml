@@ -42,6 +42,11 @@ jobs:
                   CREATE INDEX IF NOT EXISTS idx_vehicle_obs_vid_collected
                   ON vehicle_observations(vid, collected_at DESC)
               '''))
+              # Index for fast diagnostic and route-stats queries
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_created_at
+                  ON prediction_outcomes(created_at DESC)
+              '''))
               conn.commit()
               print('DB indexes verified')
           "
