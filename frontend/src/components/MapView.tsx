@@ -693,7 +693,7 @@ export default function MapView({
                             <div style="font-size:10px;color:#64748b;font-family:JetBrains Mono,monospace;">Stop #${object.stpid}</div>
                             ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for ML predictions</div>'}
                         </div>`,
-                        style: { backgroundColor: 'transparent', zIndex: 100, pointerEvents: 'none' }
+                        style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };
                 }
 
@@ -723,7 +723,7 @@ export default function MapView({
                             <div style="font-size:10px;color:#374151;font-family:JetBrains Mono,monospace;margin-top:2px;">VID ${object.vid}</div>
                             ${etaHtml}
                         </div>`,
-                        style: { backgroundColor: 'transparent', zIndex: 100, pointerEvents: 'none' }
+                        style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };
                 }
 
