@@ -92,10 +92,10 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                     {eta ? (
                         <>
                             <div className="data-num" style={{ fontSize: 36, fontWeight: 700, color: 'var(--signal)', lineHeight: 1, letterSpacing: '-0.02em' }}>
-                                {eta.median}
+                                {eta.median <= 1 ? 'DUE' : eta.median}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                                min &middot; {eta.low}&ndash;{eta.high} range
+                                {eta.median <= 1 ? 'Arriving now' : `min \u00b7 ${eta.low}\u2013${eta.high} range`}
                             </div>
                         </>
                     ) : (

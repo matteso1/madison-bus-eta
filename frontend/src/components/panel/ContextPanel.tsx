@@ -48,11 +48,14 @@ export default function ContextPanel({
   const [showTripPlanner, setShowTripPlanner] = useState(false);
 
   useEffect(() => {
-    if (selectedRoute !== 'ALL' || selectedStop) {
+    if (selectedStop) {
+      setShowNearby(false);
+      setShowTripPlanner(false);
+    } else if (selectedRoute !== 'ALL' && !activeTripPlan) {
       setShowNearby(false);
       setShowTripPlanner(false);
     }
-  }, [selectedRoute, selectedStop]);
+  }, [selectedRoute, selectedStop, activeTripPlan]);
 
   const handleRouteSelect = (rt: string) => {
     setShowNearby(false);

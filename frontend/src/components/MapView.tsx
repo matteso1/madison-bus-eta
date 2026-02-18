@@ -73,16 +73,21 @@ const ROUTE_COLORS: Record<string, [number, number, number]> = {
     '63': [76, 175, 80],
     '64': [76, 175, 80],
     '67': [76, 175, 80],
+    '68': [76, 175, 80],
     '70': [38, 166, 154],
     '71': [38, 166, 154],
     '72': [38, 166, 154],
     '73': [38, 166, 154],
     '75': [38, 166, 154],
     '78': [38, 166, 154],
+    '74': [38, 166, 154],
+    '76': [38, 166, 154],
     '80': [120, 120, 200],
     '81': [120, 120, 200],
     '82': [120, 120, 200],
+    '83': [120, 120, 200],
     '84': [120, 120, 200],
+    '85': [120, 120, 200],
 };
 
 const DEFAULT_ROUTE_COLOR: [number, number, number] = [140, 180, 220];
@@ -165,10 +170,11 @@ export default function MapView({
         } catch { return null; }
     }, [API_BASE]);
 
+    const [, forceTooltipUpdate] = useState(0);
     useEffect(() => {
         if (!hoveredVehicle) return;
         const vehicle = liveData.find(v => v.vid === hoveredVehicle);
-        if (vehicle) getMLPrediction(vehicle);
+        if (vehicle) getMLPrediction(vehicle).then(() => forceTooltipUpdate(c => c + 1));
     }, [hoveredVehicle, liveData, getMLPrediction]);
 
     // Load stops for selected route
@@ -264,6 +270,7 @@ export default function MapView({
     }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
 
     // On-demand pattern loading: if a route is selected but has no pattern data, fetch it
+    const [patternlessRoutes, setPatternlessRoutes] = useState<Set<string>>(new Set());
     useEffect(() => {
         if (selectedRoute === 'ALL') return;
         if (attemptedPatterns.current.has(selectedRoute)) return;
@@ -277,11 +284,31 @@ export default function MapView({
                 const parsed = parsePatternResponse(res, selectedRoute);
                 if (parsed.length > 0) {
                     setPatternsData(prev => [...prev, ...parsed]);
+                    return;
                 }
             } catch {}
+            setPatternlessRoutes(prev => new Set(prev).add(selectedRoute));
         };
         loadRoutePattern();
     }, [selectedRoute, patternsData, API_BASE, parsePatternResponse]);
+
+    // Fallback: when a route's API pattern fetch failed/returned empty, build a path from stop positions
+    useEffect(() => {
+        if (selectedRoute === 'ALL' || stopsData.length < 2) return;
+        if (!patternlessRoutes.has(selectedRoute)) return;
+        const hasPatterns = patternsData.some(p => p.route === selectedRoute);
+        if (hasPatterns) return;
+
+        setPatternlessRoutes(prev => { const n = new Set(prev); n.delete(selectedRoute); return n; });
+        const color = ROUTE_COLORS[selectedRoute] || DEFAULT_ROUTE_COLOR;
+        const path: [number, number][] = stopsData.map((s: any) => s.position);
+        const stops = stopsData.map((s: any, idx: number) => ({
+            idx, stpid: String(s.stpid), stpnm: s.stpnm, pos: s.position,
+        }));
+        setPatternsData(prev => [...prev, {
+            path, stops, color, route: selectedRoute, pid: 'fallback', dir: 'fallback',
+        }]);
+    }, [selectedRoute, stopsData, patternsData, patternlessRoutes]);
 
     // Live vehicle polling — faster when tracking
     useEffect(() => {
