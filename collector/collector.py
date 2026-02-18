@@ -231,8 +231,9 @@ def _update_ab_test_matches(outcomes: list) -> None:
     """
     Update ab_test_predictions table when arrivals are detected.
     
-    This closes the feedback loop: predictions logged at inference time
-    get matched to actual arrivals so drift detection and A/B comparison work.
+    Matches on vehicle_id only (not stop_id) because A/B predictions logged
+    from the frontend use stop_id='live_tracking' rather than real stop IDs.
+    Uses a tight time window and LIMIT 1 to avoid false matches.
     """
     if not DB_AVAILABLE or not DATABASE_URL:
         return
@@ -244,38 +245,54 @@ def _update_ab_test_matches(outcomes: list) -> None:
         with engine.connect() as conn:
             for outcome in outcomes:
                 try:
+                    actual = outcome.get('actual_arrival')
+                    vid = str(outcome.get('vid', ''))
+                    if not vid or not actual:
+                        continue
                     result = conn.execute(sa_text("""
                         UPDATE ab_test_predictions
                         SET matched = true,
+                            matched_at = NOW(),
+                            stop_id = :stpid,
                             actual_arrival_sec = EXTRACT(EPOCH FROM :actual_arrival::timestamptz),
-                            api_error_sec = ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
-                                              - EXTRACT(EPOCH FROM :predicted_arrival::timestamptz)),
+                            api_error_sec = ABS(
+                                EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                - (EXTRACT(EPOCH FROM created_at) + api_prediction_sec)
+                            ),
                             ml_error_sec = CASE
                                 WHEN ml_prediction_sec IS NOT NULL
-                                THEN ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
-                                       - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec))
+                                THEN ABS(
+                                    EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                    - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec)
+                                )
                                 ELSE NULL END,
                             ml_won = CASE
                                 WHEN ml_prediction_sec IS NOT NULL
-                                THEN ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
-                                       - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec))
-                                     < ABS(EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
-                                         - EXTRACT(EPOCH FROM :predicted_arrival::timestamptz))
+                                THEN ABS(
+                                    EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                    - (EXTRACT(EPOCH FROM created_at) + ml_prediction_sec)
+                                ) < ABS(
+                                    EXTRACT(EPOCH FROM :actual_arrival::timestamptz)
+                                    - (EXTRACT(EPOCH FROM created_at) + api_prediction_sec)
+                                )
                                 ELSE false END
-                        WHERE vehicle_id = :vid
-                          AND stop_id = :stpid
-                          AND matched = false
-                          AND created_at > NOW() - INTERVAL '30 minutes'
+                        WHERE id = (
+                            SELECT id FROM ab_test_predictions
+                            WHERE vehicle_id = :vid
+                              AND matched = false
+                              AND created_at > NOW() - INTERVAL '45 minutes'
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                        )
                     """), {
-                        'vid': str(outcome.get('vid', '')),
+                        'vid': vid,
                         'stpid': str(outcome.get('stpid', '')),
-                        'actual_arrival': outcome.get('actual_arrival'),
-                        'predicted_arrival': outcome.get('predicted_arrival'),
+                        'actual_arrival': actual,
                     })
                     if result.rowcount > 0:
                         matched_count += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"A/B match error for vid={outcome.get('vid')}: {e}")
             conn.commit()
         if matched_count:
             logger.info(f"A/B test: matched {matched_count} predictions to arrivals")

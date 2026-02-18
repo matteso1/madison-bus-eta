@@ -432,7 +432,7 @@ def get_stops():
             try:
                 dir_resp = api_get("getdirections", rt=rt)
                 directions = dir_resp.get("bustime-response", {}).get("directions", [])
-                dir_names = [d.get("dir", d) if isinstance(d, dict) else d for d in directions]
+                dir_names = [d.get("id", d.get("dir", d.get("name", d))) if isinstance(d, dict) else d for d in directions]
             except Exception as e:
                 logging.warning(f"Failed to fetch directions for route {rt}: {e}")
                 dir_names = []
@@ -450,7 +450,9 @@ def get_stops():
 
             data = {"bustime-response": {"stops": all_stops}}
         
-        cache_set(cache_key, data, 12 * 3600)
+        stops_list = data.get("bustime-response", {}).get("stops", [])
+        if stops_list:
+            cache_set(cache_key, data, 12 * 3600)
         return jsonify(data)
     
     # Original behavior with direction specified
