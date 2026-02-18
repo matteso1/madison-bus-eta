@@ -155,6 +155,40 @@ html, body, #root {
   100% { transform: scale(2.2); opacity: 0; }
 }
 
+/* ── Trip Stop Labels ── */
+.trip-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(8, 8, 16, 0.92);
+  backdrop-filter: blur(8px);
+  border-radius: 6px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.trip-label--origin {
+  border: 1px solid rgba(66, 133, 244, 0.6);
+}
+.trip-label--dest {
+  border: 1px solid rgba(234, 67, 53, 0.6);
+}
+.trip-label__route {
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 700;
+  color: #4285F4;
+  background: rgba(66, 133, 244, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.trip-label__name {
+  font-size: 10px;
+  color: #e2e8f0;
+  font-family: var(--font-ui);
+}
+
 /* ── Destination Pin Marker ── */
 .dest-pin-marker {
   display: flex;

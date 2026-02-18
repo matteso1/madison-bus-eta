@@ -162,11 +162,16 @@ export default function MapView({
                     const patterns = Array.isArray(ptrs) ? ptrs : [ptrs];
                     patterns.forEach((p: any) => {
                         if (!p?.pt?.length) return;
-                        allPatterns.push({
-                            path: p.pt.map((pt: any) => [parseFloat(pt.lon), parseFloat(pt.lat)]),
-                            color,
-                            route: rt
+                        const path: [number, number][] = [];
+                        const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
+                        p.pt.forEach((pt: any, idx: number) => {
+                            const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
+                            path.push(pos);
+                            if (pt.typ === 'S' && pt.stpid) {
+                                stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
+                            }
                         });
+                        allPatterns.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
                     });
                 });
                 setPatternsData(allPatterns);
@@ -259,68 +264,47 @@ export default function MapView({
         return liveData.filter(v => v.dly);
     }, [liveData, selectedRoute]);
 
-    // Extract the bus route segment between origin and dest stops
-    const tripRouteSegment = useMemo(() => {
+    // Extract bus route segment by matching stop IDs in pattern data
+    const tripData = useMemo(() => {
         if (!activeTripPlan) return null;
         const routePatterns = patternsData.filter(p => p.route === activeTripPlan.routeId);
-        const oPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
-        const dPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
-
-        const MATCH_THRESHOLD = 0.004; // ~400m in degrees
-        const directDist = Math.hypot(oPos[0] - dPos[0], oPos[1] - dPos[1]);
+        const oId = activeTripPlan.originStop.stpid;
+        const dId = activeTripPlan.destStop.stpid;
 
         let bestSegment: [number, number][] | null = null;
-        let bestSegLen = 0;
+        let bestFullPath: [number, number][] | null = null;
+        let bestStops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
 
         for (const pattern of routePatterns) {
             const path = pattern.path as [number, number][];
+            const stops = pattern.stops || [];
+            const oStop = stops.find((s: any) => s.stpid === oId);
+            const dStop = stops.find((s: any) => s.stpid === dId);
 
-            // Find ALL candidate indices near origin and near destination
-            const oCandidates: { idx: number; dist: number }[] = [];
-            const dCandidates: { idx: number; dist: number }[] = [];
-
-            for (let i = 0; i < path.length; i++) {
-                const d1 = Math.hypot(path[i][0] - oPos[0], path[i][1] - oPos[1]);
-                const d2 = Math.hypot(path[i][0] - dPos[0], path[i][1] - dPos[1]);
-                if (d1 < MATCH_THRESHOLD) oCandidates.push({ idx: i, dist: d1 });
-                if (d2 < MATCH_THRESHOLD) dCandidates.push({ idx: i, dist: d2 });
+            if (oStop && dStop && oStop.idx !== dStop.idx) {
+                // Found both stops in this pattern — extract segment
+                const segment = oStop.idx < dStop.idx
+                    ? path.slice(oStop.idx, dStop.idx + 1)
+                    : path.slice(dStop.idx, oStop.idx + 1).reverse();
+                bestSegment = segment;
+                bestFullPath = path;
+                bestStops = stops;
+                break;
             }
-
-            // Try all O→D combinations, pick the one that produces a
-            // reasonable-length segment (should be >= direct distance)
-            for (const o of oCandidates) {
-                for (const d of dCandidates) {
-                    if (o.idx === d.idx) continue;
-                    const segment = o.idx < d.idx
-                        ? path.slice(o.idx, d.idx + 1)
-                        : path.slice(d.idx, o.idx + 1).reverse();
-
-                    // Compute geographic length of the segment
-                    let segLen = 0;
-                    for (let i = 1; i < segment.length; i++) {
-                        segLen += Math.hypot(segment[i][0] - segment[i - 1][0], segment[i][1] - segment[i - 1][1]);
-                    }
-
-                    // Prefer segments that are at least as long as the direct distance
-                    // (a real bus route between two stops is always >= straight-line)
-                    // Among valid segments, pick the shortest one (most direct path)
-                    const isReasonable = segLen >= directDist * 0.8;
-                    if (isReasonable && segment.length >= 2) {
-                        if (!bestSegment || segLen < bestSegLen) {
-                            bestSegLen = segLen;
-                            bestSegment = segment;
-                        }
-                    }
-                }
+            // Track best full path as fallback
+            if (!bestFullPath) {
+                bestFullPath = path;
+                bestStops = stops;
             }
         }
 
-        // Fallback: if candidate matching failed, use single-closest-point approach
-        if (!bestSegment) {
+        // Fallback: geographic proximity matching
+        if (!bestSegment && routePatterns.length > 0) {
+            const oPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
+            const dPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
             for (const pattern of routePatterns) {
                 const path = pattern.path as [number, number][];
-                let oIdx = 0, dIdx = 0;
-                let oDist = Infinity, dDist = Infinity;
+                let oIdx = 0, dIdx = 0, oDist = Infinity, dDist = Infinity;
                 for (let i = 0; i < path.length; i++) {
                     const d1 = Math.hypot(path[i][0] - oPos[0], path[i][1] - oPos[1]);
                     const d2 = Math.hypot(path[i][0] - dPos[0], path[i][1] - dPos[1]);
@@ -331,56 +315,40 @@ export default function MapView({
                     bestSegment = oIdx < dIdx
                         ? path.slice(oIdx, dIdx + 1)
                         : path.slice(dIdx, oIdx + 1).reverse();
+                    bestFullPath = path;
+                    bestStops = pattern.stops || [];
                     break;
                 }
             }
         }
 
-        // Ultimate fallback: show the full route pattern (always visible)
-        if (!bestSegment || bestSegment.length < 2) {
-            if (routePatterns.length > 0) {
-                bestSegment = routePatterns[0].path as [number, number][];
-            } else {
-                bestSegment = [oPos, dPos];
-            }
+        // Ultimate fallback: full route pattern
+        if (!bestSegment && bestFullPath) {
+            bestSegment = bestFullPath;
         }
 
-        console.log('[TripSegment]', {
-            route: activeTripPlan.routeId,
-            patterns: routePatterns.length,
-            oPos, dPos,
-            segmentPoints: bestSegment.length,
-            segmentLen: bestSegLen.toFixed(4),
-        });
-
-        return bestSegment;
+        return {
+            segment: bestSegment,
+            fullPath: bestFullPath,
+            routeStops: bestStops,
+        };
     }, [activeTripPlan, patternsData]);
 
     // Walking paths for trip
     const tripWalkPaths = useMemo(() => {
         if (!activeTripPlan || !userLocation) return [];
-        const paths: { path: [number, number][] }[] = [];
+        const paths: { path: [number, number][]; label: string }[] = [];
 
-        // Walk from user location to origin bus stop
         const originPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
-        paths.push({ path: [userLocation, originPos] });
+        paths.push({ path: [userLocation, originPos], label: 'walk-to' });
 
-        // Walk from destination bus stop to final destination (if different)
         const fd = activeTripPlan.finalDestination;
         const destStopPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
         const finalDestPos: [number, number] = [fd.lon, fd.lat];
         const destDelta = Math.abs(destStopPos[0] - finalDestPos[0]) + Math.abs(destStopPos[1] - finalDestPos[1]);
         if (destDelta > 0.0001) {
-            paths.push({ path: [destStopPos, finalDestPos] });
+            paths.push({ path: [destStopPos, finalDestPos], label: 'walk-from' });
         }
-
-        console.log('[TripWalk]', {
-            userLoc: userLocation,
-            originStop: originPos,
-            destStop: destStopPos,
-            finalDest: finalDestPos,
-            pathCount: paths.length,
-        });
 
         return paths;
     }, [activeTripPlan, userLocation]);
@@ -427,53 +395,47 @@ export default function MapView({
             }));
         }
 
-        // 3) Trip bus route segment — thick Google Maps blue
-        if (tripRouteSegment) {
+        // 3) Trip: full route pattern dimmed (context)
+        if (tripData?.fullPath) {
             L.push(new PathLayer({
-                id: 'trip-segment',
-                data: [{ path: tripRouteSegment }],
+                id: 'trip-route-full',
+                data: [{ path: tripData.fullPath }],
                 getPath: (d: any) => d.path,
-                getColor: [66, 133, 244, 255],
-                getWidth: 10,
-                widthMinPixels: 7,
+                getColor: [66, 133, 244, 60],
+                getWidth: 4,
+                widthMinPixels: 2,
                 capRounded: true,
                 jointRounded: true,
             }));
         }
 
-        // 4) Trip walking lines — solid grey, thinner, renders ON TOP of bus segment
+        // 4) Trip: highlighted segment between origin and dest stops
+        if (tripData?.segment) {
+            L.push(new PathLayer({
+                id: 'trip-segment',
+                data: [{ path: tripData.segment }],
+                getPath: (d: any) => d.path,
+                getColor: [66, 133, 244, 255],
+                getWidth: 8,
+                widthMinPixels: 5,
+                capRounded: true,
+                jointRounded: true,
+            }));
+        }
+
+        // 5) Trip walking lines — thin grey dotted
         if (tripWalkPaths.length > 0) {
             L.push(new PathLayer({
                 id: 'trip-walk-paths',
                 data: tripWalkPaths,
                 getPath: (d: any) => d.path,
-                getColor: [180, 180, 180, 230],
-                getWidth: 5,
-                widthMinPixels: 4,
+                getColor: [160, 160, 170, 200],
+                getWidth: 4,
+                widthMinPixels: 3,
                 capRounded: true,
-                jointRounded: true,
-            }));
-            // Dotted overlay to create walking effect
-            L.push(new ScatterplotLayer({
-                id: 'trip-walk-dots',
-                data: tripWalkPaths.flatMap(wp => {
-                    const pts: { position: [number, number] }[] = [];
-                    const [a, b] = wp.path;
-                    const dx = b[0] - a[0], dy = b[1] - a[1];
-                    const dist = Math.hypot(dx, dy);
-                    const step = 0.001; // ~100m spacing between dots
-                    const count = Math.max(2, Math.floor(dist / step));
-                    for (let i = 0; i <= count; i++) {
-                        const t = i / count;
-                        pts.push({ position: [a[0] + dx * t, a[1] + dy * t] });
-                    }
-                    return pts;
-                }),
-                getPosition: (d: any) => d.position,
-                getFillColor: [255, 255, 255, 255],
-                getRadius: 15,
-                radiusMinPixels: 3,
-                radiusMaxPixels: 5,
+                getDashArray: [2, 3],
+                dashJustified: true,
+                extensions: [new PathStyleExtension({ dash: true })],
             }));
         }
 
@@ -495,29 +457,46 @@ export default function MapView({
 
         // ── Everything below here renders ON TOP of all lines ──
 
-        // 6) Stop dots — hidden during trip mode and tracking for clean map
-        if (stopsData.length > 0 && !trackedBus && !activeTripPlan) {
+        // 6) Stop dots — shown for selected route AND during trip mode
+        if (stopsData.length > 0 && !trackedBus) {
             L.push(new ScatterplotLayer({
                 id: 'stops',
                 data: stopsData,
-                pickable: true,
-                opacity: 0.9,
+                pickable: !activeTripPlan,
+                opacity: activeTripPlan ? 0.5 : 0.9,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: 5,
-                radiusMaxPixels: 12,
-                lineWidthMinPixels: 1.5,
+                radiusMinPixels: activeTripPlan ? 4 : 5,
+                radiusMaxPixels: activeTripPlan ? 8 : 12,
+                lineWidthMinPixels: 1,
                 getPosition: (d: any) => d.position,
-                getRadius: 30,
+                getRadius: 25,
                 getFillColor: [15, 15, 26],
-                getLineColor: [0, 212, 255],
+                getLineColor: activeTripPlan ? [66, 133, 244] : [0, 212, 255],
                 onClick: ({ object }) => {
-                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route });
+                    if (object && !activeTripPlan) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route });
                 }
             }));
         }
 
-        // 7) Trip origin/dest stop markers — large Google Maps style
+        // Also show route stops from pattern data during trip (catches stops not in stopsData)
+        if (activeTripPlan && tripData?.routeStops?.length) {
+            L.push(new ScatterplotLayer({
+                id: 'trip-route-stops',
+                data: tripData.routeStops,
+                getPosition: (d: any) => d.pos,
+                getFillColor: [15, 15, 26],
+                getLineColor: [66, 133, 244, 120],
+                getRadius: 20,
+                radiusMinPixels: 3,
+                radiusMaxPixels: 6,
+                stroked: true,
+                lineWidthMinPixels: 1,
+                opacity: 0.6,
+            }));
+        }
+
+        // 7) Trip origin/dest markers — compact with white border
         if (activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'trip-stops',
@@ -528,11 +507,11 @@ export default function MapView({
                 getPosition: (d: any) => d.position,
                 getFillColor: (d: any) => d.label === 'origin' ? [66, 133, 244] : [234, 67, 53],
                 getLineColor: [255, 255, 255],
-                getRadius: 100,
-                radiusMinPixels: 14,
-                radiusMaxPixels: 22,
+                getRadius: 60,
+                radiusMinPixels: 8,
+                radiusMaxPixels: 14,
                 stroked: true,
-                lineWidthMinPixels: 3,
+                lineWidthMinPixels: 2.5,
                 opacity: 1,
             }));
         }
@@ -563,7 +542,7 @@ export default function MapView({
 
         return L;
     }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
-        trackedBus, trackingPath, activeTripPlan, tripRouteSegment, tripWalkPaths]);
+        trackedBus, trackingPath, activeTripPlan, tripData, tripWalkPaths]);
 
     return (
         <DeckGL
@@ -656,6 +635,25 @@ export default function MapView({
                         <div className="dest-pin-marker">
                             <div className="pin"><div className="pin-inner" /></div>
                             <div className="pin-shadow" />
+                        </div>
+                    </Marker>
+                )}
+
+                {/* Trip origin stop label */}
+                {activeTripPlan && (
+                    <Marker longitude={activeTripPlan.originStop.lon} latitude={activeTripPlan.originStop.lat} anchor="bottom" offset={[0, -12]}>
+                        <div className="trip-label trip-label--origin">
+                            <span className="trip-label__route">{activeTripPlan.routeId}</span>
+                            <span className="trip-label__name">{activeTripPlan.originStop.stpnm}</span>
+                        </div>
+                    </Marker>
+                )}
+
+                {/* Trip dest stop label */}
+                {activeTripPlan && (
+                    <Marker longitude={activeTripPlan.destStop.lon} latitude={activeTripPlan.destStop.lat} anchor="bottom" offset={[0, -12]}>
+                        <div className="trip-label trip-label--dest">
+                            <span className="trip-label__name">{activeTripPlan.destStop.stpnm}</span>
                         </div>
                     </Marker>
                 )}
