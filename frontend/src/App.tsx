@@ -13,6 +13,7 @@ export default function App() {
   const [routes, setRoutes] = useState<Array<{ rt: string; rtnm: string }>>([]);
   const [busCount, setBusCount] = useState(0);
   const [delayedCount, setDelayedCount] = useState(0);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
 
   const handleRoutesLoaded = useCallback((r: Array<{ rt: string; rtnm: string }>) => {
     setRoutes(r);
@@ -37,9 +38,12 @@ export default function App() {
     setSelectedStop(null);
   }, []);
 
+  const handleUserLocation = useCallback((lat: number, lon: number) => {
+    setUserLocation([lon, lat]); // DeckGL uses [lon, lat]
+  }, []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-      {/* Top bar - always visible */}
       <TopBar
         busCount={busCount}
         delayedCount={delayedCount}
@@ -48,18 +52,16 @@ export default function App() {
         onRouteChange={handleRouteSelect}
       />
 
-      {/* Main body: map + panel */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-        {/* Map — always rendered, never unmounted */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           <MapView
             selectedRoute={selectedRoute}
+            userLocation={userLocation}
             onRoutesLoaded={handleRoutesLoaded}
             onLiveDataUpdated={handleLiveDataUpdated}
             onStopClick={handleStopClick}
           />
 
-          {/* Bottom tabs overlaid on map */}
           <BottomTabs
             active={tab}
             onChange={setTab}
@@ -68,7 +70,6 @@ export default function App() {
           />
         </div>
 
-        {/* Context panel - always rendered, content driven by tab + selection */}
         <ContextPanel
           tab={tab}
           selectedRoute={selectedRoute}
@@ -77,6 +78,8 @@ export default function App() {
           delayedCount={delayedCount}
           onRouteSelect={handleRouteSelect}
           onStopClear={handleStopClear}
+          onStopSelect={handleStopClick}
+          onUserLocation={handleUserLocation}
         />
       </div>
     </div>

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { TabId } from '../layout/BottomTabs';
 import type { StopClickEvent } from '../MapView';
 import CityOverview from './map/CityOverview';
 import RouteDrilldown from './map/RouteDrilldown';
 import StopPredictions from './map/StopPredictions';
+import NearbyStops from './map/NearbyStops';
 import AnalyticsPanel from './analytics/AnalyticsPanel';
 import SystemPanel from './system/SystemPanel';
 
@@ -14,6 +16,8 @@ interface ContextPanelProps {
   delayedCount: number;
   onRouteSelect: (rt: string) => void;
   onStopClear: () => void;
+  onStopSelect: (stop: StopClickEvent) => void;
+  onUserLocation: (lat: number, lon: number) => void;
 }
 
 export default function ContextPanel({
@@ -24,7 +28,17 @@ export default function ContextPanel({
   delayedCount,
   onRouteSelect,
   onStopClear,
+  onStopSelect,
+  onUserLocation,
 }: ContextPanelProps) {
+  const [showNearby, setShowNearby] = useState(false);
+
+  // Reset nearby mode when tab changes or a stop/route is selected externally
+  const handleRouteSelect = (rt: string) => {
+    setShowNearby(false);
+    onRouteSelect(rt);
+  };
+
   return (
     <div style={{
       width: 380,
@@ -40,13 +54,23 @@ export default function ContextPanel({
         <div className="panel-scroll" style={{ flex: 1 }}>
           {selectedStop ? (
             <StopPredictions stop={selectedStop} onClose={onStopClear} />
+          ) : showNearby ? (
+            <NearbyStops
+              onBack={() => setShowNearby(false)}
+              onUserLocation={onUserLocation}
+              onStopSelect={(stpid, stpnm, route) => {
+                setShowNearby(false);
+                onStopSelect({ stpid, stpnm, route });
+              }}
+            />
           ) : selectedRoute !== 'ALL' ? (
-            <RouteDrilldown route={selectedRoute} onClose={() => onRouteSelect('ALL')} />
+            <RouteDrilldown route={selectedRoute} onClose={() => handleRouteSelect('ALL')} />
           ) : (
             <CityOverview
               busCount={busCount}
               delayedCount={delayedCount}
-              onRouteSelect={onRouteSelect}
+              onRouteSelect={handleRouteSelect}
+              onNearMe={() => setShowNearby(true)}
             />
           )}
         </div>

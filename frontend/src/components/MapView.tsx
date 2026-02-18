@@ -61,12 +61,13 @@ export interface VehicleData {
 
 interface MapViewProps {
     selectedRoute: string;
+    userLocation: [number, number] | null; // [lon, lat]
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
 }
 
-export default function MapView({ selectedRoute, onRoutesLoaded, onLiveDataUpdated, onStopClick }: MapViewProps) {
+export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, onLiveDataUpdated, onStopClick }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [patternsData, setPatternsData] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
@@ -261,8 +262,24 @@ export default function MapView({ selectedRoute, onRoutesLoaded, onLiveDataUpdat
             }));
         }
 
+        if (userLocation) {
+            layerList.push(new ScatterplotLayer({
+                id: 'user-location',
+                data: [{ position: userLocation }],
+                getPosition: (d: any) => d.position,
+                getFillColor: [0, 212, 255],
+                getLineColor: [255, 255, 255],
+                getRadius: 80,
+                radiusMinPixels: 10,
+                radiusMaxPixels: 18,
+                stroked: true,
+                lineWidthMinPixels: 2,
+                opacity: 1,
+            }));
+        }
+
         return layerList;
-    }, [filteredPatterns, filteredLive, stopsData, onStopClick]);
+    }, [filteredPatterns, filteredLive, stopsData, userLocation, onStopClick]);
 
     return (
         <DeckGL
