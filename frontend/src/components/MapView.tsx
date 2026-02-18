@@ -220,7 +220,7 @@ export default function MapView({
         });
     }, [trackedBus, liveData, userLocation]);
 
-    // Auto-pan to trip route when selected
+    // Auto-pan to trip route when selected — frame the full journey including walking
     useEffect(() => {
         if (!activeTripPlan || !mapRef.current) return;
         const bounds = new maplibregl.LngLatBounds();
@@ -229,8 +229,8 @@ export default function MapView({
         bounds.extend([activeTripPlan.destStop.lon, activeTripPlan.destStop.lat]);
         bounds.extend([activeTripPlan.finalDestination.lon, activeTripPlan.finalDestination.lat]);
         mapRef.current.fitBounds(bounds, {
-            padding: { top: 80, bottom: 80, left: 60, right: 400 },
-            maxZoom: 15, duration: 1000,
+            padding: { top: 100, bottom: 100, left: 80, right: 420 },
+            maxZoom: 16, duration: 1000,
         });
     }, [activeTripPlan, userLocation]);
 
@@ -266,42 +266,83 @@ export default function MapView({
         const oPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
         const dPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
 
+        const MATCH_THRESHOLD = 0.004; // ~400m in degrees
+        const directDist = Math.hypot(oPos[0] - dPos[0], oPos[1] - dPos[1]);
+
         let bestSegment: [number, number][] | null = null;
-        let bestScore = Infinity;
+        let bestSegLen = 0;
 
         for (const pattern of routePatterns) {
             const path = pattern.path as [number, number][];
-            let oIdx = 0, dIdx = 0;
-            let oDist = Infinity, dDist = Infinity;
+
+            // Find ALL candidate indices near origin and near destination
+            const oCandidates: { idx: number; dist: number }[] = [];
+            const dCandidates: { idx: number; dist: number }[] = [];
 
             for (let i = 0; i < path.length; i++) {
                 const d1 = Math.hypot(path[i][0] - oPos[0], path[i][1] - oPos[1]);
                 const d2 = Math.hypot(path[i][0] - dPos[0], path[i][1] - dPos[1]);
-                if (d1 < oDist) { oDist = d1; oIdx = i; }
-                if (d2 < dDist) { dDist = d2; dIdx = i; }
+                if (d1 < MATCH_THRESHOLD) oCandidates.push({ idx: i, dist: d1 });
+                if (d2 < MATCH_THRESHOLD) dCandidates.push({ idx: i, dist: d2 });
             }
 
-            // Forward direction: origin appears before dest in the pattern
-            if (oIdx < dIdx) {
-                const score = oDist + dDist;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestSegment = path.slice(oIdx, dIdx + 1);
-                }
-            }
-            // Reverse direction: origin appears after dest, so reverse the slice
-            if (dIdx < oIdx) {
-                const score = oDist + dDist;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestSegment = path.slice(dIdx, oIdx + 1).reverse();
+            // Try all O→D combinations, pick the one that produces a
+            // reasonable-length segment (should be >= direct distance)
+            for (const o of oCandidates) {
+                for (const d of dCandidates) {
+                    if (o.idx === d.idx) continue;
+                    const segment = o.idx < d.idx
+                        ? path.slice(o.idx, d.idx + 1)
+                        : path.slice(d.idx, o.idx + 1).reverse();
+
+                    // Compute geographic length of the segment
+                    let segLen = 0;
+                    for (let i = 1; i < segment.length; i++) {
+                        segLen += Math.hypot(segment[i][0] - segment[i - 1][0], segment[i][1] - segment[i - 1][1]);
+                    }
+
+                    // Prefer segments that are at least as long as the direct distance
+                    // (a real bus route between two stops is always >= straight-line)
+                    // Among valid segments, pick the shortest one (most direct path)
+                    const isReasonable = segLen >= directDist * 0.8;
+                    if (isReasonable && segment.length >= 2) {
+                        if (!bestSegment || segLen < bestSegLen) {
+                            bestSegLen = segLen;
+                            bestSegment = segment;
+                        }
+                    }
                 }
             }
         }
 
-        // Fallback: straight line between origin and dest stops
+        // Fallback: if candidate matching failed, use single-closest-point approach
         if (!bestSegment) {
-            bestSegment = [oPos, dPos];
+            for (const pattern of routePatterns) {
+                const path = pattern.path as [number, number][];
+                let oIdx = 0, dIdx = 0;
+                let oDist = Infinity, dDist = Infinity;
+                for (let i = 0; i < path.length; i++) {
+                    const d1 = Math.hypot(path[i][0] - oPos[0], path[i][1] - oPos[1]);
+                    const d2 = Math.hypot(path[i][0] - dPos[0], path[i][1] - dPos[1]);
+                    if (d1 < oDist) { oDist = d1; oIdx = i; }
+                    if (d2 < dDist) { dDist = d2; dIdx = i; }
+                }
+                if (oIdx !== dIdx) {
+                    bestSegment = oIdx < dIdx
+                        ? path.slice(oIdx, dIdx + 1)
+                        : path.slice(dIdx, oIdx + 1).reverse();
+                    break;
+                }
+            }
+        }
+
+        // Ultimate fallback: show the full route pattern (always visible)
+        if (!bestSegment || bestSegment.length < 2) {
+            if (routePatterns.length > 0) {
+                bestSegment = routePatterns[0].path as [number, number][];
+            } else {
+                bestSegment = [oPos, dPos];
+            }
         }
 
         return bestSegment;
@@ -368,33 +409,33 @@ export default function MapView({
             }));
         }
 
-        // 3) Trip bus route segment — highlighted bright cyan
-        if (tripRouteSegment) {
-            L.push(new PathLayer({
-                id: 'trip-segment',
-                data: [{ path: tripRouteSegment }],
-                getPath: (d: any) => d.path,
-                getColor: [0, 212, 255, 255],
-                getWidth: 7,
-                widthMinPixels: 5,
-                capRounded: true,
-                jointRounded: true,
-            }));
-        }
-
-        // 4) Trip walking dashed lines — bright white
+        // 3) Trip walking dashed lines — render UNDER bus segment, Google Maps blue dotted
         if (tripWalkPaths.length > 0) {
             L.push(new PathLayer({
                 id: 'trip-walk-paths',
                 data: tripWalkPaths,
                 getPath: (d: any) => d.path,
-                getColor: [255, 255, 255, 200],
-                getWidth: 5,
-                widthMinPixels: 4,
+                getColor: [100, 160, 255, 255],
+                getWidth: 6,
+                widthMinPixels: 5,
                 capRounded: true,
-                getDashArray: [8, 6],
+                getDashArray: [4, 8],
                 dashJustified: true,
                 extensions: [dashExtension],
+            }));
+        }
+
+        // 4) Trip bus route segment — thick Google Maps blue
+        if (tripRouteSegment) {
+            L.push(new PathLayer({
+                id: 'trip-segment',
+                data: [{ path: tripRouteSegment }],
+                getPath: (d: any) => d.path,
+                getColor: [66, 133, 244, 255],
+                getWidth: 10,
+                widthMinPixels: 6,
+                capRounded: true,
+                jointRounded: true,
             }));
         }
 
@@ -438,7 +479,7 @@ export default function MapView({
             }));
         }
 
-        // 7) Trip origin/dest stop markers — large and prominent like Google Maps
+        // 7) Trip origin/dest stop markers — large Google Maps style
         if (activeTripPlan) {
             L.push(new ScatterplotLayer({
                 id: 'trip-stops',
@@ -447,11 +488,11 @@ export default function MapView({
                     { position: [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat], label: 'dest' },
                 ],
                 getPosition: (d: any) => d.position,
-                getFillColor: (d: any) => d.label === 'origin' ? [16, 185, 129] : [0, 212, 255],
+                getFillColor: (d: any) => d.label === 'origin' ? [66, 133, 244] : [234, 67, 53],
                 getLineColor: [255, 255, 255],
-                getRadius: 80,
-                radiusMinPixels: 12,
-                radiusMaxPixels: 20,
+                getRadius: 100,
+                radiusMinPixels: 14,
+                radiusMaxPixels: 22,
                 stroked: true,
                 lineWidthMinPixels: 3,
                 opacity: 1,
