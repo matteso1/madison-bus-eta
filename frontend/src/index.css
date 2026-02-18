@@ -77,3 +77,146 @@ html, body, #root {
 .fade-in {
   animation: fade-in 0.2s ease-out;
 }
+
+/* ── User Location Pulsing Marker ── */
+.user-loc-marker {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.user-loc-marker .pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.18);
+  animation: loc-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.user-loc-marker .pulse-ring-2 {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.12);
+  animation: loc-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: 0.6s;
+}
+.user-loc-marker .dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #00d4ff;
+  border: 3px solid #fff;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
+  z-index: 1;
+}
+@keyframes loc-pulse {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+
+/* ── Tracked Bus Marker ── */
+.tracked-bus-marker {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tracked-bus-marker .bus-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid var(--signal);
+  animation: bus-ping 1.5s ease-out infinite;
+}
+.tracked-bus-marker .bus-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--signal);
+  border: 3px solid #fff;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.8);
+  z-index: 1;
+}
+@keyframes bus-ping {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* ── Destination Pin Marker ── */
+.dest-pin-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.dest-pin-marker .pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--signal);
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,212,255,0.4);
+}
+.dest-pin-marker .pin-inner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  transform: rotate(45deg);
+}
+.dest-pin-marker .pin-shadow {
+  width: 14px;
+  height: 4px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 50%;
+  margin-top: 2px;
+}
+
+/* ── Tracking Overlay ── */
+.tracking-overlay {
+  position: absolute;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: rgba(8, 8, 16, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-bright);
+  border-radius: 16px;
+  padding: 16px 24px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* ── Trip Planner Search ── */
+.trip-search-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 12px 16px 12px 38px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.trip-search-input:focus {
+  border-color: var(--signal);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+}
+.trip-search-input::placeholder {
+  color: var(--text-dim);
+}

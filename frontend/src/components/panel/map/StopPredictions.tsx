@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import ConfidenceBand from '../../shared/ConfidenceBand';
-import type { StopClickEvent } from '../../MapView';
+import type { StopClickEvent, TrackedBus } from '../../MapView';
 
 interface StopPredictionsProps {
   stop: StopClickEvent;
   onClose: () => void;
+  onTrackBus?: (bus: TrackedBus) => void;
 }
 
 interface Prediction {
@@ -19,9 +20,10 @@ interface Prediction {
   vid: string;
 }
 
-export default function StopPredictions({ stop, onClose }: StopPredictionsProps) {
+export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredictionsProps) {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stopLatLon, setStopLatLon] = useState<[number, number] | null>(null);
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
@@ -30,6 +32,16 @@ export default function StopPredictions({ stop, onClose }: StopPredictionsProps)
 
     const load = async () => {
       try {
+        // Fetch stop position for tracking
+        try {
+          const stopsRes = await axios.get(`${API_BASE}/stops?rt=${stop.route}`);
+          const allStops = stopsRes.data?.['bustime-response']?.stops || [];
+          const thisStop = allStops.find((s: any) => String(s.stpid) === String(stop.stpid));
+          if (thisStop) {
+            setStopLatLon([parseFloat(thisStop.lon), parseFloat(thisStop.lat)]);
+          }
+        } catch {}
+
         const res = await axios.get(`${API_BASE}/predictions?stpid=${stop.stpid}`);
         const prdArray = res.data?.['bustime-response']?.prd || [];
         const prds = Array.isArray(prdArray) ? prdArray : [prdArray];
@@ -76,7 +88,18 @@ export default function StopPredictions({ stop, onClose }: StopPredictionsProps)
     };
 
     load();
-  }, [stop.stpid, API_BASE]);
+  }, [stop.stpid, stop.route, API_BASE]);
+
+  const handleTrack = (pred: Prediction) => {
+    if (!onTrackBus) return;
+    onTrackBus({
+      vid: pred.vid,
+      route: pred.route,
+      stopId: stop.stpid,
+      stopName: stop.stpnm,
+      stopPosition: stopLatLon || undefined,
+    });
+  };
 
   return (
     <div className="fade-in" style={{ padding: '14px' }}>
@@ -157,6 +180,36 @@ export default function StopPredictions({ stop, onClose }: StopPredictionsProps)
                 {pred.destination}
               </div>
               <ConfidenceBand low={pred.mlLow} median={pred.mlMedian} high={pred.mlHigh} />
+
+              {/* Track Bus Button */}
+              {onTrackBus && (
+                <button
+                  onClick={() => handleTrack(pred)}
+                  style={{
+                    width: '100%',
+                    marginTop: 10,
+                    background: 'var(--signal-dim)',
+                    border: '1px solid rgba(0,212,255,0.3)',
+                    borderRadius: 6,
+                    color: 'var(--signal)',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-ui)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--signal-dim)')}
+                >
+                  <span style={{ fontSize: 14 }}>&#9673;</span>
+                  Track This Bus
+                </button>
+              )}
             </div>
           ))}
         </div>

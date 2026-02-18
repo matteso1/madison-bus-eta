@@ -1,7 +1,7 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { Map } from '@vis.gl/react-maplibre';
+import { PathLayer, ScatterplotLayer, LineLayer } from '@deck.gl/layers';
+import { Map, Marker } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import axios from 'axios';
@@ -59,24 +59,46 @@ export interface VehicleData {
     color: [number, number, number];
 }
 
+export interface TrackedBus {
+    vid: string;
+    route: string;
+    stopId: string;
+    stopName: string;
+    stopPosition?: [number, number];
+}
+
+export interface TripPlan {
+    routeId: string;
+    originStop: { stpid: string; stpnm: string; lat: number; lon: number };
+    destStop: { stpid: string; stpnm: string; lat: number; lon: number };
+    walkToMin: number;
+    walkFromMin: number;
+}
+
 interface MapViewProps {
     selectedRoute: string;
-    userLocation: [number, number] | null; // [lon, lat]
+    userLocation: [number, number] | null;
+    trackedBus: TrackedBus | null;
+    activeTripPlan: TripPlan | null;
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
+    onMapClick?: (lngLat: [number, number]) => void;
 }
 
-export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, onLiveDataUpdated, onStopClick }: MapViewProps) {
+export default function MapView({
+    selectedRoute, userLocation, trackedBus, activeTripPlan,
+    onRoutesLoaded, onLiveDataUpdated, onStopClick, onMapClick
+}: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [patternsData, setPatternsData] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
     const [routeReliability, setRouteReliability] = useState<Record<string, { reliability_score: number }>>({});
     const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
+    const mapRef = useRef<maplibregl.Map | null>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
-    // Fetch route reliability for path coloring
     useEffect(() => {
         axios.get(`${API_BASE}/api/route-reliability`).then(res => {
             const map: Record<string, any> = {};
@@ -85,7 +107,6 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
         }).catch(() => {});
     }, [API_BASE]);
 
-    // Preload ML prediction on vehicle hover
     const getMLPrediction = useCallback(async (vehicle: VehicleData, apiPrediction = 10) => {
         const cacheKey = `${vehicle.vid}-${vehicle.route}`;
         const cached = predictionCache[cacheKey];
@@ -108,7 +129,6 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
         if (vehicle) getMLPrediction(vehicle);
     }, [hoveredVehicle, liveData, getMLPrediction]);
 
-    // Load stops for selected route
     useEffect(() => {
         if (selectedRoute === 'ALL') { setStopsData([]); return; }
         axios.get(`${API_BASE}/stops?rt=${selectedRoute}`).then(res => {
@@ -122,7 +142,6 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
         }).catch(() => setStopsData([]));
     }, [selectedRoute, API_BASE]);
 
-    // Load routes + patterns
     useEffect(() => {
         const load = async () => {
             try {
@@ -142,7 +161,6 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
                     const rt = routeList[i].rt;
                     const baseColor = ROUTE_COLORS[rt] || [100, 100, 100];
                     const rel = routeReliability[rt];
-                    // Interpolate color toward amber if unreliable
                     const score = rel?.reliability_score ?? 0.7;
                     const color: [number, number, number] = score >= 0.7
                         ? baseColor
@@ -171,8 +189,9 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
         load();
     }, [API_BASE, routeReliability, onRoutesLoaded]);
 
-    // Live vehicle polling
+    // Faster polling when tracking a bus (8s), normal 15s otherwise
     useEffect(() => {
+        const interval = trackedBus ? 8000 : 15000;
         const fetchLive = async () => {
             try {
                 const res = await axios.get(`${API_BASE}/vehicles`);
@@ -194,17 +213,66 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
             }
         };
         fetchLive();
-        const interval = setInterval(fetchLive, 15000);
-        return () => clearInterval(interval);
-    }, [API_BASE, onLiveDataUpdated]);
+        const timer = setInterval(fetchLive, interval);
+        return () => clearInterval(timer);
+    }, [API_BASE, onLiveDataUpdated, trackedBus]);
 
-    const filteredPatterns = useMemo(() =>
-        selectedRoute === 'ALL' ? patternsData : patternsData.filter(p => p.route === selectedRoute),
-        [patternsData, selectedRoute]);
+    // Auto-pan to tracked bus when its position updates
+    useEffect(() => {
+        if (!trackedBus || !mapRef.current) return;
+        const bus = liveData.find(v => v.vid === trackedBus.vid);
+        if (!bus) return;
 
-    const filteredLive = useMemo(() =>
-        selectedRoute === 'ALL' ? liveData : liveData.filter(v => v.route === selectedRoute),
-        [liveData, selectedRoute]);
+        const bounds = new maplibregl.LngLatBounds();
+        bounds.extend(bus.position as [number, number]);
+        if (trackedBus.stopPosition) {
+            bounds.extend(trackedBus.stopPosition);
+        }
+        if (userLocation) {
+            bounds.extend(userLocation);
+        }
+
+        mapRef.current.fitBounds(bounds, {
+            padding: { top: 80, bottom: 120, left: 60, right: 400 },
+            maxZoom: 16,
+            duration: 1000,
+        });
+    }, [trackedBus, liveData, userLocation]);
+
+    const filteredPatterns = useMemo(() => {
+        if (trackedBus) return patternsData.filter(p => p.route === trackedBus.route);
+        if (activeTripPlan) return patternsData.filter(p => p.route === activeTripPlan.routeId);
+        return selectedRoute === 'ALL' ? patternsData : patternsData.filter(p => p.route === selectedRoute);
+    }, [patternsData, selectedRoute, trackedBus, activeTripPlan]);
+
+    const filteredLive = useMemo(() => {
+        if (trackedBus) return liveData.filter(v => v.route === trackedBus.route);
+        if (selectedRoute === 'ALL') return [];
+        return liveData.filter(v => v.route === selectedRoute);
+    }, [liveData, selectedRoute, trackedBus]);
+
+    const trackedVehicle = useMemo(() => {
+        if (!trackedBus) return null;
+        return liveData.find(v => v.vid === trackedBus.vid) || null;
+    }, [liveData, trackedBus]);
+
+    // Line from tracked bus to its destination stop
+    const trackingLine = useMemo(() => {
+        if (!trackedVehicle || !trackedBus?.stopPosition) return null;
+        return [{
+            from: trackedVehicle.position,
+            to: trackedBus.stopPosition,
+        }];
+    }, [trackedVehicle, trackedBus]);
+
+    // Trip plan walking lines
+    const tripLines = useMemo(() => {
+        if (!activeTripPlan || !userLocation) return [];
+        return [
+            { from: userLocation, to: [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat] as [number, number], type: 'walk' },
+            { from: [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat] as [number, number], to: [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat] as [number, number], type: 'dest' },
+        ];
+    }, [activeTripPlan, userLocation]);
 
     const layers = useMemo(() => {
         const layerList: any[] = [];
@@ -214,15 +282,15 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
                 id: 'route-paths',
                 data: filteredPatterns,
                 getPath: (d: any) => d.path,
-                getColor: (d: any) => [...d.color, 200],
-                getWidth: 4,
+                getColor: (d: any) => [...d.color, trackedBus || activeTripPlan ? 160 : 200],
+                getWidth: trackedBus || activeTripPlan ? 6 : 4,
                 widthMinPixels: 2,
                 capRounded: true,
                 jointRounded: true,
             }));
         }
 
-        if (stopsData.length > 0) {
+        if (stopsData.length > 0 && !trackedBus) {
             layerList.push(new ScatterplotLayer({
                 id: 'stops',
                 data: stopsData,
@@ -243,16 +311,21 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
             }));
         }
 
-        if (filteredLive.length > 0) {
+        // Non-tracked buses (dimmed when tracking)
+        const nonTrackedBuses = trackedBus
+            ? filteredLive.filter(v => v.vid !== trackedBus.vid)
+            : filteredLive;
+
+        if (nonTrackedBuses.length > 0) {
             layerList.push(new ScatterplotLayer({
                 id: 'live-buses',
-                data: filteredLive,
+                data: nonTrackedBuses,
                 pickable: true,
-                opacity: 1,
+                opacity: trackedBus ? 0.35 : 1,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: 8,
-                radiusMaxPixels: 20,
+                radiusMinPixels: trackedBus ? 5 : 8,
+                radiusMaxPixels: trackedBus ? 10 : 20,
                 lineWidthMinPixels: 2,
                 getPosition: (d: any) => d.position,
                 getRadius: 50,
@@ -262,24 +335,54 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
             }));
         }
 
-        if (userLocation) {
+        // Tracking line from bus to stop
+        if (trackingLine) {
+            layerList.push(new LineLayer({
+                id: 'tracking-line',
+                data: trackingLine,
+                getSourcePosition: (d: any) => d.from,
+                getTargetPosition: (d: any) => d.to,
+                getColor: [0, 212, 255, 80],
+                getWidth: 3,
+                widthMinPixels: 2,
+            }));
+        }
+
+        // Trip plan walking lines
+        if (tripLines.length > 0) {
+            layerList.push(new LineLayer({
+                id: 'trip-walk-lines',
+                data: tripLines,
+                getSourcePosition: (d: any) => d.from,
+                getTargetPosition: (d: any) => d.to,
+                getColor: [255, 255, 255, 100],
+                getWidth: 2,
+                widthMinPixels: 1,
+            }));
+        }
+
+        // Trip plan stop markers
+        if (activeTripPlan) {
+            const tripStops = [
+                { position: [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat], label: 'origin' },
+                { position: [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat], label: 'dest' },
+            ];
             layerList.push(new ScatterplotLayer({
-                id: 'user-location',
-                data: [{ position: userLocation }],
+                id: 'trip-stops',
+                data: tripStops,
                 getPosition: (d: any) => d.position,
-                getFillColor: [0, 212, 255],
+                getFillColor: (d: any) => d.label === 'origin' ? [16, 185, 129] : [0, 212, 255],
                 getLineColor: [255, 255, 255],
-                getRadius: 80,
-                radiusMinPixels: 10,
-                radiusMaxPixels: 18,
+                getRadius: 50,
+                radiusMinPixels: 8,
+                radiusMaxPixels: 14,
                 stroked: true,
-                lineWidthMinPixels: 2,
-                opacity: 1,
+                lineWidthMinPixels: 2.5,
             }));
         }
 
         return layerList;
-    }, [filteredPatterns, filteredLive, stopsData, userLocation, onStopClick]);
+    }, [filteredPatterns, filteredLive, stopsData, onStopClick, trackedBus, trackingLine, activeTripPlan, tripLines]);
 
     return (
         <DeckGL
@@ -287,6 +390,11 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
             controller={true}
             layers={layers}
             style={{ width: '100%', height: '100%' }}
+            onClick={({ coordinate }) => {
+                if (onMapClick && coordinate) {
+                    onMapClick([coordinate[0], coordinate[1]]);
+                }
+            }}
             getTooltip={({ object }) => {
                 if (!object) return null;
 
@@ -330,7 +438,53 @@ export default function MapView({ selectedRoute, userLocation, onRoutesLoaded, o
                 };
             }}
         >
-            <Map reuseMaps mapLib={maplibregl} mapStyle={MAP_STYLE} />
+            <Map
+                reuseMaps
+                mapLib={maplibregl}
+                mapStyle={MAP_STYLE}
+                onLoad={(e) => { mapRef.current = e.target; }}
+            >
+                {/* Pulsing user location */}
+                {userLocation && (
+                    <Marker longitude={userLocation[0]} latitude={userLocation[1]} anchor="center">
+                        <div className="user-loc-marker">
+                            <div className="pulse-ring" />
+                            <div className="pulse-ring-2" />
+                            <div className="dot" />
+                        </div>
+                    </Marker>
+                )}
+
+                {/* Tracked bus highlight */}
+                {trackedVehicle && (
+                    <Marker longitude={trackedVehicle.position[0]} latitude={trackedVehicle.position[1]} anchor="center">
+                        <div className="tracked-bus-marker">
+                            <div className="bus-ring" />
+                            <div className="bus-dot" />
+                        </div>
+                    </Marker>
+                )}
+
+                {/* Tracked bus destination stop */}
+                {trackedBus?.stopPosition && (
+                    <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
+                        <div className="dest-pin-marker">
+                            <div className="pin"><div className="pin-inner" /></div>
+                            <div className="pin-shadow" />
+                        </div>
+                    </Marker>
+                )}
+
+                {/* Trip plan destination */}
+                {activeTripPlan && (
+                    <Marker longitude={activeTripPlan.destStop.lon} latitude={activeTripPlan.destStop.lat} anchor="bottom">
+                        <div className="dest-pin-marker">
+                            <div className="pin"><div className="pin-inner" /></div>
+                            <div className="pin-shadow" />
+                        </div>
+                    </Marker>
+                )}
+            </Map>
         </DeckGL>
     );
 }

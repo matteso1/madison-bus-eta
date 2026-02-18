@@ -9,9 +9,10 @@ interface CityOverviewProps {
   delayedCount: number;
   onRouteSelect: (rt: string) => void;
   onNearMe: () => void;
+  onTripPlan: () => void;
 }
 
-export default function CityOverview({ busCount, delayedCount, onRouteSelect, onNearMe }: CityOverviewProps) {
+export default function CityOverview({ busCount, delayedCount, onRouteSelect, onNearMe, onTripPlan }: CityOverviewProps) {
   const [reliability, setReliability] = useState<any[]>([]);
   const [drift, setDrift] = useState<any>(null);
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
@@ -31,7 +32,52 @@ export default function CityOverview({ busCount, delayedCount, onRouteSelect, on
 
   return (
     <div className="fade-in" style={{ padding: '16px 14px' }}>
-      {/* Near Me CTA — primary action */}
+      {/* Where to? — Uber-style trip planner CTA */}
+      <button
+        onClick={onTripPlan}
+        style={{
+          width: '100%',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--border-bright)',
+          borderRadius: 12,
+          color: 'var(--text-secondary)',
+          fontSize: 14,
+          fontWeight: 500,
+          padding: '14px 16px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 10,
+          transition: 'all 0.15s',
+          fontFamily: 'var(--font-ui)',
+          textAlign: 'left',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.borderColor = 'var(--signal)';
+          e.currentTarget.style.color = 'var(--text-primary)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.borderColor = 'var(--border-bright)';
+          e.currentTarget.style.color = 'var(--text-secondary)';
+        }}
+      >
+        <div style={{
+          width: 32,
+          height: 32,
+          borderRadius: 8,
+          background: 'var(--signal-dim)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 16, color: 'var(--signal)' }}>&#10132;</span>
+        </div>
+        Where to?
+      </button>
+
+      {/* Near Me CTA */}
       <button
         onClick={onNearMe}
         style={{
@@ -42,7 +88,7 @@ export default function CityOverview({ busCount, delayedCount, onRouteSelect, on
           color: 'var(--signal)',
           fontSize: 13,
           fontWeight: 600,
-          padding: '12px 16px',
+          padding: '10px 16px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',

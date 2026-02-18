@@ -2344,6 +2344,150 @@ def _ensure_stop_cache_async():
     except Exception as e:
         print(f"⚠️  ensure_stop_cache failed: {e}")
 
+# ==================== TRIP PLANNER ENDPOINTS ====================
+
+@app.route("/api/stops/search")
+def search_stops():
+    """Fuzzy search stops by name from the stop cache."""
+    q = (request.args.get("q") or "").strip().lower()
+    limit = request.args.get("limit", default=10, type=int)
+    if len(q) < 2:
+        return jsonify({"stops": [], "query": q})
+
+    cache_path = _stop_cache_path()
+    if not cache_path.exists():
+        return jsonify({"error": "Stop cache not built yet"}), 503
+
+    with open(cache_path, 'r', encoding='utf-8') as f:
+        cache_data = json.load(f)
+    stops_cache = cache_data.get('stops', {})
+
+    scored = []
+    for stpid, data in stops_cache.items():
+        name = (data.get('stpnm') or '').lower()
+        if q in name:
+            priority = 0 if name.startswith(q) else 1
+            scored.append((priority, {
+                'stpid': stpid,
+                'stpnm': data.get('stpnm', ''),
+                'lat': data['lat'],
+                'lon': data['lon'],
+                'routes': data.get('routes', []),
+            }))
+
+    scored.sort(key=lambda x: (x[0], x[1]['stpnm']))
+    results = [s[1] for s in scored[:limit]]
+    return jsonify({"stops": results, "query": q, "count": len(results)})
+
+
+@app.route("/api/trip-plan")
+def plan_trip():
+    """Find direct bus routes between an origin and destination coordinate."""
+    olat = request.args.get("olat", type=float)
+    olon = request.args.get("olon", type=float)
+    dlat = request.args.get("dlat", type=float)
+    dlon = request.args.get("dlon", type=float)
+
+    if None in (olat, olon, dlat, dlon):
+        return jsonify({"error": "olat, olon, dlat, dlon required"}), 400
+
+    cache_path = _stop_cache_path()
+    if not cache_path.exists():
+        return jsonify({"error": "Stop cache not built yet"}), 503
+
+    with open(cache_path, 'r', encoding='utf-8') as f:
+        cache_data = json.load(f)
+    stops_cache = cache_data.get('stops', {})
+
+    def haversine(lat1, lon1, lat2, lon2):
+        R = 3959
+        dlat_ = math.radians(lat2 - lat1)
+        dlon_ = math.radians(lon2 - lon1)
+        a = math.sin(dlat_/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon_/2)**2
+        return R * 2 * math.asin(math.sqrt(a))
+
+    WALK_RADIUS = 0.5  # miles
+    WALK_SPEED = 3.0    # mph -> 20 min/mile
+
+    # Find stops near origin and destination
+    origin_stops = []
+    dest_stops = []
+    for stpid, data in stops_cache.items():
+        slat, slon = data['lat'], data['lon']
+        od = haversine(olat, olon, slat, slon)
+        dd = haversine(dlat, dlon, slat, slon)
+        info = {'stpid': stpid, 'stpnm': data.get('stpnm',''), 'lat': slat, 'lon': slon, 'routes': data.get('routes',[])}
+        if od <= WALK_RADIUS:
+            origin_stops.append({**info, 'walk_miles': od})
+        if dd <= WALK_RADIUS:
+            dest_stops.append({**info, 'walk_miles': dd})
+
+    # Build route -> best origin stop and best dest stop
+    origin_by_route = {}
+    for s in origin_stops:
+        for rt in s['routes']:
+            if rt not in origin_by_route or s['walk_miles'] < origin_by_route[rt]['walk_miles']:
+                origin_by_route[rt] = s
+
+    dest_by_route = {}
+    for s in dest_stops:
+        for rt in s['routes']:
+            if rt not in dest_by_route or s['walk_miles'] < dest_by_route[rt]['walk_miles']:
+                dest_by_route[rt] = s
+
+    # Find routes that serve both origin and destination areas
+    common_routes = set(origin_by_route.keys()) & set(dest_by_route.keys())
+
+    # Build trip options
+    options = []
+    for rt in common_routes:
+        os_ = origin_by_route[rt]
+        ds_ = dest_by_route[rt]
+        walk_to = os_['walk_miles'] / WALK_SPEED * 60
+        walk_from = ds_['walk_miles'] / WALK_SPEED * 60
+        bus_dist = haversine(os_['lat'], os_['lon'], ds_['lat'], ds_['lon'])
+        bus_time = (bus_dist / 12.0) * 60  # ~12 mph avg city bus
+
+        options.append({
+            'routeId': rt,
+            'originStop': {'stpid': os_['stpid'], 'stpnm': os_['stpnm'], 'lat': os_['lat'], 'lon': os_['lon']},
+            'destStop': {'stpid': ds_['stpid'], 'stpnm': ds_['stpnm'], 'lat': ds_['lat'], 'lon': ds_['lon']},
+            'walkToMin': round(walk_to, 1),
+            'busTimeMin': round(bus_time, 1),
+            'walkFromMin': round(walk_from, 1),
+            'totalMin': round(walk_to + bus_time + walk_from, 1),
+            'nextBusMin': None,
+            'mlEta': None,
+        })
+
+    # Sort by total time
+    options.sort(key=lambda x: x['totalMin'] or 999)
+
+    # Try to get real-time next-bus predictions for top options
+    for opt in options[:3]:
+        try:
+            prd_resp = api_get('getpredictions', stpid=opt['originStop']['stpid'], rt=opt['routeId'])
+            prds = prd_resp.get('bustime-response', {}).get('prd', [])
+            if not isinstance(prds, list):
+                prds = [prds] if prds else []
+            if prds:
+                countdown = prds[0].get('prdctdn', '')
+                if countdown and countdown != 'DUE':
+                    opt['nextBusMin'] = int(countdown)
+                elif countdown == 'DUE':
+                    opt['nextBusMin'] = 0
+        except Exception:
+            pass
+
+    return jsonify({
+        "options": options[:5],
+        "origin": {"lat": olat, "lon": olon},
+        "destination": {"lat": dlat, "lon": dlon},
+        "origin_stops_found": len(origin_stops),
+        "dest_stops_found": len(dest_stops),
+    })
+
+
 @app.route("/viz/system-overview")
 def get_system_overview():
     """Get overall system statistics"""

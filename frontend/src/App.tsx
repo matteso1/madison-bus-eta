@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import MapView from './components/MapView';
-import type { StopClickEvent, VehicleData } from './components/MapView';
+import type { StopClickEvent, VehicleData, TrackedBus, TripPlan } from './components/MapView';
 import TopBar from './components/layout/TopBar';
 import BottomTabs from './components/layout/BottomTabs';
 import type { TabId } from './components/layout/BottomTabs';
 import ContextPanel from './components/panel/ContextPanel';
+import TrackingOverlay from './components/TrackingOverlay';
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('map');
@@ -14,6 +15,21 @@ export default function App() {
   const [busCount, setBusCount] = useState(0);
   const [delayedCount, setDelayedCount] = useState(0);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [trackedBus, setTrackedBus] = useState<TrackedBus | null>(null);
+  const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
+  const [liveVehicles, setLiveVehicles] = useState<VehicleData[]>([]);
+
+  // Auto-request geolocation on mount
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation([pos.coords.longitude, pos.coords.latitude]);
+      },
+      () => {},
+      { timeout: 10000, maximumAge: 60000 }
+    );
+  }, []);
 
   const handleRoutesLoaded = useCallback((r: Array<{ rt: string; rtnm: string }>) => {
     setRoutes(r);
@@ -22,16 +38,20 @@ export default function App() {
   const handleLiveDataUpdated = useCallback((vehicles: VehicleData[], delayed: number) => {
     setBusCount(vehicles.length);
     setDelayedCount(delayed);
+    setLiveVehicles(vehicles);
   }, []);
 
   const handleStopClick = useCallback((stop: StopClickEvent) => {
     setSelectedStop(stop);
     setTab('map');
+    setActiveTripPlan(null);
   }, []);
 
   const handleRouteSelect = useCallback((rt: string) => {
     setSelectedRoute(rt);
     setSelectedStop(null);
+    setTrackedBus(null);
+    setActiveTripPlan(null);
   }, []);
 
   const handleStopClear = useCallback(() => {
@@ -39,7 +59,25 @@ export default function App() {
   }, []);
 
   const handleUserLocation = useCallback((lat: number, lon: number) => {
-    setUserLocation([lon, lat]); // DeckGL uses [lon, lat]
+    setUserLocation([lon, lat]);
+  }, []);
+
+  const handleTrackBus = useCallback((bus: TrackedBus) => {
+    setTrackedBus(bus);
+    setSelectedStop(null);
+  }, []);
+
+  const handleStopTracking = useCallback(() => {
+    setTrackedBus(null);
+  }, []);
+
+  const handleTripPlanSelect = useCallback((plan: TripPlan) => {
+    setActiveTripPlan(plan);
+    setSelectedRoute(plan.routeId);
+  }, []);
+
+  const handleTripPlanClear = useCallback(() => {
+    setActiveTripPlan(null);
   }, []);
 
   return (
@@ -57,10 +95,20 @@ export default function App() {
           <MapView
             selectedRoute={selectedRoute}
             userLocation={userLocation}
+            trackedBus={trackedBus}
+            activeTripPlan={activeTripPlan}
             onRoutesLoaded={handleRoutesLoaded}
             onLiveDataUpdated={handleLiveDataUpdated}
             onStopClick={handleStopClick}
           />
+
+          {trackedBus && (
+            <TrackingOverlay
+              trackedBus={trackedBus}
+              vehicles={liveVehicles}
+              onStopTracking={handleStopTracking}
+            />
+          )}
 
           <BottomTabs
             active={tab}
@@ -76,10 +124,15 @@ export default function App() {
           selectedStop={selectedStop}
           busCount={busCount}
           delayedCount={delayedCount}
+          userLocation={userLocation}
           onRouteSelect={handleRouteSelect}
           onStopClear={handleStopClear}
           onStopSelect={handleStopClick}
           onUserLocation={handleUserLocation}
+          onTrackBus={handleTrackBus}
+          onTripPlanSelect={handleTripPlanSelect}
+          onTripPlanClear={handleTripPlanClear}
+          activeTripPlan={activeTripPlan}
         />
       </div>
     </div>
