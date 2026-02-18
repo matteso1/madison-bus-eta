@@ -47,8 +47,54 @@ OFFLINE_MODE = not bool(API_KEY)
 if not API_KEY:
     print("⚠️  Warning: MADISON_METRO_API_KEY not set. Live bus data endpoints will not work, falling back to offline route/stop data when possible.")
 
-"""Simple in-memory cache with TTL (seconds)."""
+"""Simple in-memory cache with TTL (seconds), with Postgres fallback."""
 CACHE = {}
+
+def _db_cache_save(key: str, value):
+    """Persist cache entry to Postgres for survive-deploy resilience."""
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        return
+    try:
+        from sqlalchemy import create_engine, text
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS api_cache (
+                    cache_key VARCHAR(200) PRIMARY KEY,
+                    value_json JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO api_cache (cache_key, value_json, updated_at)
+                VALUES (:key, :val, NOW())
+                ON CONFLICT (cache_key)
+                DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+            """), {"key": key, "val": json.dumps(value)})
+            conn.commit()
+    except Exception as e:
+        logging.debug(f"DB cache save failed for {key}: {e}")
+
+def _db_cache_load(key: str, max_age_hours: int = 24):
+    """Load cache entry from Postgres. Returns None if missing or too old."""
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        return None
+    try:
+        from sqlalchemy import create_engine, text
+        engine = create_engine(database_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT value_json FROM api_cache
+                WHERE cache_key = :key
+                  AND updated_at > NOW() - make_interval(hours => :hours)
+            """), {"key": key, "hours": max_age_hours}).fetchone()
+            if row:
+                return row[0] if isinstance(row[0], (dict, list)) else json.loads(row[0])
+    except Exception as e:
+        logging.debug(f"DB cache load failed for {key}: {e}")
+    return None
 
 COLLECTOR_STATUS_PATH = Path(__file__).parent / 'collector_status.json'
 
@@ -219,17 +265,22 @@ def _get_route_stats() -> dict:
         return _route_stats_cache.get('data', {})
 
 
-def cache_get(key: str):
+def cache_get(key: str, db_fallback: bool = False):
     item = CACHE.get(key)
-    if not item:
-        return None
-    if time.time() >= item["expires_at"]:
-        CACHE.pop(key, None)
-        return None
-    return item["value"]
+    if item and time.time() < item["expires_at"]:
+        return item["value"]
+    CACHE.pop(key, None)
+    if db_fallback:
+        db_val = _db_cache_load(key, max_age_hours=48)
+        if db_val is not None:
+            CACHE[key] = {"value": db_val, "expires_at": time.time() + 3600}
+            return db_val
+    return None
 
-def cache_set(key: str, value, ttl_seconds: int):
+def cache_set(key: str, value, ttl_seconds: int, persist: bool = False):
     CACHE[key] = {"value": value, "expires_at": time.time() + ttl_seconds}
+    if persist:
+        threading.Thread(target=_db_cache_save, args=(key, value), daemon=True).start()
 
 def _read_collector_status() -> Dict[str, Any]:
     """Read latest collector status persisted by the data collector."""
@@ -382,15 +433,18 @@ def fallback_empty(collection_name: str):
 @app.route("/routes")
 def get_routes():
     cache_key = "routes"
-    cached = cache_get(cache_key)
+    cached = cache_get(cache_key, db_fallback=True)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_routes()
     else:
         data = api_get("getroutes")
-    # Cache for 6 hours
-    cache_set(cache_key, data, 6 * 3600)
+        if "bustime-response" in data and "error" in data["bustime-response"]:
+            db_val = _db_cache_load(cache_key, max_age_hours=48)
+            if db_val is not None:
+                return jsonify(db_val)
+    cache_set(cache_key, data, 6 * 3600, persist=True)
     return jsonify(data)
 
 @app.route("/directions")
@@ -399,14 +453,18 @@ def get_directions():
     if not rt:
         return jsonify({"error": "Missing route param 'rt'"}), 400
     cache_key = f"directions:{rt}"
-    cached = cache_get(cache_key)
+    cached = cache_get(cache_key, db_fallback=True)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_directions(rt)
     else:
         data = api_get("getdirections", rt=rt)
-    cache_set(cache_key, data, 6 * 3600)
+        if "bustime-response" in data and "error" in data["bustime-response"]:
+            db_val = _db_cache_load(cache_key, max_age_hours=48)
+            if db_val is not None:
+                return jsonify(db_val)
+    cache_set(cache_key, data, 6 * 3600, persist=True)
     return jsonify(data)
 
 @app.route("/stops")
@@ -419,7 +477,7 @@ def get_stops():
     # If direction not specified, get stops for both directions
     if not dir_:
         cache_key = f"stops:{rt}:all"
-        cached = cache_get(cache_key)
+        cached = cache_get(cache_key, db_fallback=True)
         if cached is not None:
             return jsonify(cached)
         
@@ -452,19 +510,19 @@ def get_stops():
         
         stops_list = data.get("bustime-response", {}).get("stops", [])
         if stops_list:
-            cache_set(cache_key, data, 12 * 3600)
+            cache_set(cache_key, data, 12 * 3600, persist=True)
         return jsonify(data)
     
     # Original behavior with direction specified
     cache_key = f"stops:{rt}:{dir_}"
-    cached = cache_get(cache_key)
+    cached = cache_get(cache_key, db_fallback=True)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_stops(rt, dir_)
     else:
         data = api_get("getstops", rt=rt, dir=dir_)
-    cache_set(cache_key, data, 12 * 3600)
+    cache_set(cache_key, data, 12 * 3600, persist=True)
     return jsonify(data)
 
 @app.route("/stops/nearby")
@@ -555,7 +613,7 @@ def get_vehicles():
 
     # FIX: Fetch ALL routes if no params provided (Batching to avoid API limits)
     cache_key = "vehicles:ALL"
-    cached = cache_get(cache_key)
+    cached = cache_get(cache_key, db_fallback=True)
     if cached is not None:
         return jsonify(cached)
 
@@ -607,7 +665,7 @@ def get_vehicles():
     result = {"bustime-response": {"vehicle": all_vehicles}}
     
     # Short TTL
-    cache_set(cache_key, result, 15)
+    cache_set(cache_key, result, 15, persist=True)
     return jsonify(result)
 
 @app.route("/predictions")
@@ -645,7 +703,7 @@ def get_patterns():
         
         # Cache per-route+direction after filtering
         cache_key = f"patterns:{rt}:{dir_ or ''}"
-        cached = cache_get(cache_key)
+        cached = cache_get(cache_key, db_fallback=True)
         if cached is not None:
             return jsonify(cached)
         if OFFLINE_MODE:
@@ -675,7 +733,7 @@ def get_patterns():
             response["bustime-response"]["ptr"] = filtered_patterns
 
         # Cache filtered result for a while
-        cache_set(cache_key, response, 12 * 3600)
+        cache_set(cache_key, response, 12 * 3600, persist=True)
         return jsonify(response)
     except Exception as e:
         print(f"Error in patterns endpoint: {e}")
