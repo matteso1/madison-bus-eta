@@ -93,6 +93,11 @@ html, body, #root {
 .maplibregl-map .maplibregl-canvas-container + div {
   z-index: 1 !important;
 }
+/* DeckGL tooltip must render above everything including MapLibre markers */
+.deck-tooltip {
+  z-index: 100 !important;
+  pointer-events: none !important;
+}
 
 /* ── User Location Pulsing Marker ── */
 .user-loc-marker {

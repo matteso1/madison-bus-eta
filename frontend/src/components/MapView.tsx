@@ -145,6 +145,7 @@ export default function MapView({
     const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
     const [stopPredictions, setStopPredictions] = useState<Record<string, {route: string; minutes: number; destination: string}[]>>({});
     const mapRef = useRef<maplibregl.Map | null>(null);
+    const attemptedPatterns = useRef<Set<string>>(new Set());
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
@@ -210,7 +211,29 @@ export default function MapView({
         return () => clearInterval(timer);
     }, [selectedRoute, activeTripPlan, API_BASE]);
 
-    // Load routes + patterns ONCE (no routeReliability dependency = no double-render)
+    const parsePatternResponse = useCallback((res: any, rt: string): any[] => {
+        const parsed: any[] = [];
+        if (!res?.data?.['bustime-response']?.ptr) return parsed;
+        const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
+        const ptrs = res.data['bustime-response'].ptr;
+        const patterns = Array.isArray(ptrs) ? ptrs : [ptrs];
+        patterns.forEach((p: any) => {
+            if (!p?.pt?.length) return;
+            const path: [number, number][] = [];
+            const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
+            p.pt.forEach((pt: any, idx: number) => {
+                const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
+                path.push(pos);
+                if (pt.typ === 'S' && pt.stpid) {
+                    stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
+                }
+            });
+            parsed.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
+        });
+        return parsed;
+    }, []);
+
+    // Load routes + patterns with batched requests to avoid API rate limits
     useEffect(() => {
         const load = async () => {
             try {
@@ -218,41 +241,47 @@ export default function MapView({
                 const routeList = routesRes.data['bustime-response']?.routes || [];
                 onRoutesLoaded(routeList);
 
-                const patternResponses = await Promise.all(
-                    routeList.map((r: any) =>
-                        axios.get(`${API_BASE}/patterns?rt=${r.rt}`).catch(() => null)
-                    )
-                );
-
                 const allPatterns: any[] = [];
-                patternResponses.forEach((res, i) => {
-                    if (!res?.data?.['bustime-response']?.ptr) return;
-                    const rt = routeList[i].rt;
-                    const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
-
-                    const ptrs = res.data['bustime-response'].ptr;
-                    const patterns = Array.isArray(ptrs) ? ptrs : [ptrs];
-                    patterns.forEach((p: any) => {
-                        if (!p?.pt?.length) return;
-                        const path: [number, number][] = [];
-                        const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
-                        p.pt.forEach((pt: any, idx: number) => {
-                            const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
-                            path.push(pos);
-                            if (pt.typ === 'S' && pt.stpid) {
-                                stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
-                            }
-                        });
-                        allPatterns.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
+                const BATCH_SIZE = 5;
+                for (let i = 0; i < routeList.length; i += BATCH_SIZE) {
+                    const batch = routeList.slice(i, i + BATCH_SIZE);
+                    const batchResults = await Promise.all(
+                        batch.map((r: any) =>
+                            axios.get(`${API_BASE}/patterns?rt=${r.rt}`).catch(() => null)
+                        )
+                    );
+                    batchResults.forEach((res, j) => {
+                        const rt = batch[j].rt;
+                        allPatterns.push(...parsePatternResponse(res, rt));
                     });
-                });
+                }
                 setPatternsData(allPatterns);
             } catch (e) {
                 console.error('Failed to load routes/patterns:', e);
             }
         };
         load();
-    }, [API_BASE, onRoutesLoaded]);
+    }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
+
+    // On-demand pattern loading: if a route is selected but has no pattern data, fetch it
+    useEffect(() => {
+        if (selectedRoute === 'ALL') return;
+        if (attemptedPatterns.current.has(selectedRoute)) return;
+        const hasPatterns = patternsData.some(p => p.route === selectedRoute);
+        if (hasPatterns) return;
+
+        attemptedPatterns.current.add(selectedRoute);
+        const loadRoutePattern = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/patterns?rt=${selectedRoute}`);
+                const parsed = parsePatternResponse(res, selectedRoute);
+                if (parsed.length > 0) {
+                    setPatternsData(prev => [...prev, ...parsed]);
+                }
+            } catch {}
+        };
+        loadRoutePattern();
+    }, [selectedRoute, patternsData, API_BASE, parsePatternResponse]);
 
     // Live vehicle polling — faster when tracking
     useEffect(() => {
@@ -619,13 +648,13 @@ export default function MapView({
                 opacity: trackedBus ? 0.35 : 1,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: trackedBus ? 5 : 8,
+                radiusMinPixels: trackedBus ? 5 : 9,
                 radiusMaxPixels: trackedBus ? 10 : 20,
-                lineWidthMinPixels: 2,
+                lineWidthMinPixels: 3,
                 getPosition: (d: any) => d.position,
                 getRadius: 50,
-                getFillColor: (d: any) => d.dly ? [239, 68, 68] : d.color,
-                getLineColor: [255, 255, 255],
+                getFillColor: (d: any) => d.dly ? [239, 68, 68] : [255, 255, 255],
+                getLineColor: (d: any) => d.dly ? [255, 255, 255] : d.color,
                 onHover: ({ object }) => setHoveredVehicle(object ? object.vid : null),
             }));
         }
@@ -659,12 +688,12 @@ export default function MapView({
                             </div>`).join('') + `</div>`;
                     }
                     return {
-                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:10px 14px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;">
+                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:10px 14px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
                             <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${object.stpnm}</div>
                             <div style="font-size:10px;color:#64748b;font-family:JetBrains Mono,monospace;">Stop #${object.stpid}</div>
                             ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for ML predictions</div>'}
                         </div>`,
-                        style: { backgroundColor: 'transparent' }
+                        style: { backgroundColor: 'transparent', zIndex: 100, pointerEvents: 'none' }
                     };
                 }
 
@@ -685,7 +714,7 @@ export default function MapView({
                     }
 
                     return {
-                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:12px 16px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;min-width:200px;">
+                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:12px 16px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;min-width:200px;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                                 <span style="font-weight:600;font-size:14px;">Route ${object.route}</span>
                                 <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${object.dly ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};color:${object.dly ? '#ef4444' : '#10b981'};font-family:JetBrains Mono,monospace;">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
@@ -694,7 +723,7 @@ export default function MapView({
                             <div style="font-size:10px;color:#374151;font-family:JetBrains Mono,monospace;margin-top:2px;">VID ${object.vid}</div>
                             ${etaHtml}
                         </div>`,
-                        style: { backgroundColor: 'transparent' }
+                        style: { backgroundColor: 'transparent', zIndex: 100, pointerEvents: 'none' }
                     };
                 }
 
