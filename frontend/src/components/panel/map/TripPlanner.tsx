@@ -82,7 +82,7 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
     );
   }, [userLocation, onUserLocation]);
 
-  // Search both stops and places
+  // Search both stops and places — keep previous results if new search returns empty
   const searchAll = useCallback(async (q: string) => {
     if (q.length < 2) { setStopResults([]); setPlaceResults([]); return; }
     setSearching(true);
@@ -92,9 +92,10 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
       .then(res => res.data.stops || [])
       .catch(() => []);
 
+    // Search Nominatim with multiple strategies for better partial matching
     const placesProm = q.length >= 3
-      ? axios
-          .get('https://nominatim.openstreetmap.org/search', {
+      ? Promise.all([
+          axios.get('https://nominatim.openstreetmap.org/search', {
             params: {
               q: `${q}, Madison, WI`,
               format: 'json',
@@ -102,22 +103,42 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
               viewbox: '-89.6,43.2,-89.1,42.95',
               bounded: 1,
             },
-          })
-          .then(res =>
-            (res.data || []).map((r: any) => ({
+          }).catch(() => ({ data: [] })),
+          axios.get('https://nominatim.openstreetmap.org/search', {
+            params: {
+              q: `${q}`,
+              format: 'json',
+              limit: 3,
+              viewbox: '-89.6,43.2,-89.1,42.95',
+              bounded: 1,
+            },
+          }).catch(() => ({ data: [] })),
+        ]).then(([r1, r2]) => {
+          const seen = new Set<string>();
+          const combined: PlaceResult[] = [];
+          for (const r of [...(r1.data || []), ...(r2.data || [])]) {
+            const key = `${parseFloat(r.lat).toFixed(4)},${parseFloat(r.lon).toFixed(4)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            combined.push({
               name: r.display_name.split(',')[0].trim(),
               fullName: r.display_name.split(',').slice(0, 3).join(',').trim(),
               lat: parseFloat(r.lat),
               lon: parseFloat(r.lon),
               type: r.type || r.class || '',
-            }))
-          )
-          .catch(() => [])
+            });
+          }
+          return combined.slice(0, 5);
+        })
       : Promise.resolve([]);
 
     const [stops, places] = await Promise.all([stopsProm, placesProm]);
-    setStopResults(stops);
-    setPlaceResults(places);
+    // Only replace results if new search found something — prevents
+    // partial-word queries from clearing good results
+    if (stops.length > 0 || places.length > 0) {
+      setStopResults(stops);
+      setPlaceResults(places);
+    }
     setSearching(false);
   }, [API_BASE]);
 

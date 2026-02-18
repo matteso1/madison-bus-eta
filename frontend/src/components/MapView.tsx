@@ -345,24 +345,42 @@ export default function MapView({
             }
         }
 
+        console.log('[TripSegment]', {
+            route: activeTripPlan.routeId,
+            patterns: routePatterns.length,
+            oPos, dPos,
+            segmentPoints: bestSegment.length,
+            segmentLen: bestSegLen.toFixed(4),
+        });
+
         return bestSegment;
     }, [activeTripPlan, patternsData]);
 
-    // Walking dashed paths for trip
+    // Walking paths for trip
     const tripWalkPaths = useMemo(() => {
         if (!activeTripPlan || !userLocation) return [];
         const paths: { path: [number, number][] }[] = [];
 
-        paths.push({
-            path: [userLocation, [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat]],
-        });
+        // Walk from user location to origin bus stop
+        const originPos: [number, number] = [activeTripPlan.originStop.lon, activeTripPlan.originStop.lat];
+        paths.push({ path: [userLocation, originPos] });
 
+        // Walk from destination bus stop to final destination (if different)
         const fd = activeTripPlan.finalDestination;
-        const dsPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
-        const fdPos: [number, number] = [fd.lon, fd.lat];
-        if (Math.abs(dsPos[0] - fdPos[0]) > 0.0001 || Math.abs(dsPos[1] - fdPos[1]) > 0.0001) {
-            paths.push({ path: [dsPos, fdPos] });
+        const destStopPos: [number, number] = [activeTripPlan.destStop.lon, activeTripPlan.destStop.lat];
+        const finalDestPos: [number, number] = [fd.lon, fd.lat];
+        const destDelta = Math.abs(destStopPos[0] - finalDestPos[0]) + Math.abs(destStopPos[1] - finalDestPos[1]);
+        if (destDelta > 0.0001) {
+            paths.push({ path: [destStopPos, finalDestPos] });
         }
+
+        console.log('[TripWalk]', {
+            userLoc: userLocation,
+            originStop: originPos,
+            destStop: destStopPos,
+            finalDest: finalDestPos,
+            pathCount: paths.length,
+        });
 
         return paths;
     }, [activeTripPlan, userLocation]);
@@ -409,23 +427,7 @@ export default function MapView({
             }));
         }
 
-        // 3) Trip walking dashed lines — render UNDER bus segment, Google Maps blue dotted
-        if (tripWalkPaths.length > 0) {
-            L.push(new PathLayer({
-                id: 'trip-walk-paths',
-                data: tripWalkPaths,
-                getPath: (d: any) => d.path,
-                getColor: [100, 160, 255, 255],
-                getWidth: 6,
-                widthMinPixels: 5,
-                capRounded: true,
-                getDashArray: [4, 8],
-                dashJustified: true,
-                extensions: [dashExtension],
-            }));
-        }
-
-        // 4) Trip bus route segment — thick Google Maps blue
+        // 3) Trip bus route segment — thick Google Maps blue
         if (tripRouteSegment) {
             L.push(new PathLayer({
                 id: 'trip-segment',
@@ -433,9 +435,45 @@ export default function MapView({
                 getPath: (d: any) => d.path,
                 getColor: [66, 133, 244, 255],
                 getWidth: 10,
-                widthMinPixels: 6,
+                widthMinPixels: 7,
                 capRounded: true,
                 jointRounded: true,
+            }));
+        }
+
+        // 4) Trip walking lines — solid grey, thinner, renders ON TOP of bus segment
+        if (tripWalkPaths.length > 0) {
+            L.push(new PathLayer({
+                id: 'trip-walk-paths',
+                data: tripWalkPaths,
+                getPath: (d: any) => d.path,
+                getColor: [180, 180, 180, 230],
+                getWidth: 5,
+                widthMinPixels: 4,
+                capRounded: true,
+                jointRounded: true,
+            }));
+            // Dotted overlay to create walking effect
+            L.push(new ScatterplotLayer({
+                id: 'trip-walk-dots',
+                data: tripWalkPaths.flatMap(wp => {
+                    const pts: { position: [number, number] }[] = [];
+                    const [a, b] = wp.path;
+                    const dx = b[0] - a[0], dy = b[1] - a[1];
+                    const dist = Math.hypot(dx, dy);
+                    const step = 0.001; // ~100m spacing between dots
+                    const count = Math.max(2, Math.floor(dist / step));
+                    for (let i = 0; i <= count; i++) {
+                        const t = i / count;
+                        pts.push({ position: [a[0] + dx * t, a[1] + dy * t] });
+                    }
+                    return pts;
+                }),
+                getPosition: (d: any) => d.position,
+                getFillColor: [255, 255, 255, 255],
+                getRadius: 15,
+                radiusMinPixels: 3,
+                radiusMaxPixels: 5,
             }));
         }
 
