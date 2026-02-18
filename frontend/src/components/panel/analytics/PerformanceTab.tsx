@@ -75,8 +75,8 @@ export default function PerformanceTab() {
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
             MAE Trend (training runs)
           </div>
-          <div style={{ height: 80 }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ height: 80, minHeight: 80 }}>
+            <ResponsiveContainer width="99%" height={80}>
               <AreaChart data={history} margin={{ top: 2, right: 2, bottom: 2, left: -20 }}>
                 <defs>
                   <linearGradient id="maeGrad" x1="0" y1="0" x2="0" y2="1">

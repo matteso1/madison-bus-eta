@@ -36,8 +36,8 @@ export default function ErrorsTab() {
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
             MAE by Prediction Horizon
           </div>
-          <div style={{ height: 100 }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ height: 100, minHeight: 100 }}>
+            <ResponsiveContainer width="99%" height={100}>
               <BarChart data={horizonData} margin={{ top: 2, right: 2, bottom: 2, left: -18 }}>
                 <XAxis dataKey="horizon" tick={{ fontSize: 9, fill: '#64748b' }} />
                 <YAxis tick={{ fontSize: 9, fill: '#64748b' }} width={28} />

@@ -1708,34 +1708,44 @@ def predict_arrival_v2():
         is_moving_fast = 0
         has_velocity_data = 0
 
-        # Feature vector - order MUST match get_regression_feature_columns()
-        features = np.array([[
-            # Horizon features
+        # Build feature vector matching the model's training feature set.
+        # Check n_features_in_ to handle both old (19-feature) and new (44-feature) models.
+        n_expected = models[0.5].n_features_in_
+
+        # Full 44-feature vector (new model)
+        features_44 = [
             horizon_min, horizon_squared, horizon_log, horizon_bucket, is_long_horizon,
-            # Temporal cyclical
             hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
-            # Temporal flags
             is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
-            # Route
             route_frequency, route_encoded,
-            # Constraint
             predicted_minutes,
-            # Historical ETA patterns
             route_avg_error, route_error_std, hr_route_error,
-            # Route-horizon interaction
             route_horizon_error, route_horizon_std,
-            # Day-of-week
             dow_avg_error,
-            # Stop-level
             stop_avg_error_val, stop_error_std,
-            # Weather
             temp_celsius, is_cold, is_hot, precipitation_mm, snow_mm,
             is_raining, is_snowing, is_precipitating,
             wind_speed, is_windy, visibility_km, low_visibility, is_severe_weather,
-            # Velocity
             avg_speed, speed_stddev, speed_variability,
             is_stopped, is_slow, is_moving_fast, has_velocity_data,
-        ]])
+        ]
+
+        # Legacy 19-feature vector (models trained before expanded feature set)
+        features_19 = [
+            horizon_min, horizon_squared, horizon_bucket,
+            hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
+            is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
+            route_frequency, route_encoded, predicted_minutes,
+            route_avg_error, hr_route_error,
+        ]
+
+        if n_expected == 44:
+            features = np.array([features_44])
+        elif n_expected == 19:
+            features = np.array([features_19])
+        else:
+            # Unknown model shape — use the closest match we have
+            features = np.array([features_44[:n_expected] if n_expected <= 44 else features_44])
         
         # Predict error at each quantile
         error_10 = models[0.1].predict(features)[0]  # Best case error
@@ -4186,14 +4196,16 @@ def get_route_reliability():
                     rating_color = "red"
                 
                 routes.append({
-                    "route": route,
+                    "route_id": route,        # frontend expects route_id
+                    "route": route,           # keep for backwards compat
                     "prediction_count": prediction_count,
+                    "avg_error": round(avg_error, 1),    # frontend expects avg_error
                     "avg_error_sec": round(avg_error, 0),
                     "median_error_sec": round(median_error, 0),
                     "error_std": round(error_std, 0),
                     "within_1min_pct": round(within_1min, 1),
                     "within_2min_pct": round(within_2min, 1),
-                    "reliability_score": round(reliability_score, 0),
+                    "reliability_score": round(reliability_score / 100, 3),  # frontend expects 0..1
                     "rating": rating,
                     "rating_color": rating_color
                 })
