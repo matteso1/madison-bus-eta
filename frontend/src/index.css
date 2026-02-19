@@ -83,10 +83,17 @@ html, body, #root {
    marker container to sit above it. */
 .maplibregl-marker {
   z-index: 20 !important;
+  pointer-events: auto !important;
 }
 #deckgl-overlay,
 #deckgl-wrapper {
   z-index: 1 !important;
+}
+#deckgl-overlay {
+  pointer-events: none !important;
+}
+#deckgl-overlay canvas {
+  pointer-events: auto !important;
 }
 .maplibregl-map .maplibregl-canvas-container ~ div:not(.maplibregl-control-container):not(.maplibregl-marker) {
   z-index: 1 !important;
@@ -239,6 +246,37 @@ html, body, #root {
 @keyframes bus-ping {
   0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+}
+
+/* ── Selected Stop Marker ── */
+.selected-stop-marker {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.selected-stop-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.25);
+  animation: stop-pulse 1.5s ease-out infinite;
+}
+.selected-stop-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #00d4ff;
+  border: 3px solid #fff;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.9), 0 0 32px rgba(0, 212, 255, 0.5), 0 0 48px rgba(0, 212, 255, 0.3);
+  z-index: 1;
+}
+@keyframes stop-pulse {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
 }
 
 /* ── Trip Stop Labels ── */

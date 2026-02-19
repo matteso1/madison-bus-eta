@@ -807,14 +807,10 @@ export default function MapView({
                 {/* Selected stop highlight (visible both when browsing and tracking) */}
                 {selectedStopPosition && !trackedBus && (
                     <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
-                        <div style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: '50%',
-                            background: '#00d4ff',
-                            border: '3px solid white',
-                            boxShadow: '0 0 12px rgba(0,212,255,0.6), 0 0 24px rgba(0,212,255,0.3)',
-                        }} />
+                        <div className="selected-stop-marker">
+                            <div className="selected-stop-pulse" />
+                            <div className="selected-stop-dot" />
+                        </div>
                     </Marker>
                 )}
 
