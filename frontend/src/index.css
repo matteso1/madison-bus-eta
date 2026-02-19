@@ -143,8 +143,8 @@ html, body, #root {
 /* ── Tracked Bus Marker ── */
 .tracked-bus-marker {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -154,17 +154,25 @@ html, body, #root {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  border: 2px solid var(--signal);
-  animation: bus-ping 1.5s ease-out infinite;
+  border: 2px solid rgba(255, 140, 0, 0.6);
+  animation: bus-ping 2s ease-out infinite;
 }
 .tracked-bus-marker .bus-dot {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--signal);
-  border: 3px solid #fff;
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.8);
+  background: #fff;
+  border: 3px solid #333;
+  box-shadow: 0 0 12px rgba(255, 140, 0, 0.6);
   z-index: 1;
+}
+.tracked-bus-marker .bus-arrow {
+  position: absolute;
+  top: -14px;
+  font-size: 16px;
+  color: #ff8c00;
+  z-index: 2;
+  filter: drop-shadow(0 0 4px rgba(255, 140, 0, 0.8));
 }
 @keyframes bus-ping {
   0% { transform: scale(0.8); opacity: 1; }
@@ -185,7 +193,7 @@ html, body, #root {
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
 .trip-label--origin {
-  border: 1px solid rgba(66, 133, 244, 0.6);
+  border: 1px solid rgba(52, 168, 83, 0.6);
 }
 .trip-label--dest {
   border: 1px solid rgba(234, 67, 53, 0.6);
@@ -194,8 +202,8 @@ html, body, #root {
   font-family: var(--font-data);
   font-size: 10px;
   font-weight: 700;
-  color: #4285F4;
-  background: rgba(66, 133, 244, 0.15);
+  color: #34a853;
+  background: rgba(52, 168, 83, 0.15);
   border-radius: 3px;
   padding: 1px 4px;
 }
