@@ -611,9 +611,10 @@ def get_vehicles():
         cache_set(cache_key, data, 15)
         return jsonify(data)
 
-    # FIX: Fetch ALL routes if no params provided (Batching to avoid API limits)
+    # Fetch ALL routes if no params provided (batching to avoid API limits).
+    # NEVER use DB fallback for vehicle positions — stale data is worse than no data.
     cache_key = "vehicles:ALL"
-    cached = cache_get(cache_key, db_fallback=True)
+    cached = cache_get(cache_key, db_fallback=False)
     if cached is not None:
         return jsonify(cached)
 
@@ -664,8 +665,8 @@ def get_vehicles():
     # 4. Construct Response
     result = {"bustime-response": {"vehicle": all_vehicles}}
     
-    # Short TTL
-    cache_set(cache_key, result, 15, persist=True)
+    # Short TTL, no DB persistence — vehicle positions must always be fresh
+    cache_set(cache_key, result, 15, persist=False)
     return jsonify(result)
 
 @app.route("/predictions")

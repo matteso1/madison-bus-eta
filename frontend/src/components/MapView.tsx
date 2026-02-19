@@ -92,8 +92,6 @@ const ROUTE_COLORS: Record<string, [number, number, number]> = {
 
 const DEFAULT_ROUTE_COLOR: [number, number, number] = [140, 180, 220];
 
-const predictionCache: Record<string, { prediction: any; timestamp: number }> = {};
-const CACHE_TTL = 60000;
 
 export interface StopClickEvent {
     stpid: string;
@@ -149,34 +147,13 @@ export default function MapView({
     const [routePatterns, setRoutePatterns] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
     const routeDirectionsRef = useRef<any[]>([]);
-    const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
     const [stopPredictions, setStopPredictions] = useState<Record<string, {route: string; minutes: number; destination: string}[]>>({});
     const mapRef = useRef<maplibregl.Map | null>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
-    const getMLPrediction = useCallback(async (vehicle: VehicleData, apiPrediction = 10) => {
-        const cacheKey = `${vehicle.vid}-${vehicle.route}`;
-        const cached = predictionCache[cacheKey];
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.prediction;
-        try {
-            const res = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
-                route: vehicle.route,
-                stop_id: 'live_tracking',
-                vehicle_id: vehicle.vid,
-                api_prediction: apiPrediction
-            });
-            predictionCache[cacheKey] = { prediction: res.data, timestamp: Date.now() };
-            return res.data;
-        } catch { return null; }
-    }, [API_BASE]);
-
-    const [, forceTooltipUpdate] = useState(0);
-    useEffect(() => {
-        if (!hoveredVehicle) return;
-        const vehicle = liveData.find(v => v.vid === hoveredVehicle);
-        if (vehicle) getMLPrediction(vehicle).then(() => forceTooltipUpdate(c => c + 1));
-    }, [hoveredVehicle, liveData, getMLPrediction]);
+    // ML predictions are fetched per-stop (in StopPredictions and TrackingOverlay),
+    // not on bus hover — bus tooltip just shows route/destination info.
 
     // Load structured route data: directions, patterns, ordered stops
     useEffect(() => {
@@ -333,23 +310,33 @@ export default function MapView({
         load();
     }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
 
-    // Live vehicle polling — faster when tracking
+    // Live vehicle polling — route-specific when a route is selected, all when on overview
     useEffect(() => {
-        const interval = trackedBus ? 5000 : 15000;
+        const isTracking = !!trackedBus;
+        const hasRoute = selectedRoute !== 'ALL';
+        const routeToFetch = trackedBus?.route || (hasRoute ? selectedRoute : null);
+        const interval = isTracking ? 5000 : hasRoute ? 10000 : 30000;
+
+        const mapVehicles = (vehicles: any[]): VehicleData[] =>
+            vehicles.map((v: any) => ({
+                position: [parseFloat(v.lon), parseFloat(v.lat)],
+                route: v.rt,
+                vid: v.vid,
+                des: v.des,
+                dly: v.dly === true || v.dly === 'true',
+                color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
+            }));
+
         const fetchLive = async () => {
             try {
-                const res = await axios.get(`${API_BASE}/vehicles`);
+                const url = routeToFetch
+                    ? `${API_BASE}/vehicles?rt=${routeToFetch}`
+                    : `${API_BASE}/vehicles`;
+                const res = await axios.get(url);
                 const vehicles = res.data?.['bustime-response']?.vehicle;
-                if (!vehicles) return;
+                if (!vehicles) { setLiveData([]); return; }
                 const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
-                const mapped: VehicleData[] = arr.map((v: any) => ({
-                    position: [parseFloat(v.lon), parseFloat(v.lat)],
-                    route: v.rt,
-                    vid: v.vid,
-                    des: v.des,
-                    dly: v.dly === true || v.dly === 'true',
-                    color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
-                }));
+                const mapped = mapVehicles(arr);
                 setLiveData(mapped);
                 onLiveDataUpdated(mapped, mapped.filter(v => v.dly).length);
             } catch (e) {
@@ -359,7 +346,7 @@ export default function MapView({
         fetchLive();
         const timer = setInterval(fetchLive, interval);
         return () => clearInterval(timer);
-    }, [API_BASE, onLiveDataUpdated, trackedBus]);
+    }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute]);
 
     // Auto-pan to tracked bus
     useEffect(() => {
@@ -696,7 +683,6 @@ export default function MapView({
                 getRadius: 50,
                 getFillColor: [255, 255, 255],
                 getLineColor: [30, 30, 50],
-                onHover: ({ object }) => setHoveredVehicle(object ? object.vid : null),
             }));
         }
 
@@ -739,30 +725,15 @@ export default function MapView({
                 }
 
                 if (object.vid) {
-                    const cacheKey = `${object.vid}-${object.route}`;
-                    const mlPrediction = predictionCache[cacheKey]?.prediction;
-
-                    let etaHtml = '';
-                    if (mlPrediction?.model_available) {
-                        const lo = Math.round(mlPrediction.eta_low_min);
-                        const hi = Math.round(mlPrediction.eta_high_min);
-                        const med = Math.round(mlPrediction.eta_median_min);
-                        etaHtml = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #1e1e2e;">
-                            <div style="font-size:9px;color:#64748b;letter-spacing:0.08em;margin-bottom:4px;">ML-CORRECTED ETA</div>
-                            <div style="font-size:18px;color:#00d4ff;font-weight:700;font-family:JetBrains Mono,monospace;">${lo}–${hi} min</div>
-                            <div style="font-size:10px;color:#64748b;margin-top:2px;">median ${med} min</div>
-                        </div>`;
-                    }
-
                     return {
-                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:12px 16px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;min-width:200px;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-                                <span style="font-weight:600;font-size:14px;">Route ${object.route}</span>
+                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:12px 16px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                <span style="font-weight:700;font-size:16px;color:#00d4ff;">Route ${object.route}</span>
                                 <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${object.dly ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};color:${object.dly ? '#ef4444' : '#10b981'};font-family:JetBrains Mono,monospace;">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
                             </div>
-                            <div style="font-size:11px;color:#64748b;">${object.des || 'Unknown destination'}</div>
-                            <div style="font-size:10px;color:#374151;font-family:JetBrains Mono,monospace;margin-top:2px;">VID ${object.vid}</div>
-                            ${etaHtml}
+                            <div style="font-size:12px;color:#e2e8f0;font-weight:500;">→ ${object.des || 'Unknown'}</div>
+                            <div style="font-size:10px;color:#475569;font-family:JetBrains Mono,monospace;margin-top:4px;">Bus ${object.vid}</div>
+                            <div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click a stop for arrival times</div>
                         </div>`,
                         style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };
