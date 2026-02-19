@@ -1,27 +1,25 @@
 """
-Madison Metro Data Collector - OPTIMIZED
+Madison Metro Data Collector
 
-Runs 24/7 on Railway, collecting maximum bus data within API rate limits.
+Runs 24/7 on Railway, collecting bus data from multiple sources:
 
-RATE LIMIT STRATEGY:
-- Madison Metro: ~10,000 requests/day = 417 req/hour = 6.9 req/min
-- We collect: vehicles (1 req) + predictions per route batch (varies)
+1. REST API  — Vehicle positions + arrival predictions (rate-limited)
+2. GTFS-RT   — Trip updates + vehicle positions (free, protobuf feeds)
+3. Static GTFS — Schedule data, loaded once then refreshed weekly
 
-COLLECTION STRATEGY:
-- Vehicles: Every 20 seconds (4320 req/day base)
-- Predictions: Batch routes, cycle through all stops
-- This leaves room for ~5680 prediction requests/day
-
-With 29 routes and batching 10 at a time = 3 batches
-Every 5 minutes = 288 prediction batches/day = ~864 requests
-Total: 4320 + 864 = ~5200 req/day (well under 10k, room to grow)
+RATE LIMIT STRATEGY (REST API only):
+- Madison Metro: ~10,000 requests/day = 417 req/hour
+- Vehicles every 60s + predictions every 120s ≈ 5,200 req/day
+- GTFS-RT feeds are FREE and don't count against the API key limit
 """
 
 import os
 import json
 import time
 import logging
+import threading
 from datetime import datetime, timezone
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 import requests
@@ -31,7 +29,11 @@ from dotenv import load_dotenv
 try:
     from db import (
         save_vehicles_to_db, save_predictions_to_db, get_db_engine,
-        save_arrivals_to_db, save_prediction_outcomes_to_db, get_pending_predictions
+        save_arrivals_to_db, save_prediction_outcomes_to_db, get_pending_predictions,
+        save_gtfsrt_stop_times, save_gtfsrt_vehicle_positions,
+        save_gtfs_stops, save_gtfs_trips, save_gtfs_stop_times,
+        save_gtfs_feed_info, save_segment_travel_times,
+        get_unprocessed_gtfsrt_stop_times, get_scheduled_travel_time,
     )
     DB_AVAILABLE = True
 except ImportError:
@@ -47,12 +49,37 @@ except ImportError as e:
     logging.warning(f"Arrival detector import error: {e}")
     ARRIVAL_DETECTOR_AVAILABLE = False
 
+# Import GTFS-RT collector
 try:
-    from sentinel_client import SentinelClient
-    SENTINEL_CLIENT_AVAILABLE = True
+    from gtfsrt_collector import collect_gtfsrt
+    GTFSRT_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Sentinel Import Error: {e}")
-    SENTINEL_CLIENT_AVAILABLE = False
+    logging.warning(f"GTFS-RT collector import error: {e}")
+    GTFSRT_AVAILABLE = False
+
+# Import static GTFS loader
+try:
+    from gtfs_static_loader import load_static_gtfs
+    GTFS_STATIC_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Static GTFS loader import error: {e}")
+    GTFS_STATIC_AVAILABLE = False
+
+# Import segment builder
+try:
+    from segment_builder import build_segments
+    SEGMENT_BUILDER_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Segment builder import error: {e}")
+    SEGMENT_BUILDER_AVAILABLE = False
+
+# Import DB maintenance
+try:
+    from db_maintenance import run_full_maintenance
+    DB_MAINTENANCE_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"DB maintenance import error: {e}")
+    DB_MAINTENANCE_AVAILABLE = False
 
 load_dotenv()
 
@@ -60,17 +87,14 @@ load_dotenv()
 API_KEY = os.getenv('MADISON_METRO_API_KEY')
 API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.com/bustime/api/v3')
 
-# Collection intervals (in seconds)
-VEHICLE_INTERVAL = 60      # Get all vehicles every 60s
-PREDICTION_INTERVAL = 120  # Get predictions every 2 min (was 5 min)
+# Collection intervals (in seconds) — configurable via env vars
+VEHICLE_INTERVAL = int(os.getenv('VEHICLE_INTERVAL', '60'))
+PREDICTION_INTERVAL = int(os.getenv('PREDICTION_INTERVAL', '120'))
+GTFSRT_INTERVAL = int(os.getenv('GTFSRT_INTERVAL', '30'))
+SEGMENT_BUILD_INTERVAL = int(os.getenv('SEGMENT_BUILD_INTERVAL', '300'))
 
 DATA_DIR = Path(__file__).parent / 'data'
 DATA_DIR.mkdir(exist_ok=True)
-
-# Optional Sentinel config
-SENTINEL_ENABLED = os.getenv('SENTINEL_ENABLED', 'false').lower() == 'true'
-SENTINEL_HOST = os.getenv('SENTINEL_HOST', 'localhost')
-SENTINEL_PORT = int(os.getenv('SENTINEL_PORT', '9092'))
 
 # Database config (optional - for persistent storage)
 DATABASE_URL = os.getenv('DATABASE_URL')
@@ -84,18 +108,20 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Sentinel Client Instance
-sentinel_client: Optional['SentinelClient'] = None
-
 stats = {
     'vehicles_collected': 0,
     'predictions_collected': 0,
     'arrivals_detected': 0,
     'predictions_matched': 0,
     'requests_today': 0,
+    'gtfsrt_trip_updates': 0,
+    'gtfsrt_vehicle_positions': 0,
+    'segments_built': 0,
     'started_at': None,
     'last_vehicle_fetch': None,
-    'last_prediction_fetch': None
+    'last_prediction_fetch': None,
+    'last_gtfsrt_fetch': None,
+    'last_segment_build': None,
 }
 
 # Global arrival detector instance
@@ -388,7 +414,7 @@ def collect_vehicles() -> dict:
     stats['vehicles_collected'] += len(vehicles)
     stats['last_vehicle_fetch'] = timestamp
     
-    # Save to database (Dual-write for reliability)
+    # Save to database
     # Deduplication handled by DB constraints (ON CONFLICT DO NOTHING)
     db_count = 0
     if DB_AVAILABLE and DATABASE_URL:
@@ -400,13 +426,7 @@ def collect_vehicles() -> dict:
     if vehicles:
         process_arrivals(vehicles)
     
-    # Send to Sentinel
-    sentinel_msg = ""
-    if sentinel_client:
-        success = sentinel_client.produce('madison-metro-vehicles', data)
-        sentinel_msg = ", ✓ Streamed" if success else ", ✗ Stream Fail"
-        
-    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}{sentinel_msg}")
+    logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}")
     
     return data
 
@@ -434,20 +454,14 @@ def collect_predictions(vehicle_ids: list) -> dict:
     stats['predictions_collected'] += len(all_predictions)
     stats['last_prediction_fetch'] = timestamp
     
-    # Save to database (Dual-write for reliability)
+    # Save to database
     db_count = 0
     if DB_AVAILABLE and DATABASE_URL:
         db_count = save_predictions_to_db(all_predictions)
     
     db_msg = f", {db_count} to DB" if db_count else ""
 
-    # Send to Sentinel
-    sentinel_msg = ""
-    if sentinel_client:
-        success = sentinel_client.produce('madison-metro-predictions', data)
-        sentinel_msg = ", ✓ Streamed" if success else ", ✗ Stream Fail"
-
-    logger.info(f"Predictions: {len(all_predictions)} for {len(vehicle_ids)} vehicles → {filename.name}{db_msg}{sentinel_msg}")
+    logger.info(f"Predictions: {len(all_predictions)} for {len(vehicle_ids)} vehicles → {filename.name}{db_msg}")
     
     return data
 
@@ -464,32 +478,130 @@ def log_stats():
     logger.info(f"  Predictions collected: {stats['predictions_collected']}")
     logger.info(f"  Arrivals detected: {stats['arrivals_detected']}")
     logger.info(f"  Predictions matched: {stats['predictions_matched']}")
+    logger.info(f"  GTFS-RT trip updates: {stats['gtfsrt_trip_updates']}")
+    logger.info(f"  GTFS-RT vehicle positions: {stats['gtfsrt_vehicle_positions']}")
+    logger.info(f"  Segments built: {stats['segments_built']}")
     logger.info(f"  API requests today: {stats['requests_today']}")
     logger.info(f"  Rate: {stats['requests_today']/max(hours,0.1):.1f} req/hour")
     logger.info("=" * 50)
 
 
+class _HealthHandler(BaseHTTPRequestHandler):
+    """Simple HTTP handler for health checks (used by Railway)."""
+
+    def do_GET(self):
+        if self.path == "/health" or self.path == "/":
+            body = json.dumps({
+                "status": "ok",
+                "uptime_hours": round(
+                    (time.time() - _health_start_time) / 3600, 2
+                ) if _health_start_time else 0,
+                "stats": {k: v for k, v in stats.items() if k != "started_at"},
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # suppress default access logs
+
+_health_start_time: float = 0
+
+
+def _start_health_server():
+    """Launch a lightweight HTTP health-check server in a daemon thread."""
+    global _health_start_time
+    _health_start_time = time.time()
+
+    port = int(os.getenv("HEALTH_PORT", os.getenv("PORT", "8080")))
+    try:
+        server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        logger.info(f"Health check: ✓ listening on :{port}")
+    except Exception as e:
+        logger.warning(f"Health check server failed to start: {e}")
+
+
+def _init_static_gtfs():
+    """Load static GTFS schedule data on startup (if available and DB connected)."""
+    if not GTFS_STATIC_AVAILABLE or not DB_AVAILABLE or not DATABASE_URL:
+        logger.info("Static GTFS: Skipped (missing deps or no DB)")
+        return
+
+    try:
+        result = load_static_gtfs(
+            save_stops_fn=save_gtfs_stops,
+            save_trips_fn=save_gtfs_trips,
+            save_stop_times_fn=save_gtfs_stop_times,
+            save_feed_info_fn=save_gtfs_feed_info,
+        )
+        if "error" in result:
+            logger.warning(f"Static GTFS: {result['error']}")
+        else:
+            logger.info(
+                f"Static GTFS: ✓ Loaded {result['stops']} stops, "
+                f"{result['trips']} trips, {result['stop_times']} stop_times"
+            )
+    except Exception as e:
+        logger.warning(f"Static GTFS: Failed to load: {e}")
+
+
+def _collect_gtfsrt():
+    """Single GTFS-RT collection cycle."""
+    if not GTFSRT_AVAILABLE or not DB_AVAILABLE or not DATABASE_URL:
+        return
+
+    try:
+        result = collect_gtfsrt(
+            save_fn_trip_updates=save_gtfsrt_stop_times,
+            save_fn_vehicle_positions=save_gtfsrt_vehicle_positions,
+        )
+        stats['gtfsrt_trip_updates'] += result.get('trip_update_records', 0)
+        stats['gtfsrt_vehicle_positions'] += result.get('vehicle_position_records', 0)
+        stats['last_gtfsrt_fetch'] = datetime.now(timezone.utc).isoformat()
+    except Exception as e:
+        logger.error(f"GTFS-RT collection error: {e}")
+
+
+def _build_segments():
+    """Run the segment travel time computation."""
+    if not SEGMENT_BUILDER_AVAILABLE or not DB_AVAILABLE or not DATABASE_URL:
+        return
+
+    try:
+        saved = build_segments(
+            get_recent_stop_times_fn=get_unprocessed_gtfsrt_stop_times,
+            get_scheduled_fn=get_scheduled_travel_time,
+            save_segments_fn=save_segment_travel_times,
+            since_minutes=10,
+        )
+        stats['segments_built'] += saved
+        stats['last_segment_build'] = datetime.now(timezone.utc).isoformat()
+    except Exception as e:
+        logger.error(f"Segment build error: {e}")
+
+
 def run_collector():
     """Main collection loop with optimized intervals."""
+    _start_health_server()
+
     logger.info("=" * 60)
-    logger.info("MADISON METRO DATA COLLECTOR - OPTIMIZED")
+    logger.info("MADISON METRO DATA COLLECTOR")
     logger.info("=" * 60)
     logger.info(f"API Base: {API_BASE}")
     logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
     logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
-    logger.info(f"Vehicle Interval: {VEHICLE_INTERVAL}s")
-    logger.info(f"Prediction Interval: {PREDICTION_INTERVAL}s")
-    logger.info(f"Sentinel Enabled: {SENTINEL_ENABLED}")
+    logger.info(f"GTFS-RT Interval: {GTFSRT_INTERVAL}s")
+    logger.info(f"Segment Build Interval: {SEGMENT_BUILD_INTERVAL}s")
+    logger.info(f"GTFS-RT Available: {GTFSRT_AVAILABLE}")
+    logger.info(f"Static GTFS Available: {GTFS_STATIC_AVAILABLE}")
+    logger.info(f"Segment Builder Available: {SEGMENT_BUILDER_AVAILABLE}")
     
-    # Initialize Sentinel Client
-    global sentinel_client
-    if SENTINEL_ENABLED:
-        if SENTINEL_CLIENT_AVAILABLE:
-            sentinel_client = SentinelClient(host=SENTINEL_HOST, port=SENTINEL_PORT)
-            logger.info(f"Sentinel: Initialized client for {SENTINEL_HOST}:{SENTINEL_PORT}")
-        else:
-            logger.error("Sentinel: Enabled but client library setup failed")
-        
     # Database status
     if DATABASE_URL and DB_AVAILABLE:
         try:
@@ -503,16 +615,25 @@ def run_collector():
     else:
         logger.info("Database: not configured (set DATABASE_URL)")
     
+    # Run DB maintenance on startup (drop obsolete tables, enforce retention, ensure indexes)
+    if DB_MAINTENANCE_AVAILABLE and DATABASE_URL:
+        try:
+            run_full_maintenance()
+        except Exception as e:
+            logger.warning(f"DB maintenance failed (non-critical): {e}")
+
     if not API_KEY:
         logger.error("MADISON_METRO_API_KEY not set! Exiting.")
         return
+
+    # Load static GTFS schedule data (one-time at startup)
+    _init_static_gtfs()
     
     # Initialize Arrival Detector for ground truth collection
     global arrival_detector
     if ARRIVAL_DETECTOR_AVAILABLE and DB_AVAILABLE:
         logger.info("Arrival Detector: Fetching stop locations...")
         try:
-            # Get initial routes to fetch stops for
             routes = fetch_routes()
             if routes:
                 stops = fetch_all_stops(routes)
@@ -528,38 +649,65 @@ def run_collector():
     else:
         logger.info("Arrival Detector: Disabled (missing dependencies)")
     
-    logger.info("Starting optimized collection loop...")
+    logger.info("Starting collection loop...")
     stats['started_at'] = datetime.now(timezone.utc).isoformat()
     
     last_vehicle_time = 0
     last_prediction_time = 0
+    last_gtfsrt_time = 0
+    last_segment_time = 0
     last_stats_time = 0
+    last_gtfs_refresh_time = time.time()
     active_routes = []
+    vehicle_data = {}
+
+    # Track consecutive errors for exponential backoff
+    consecutive_errors = 0
     
     while True:
         try:
             current_time = time.time()
             
-            # Collect vehicles on interval
+            # Collect GTFS-RT feeds (every 30s, free, no API key)
+            if current_time - last_gtfsrt_time >= GTFSRT_INTERVAL:
+                _collect_gtfsrt()
+                last_gtfsrt_time = current_time
+            
+            # Collect REST API vehicles on interval
             if current_time - last_vehicle_time >= VEHICLE_INTERVAL:
                 vehicle_data = collect_vehicles()
                 active_routes = vehicle_data.get('active_routes', active_routes)
                 last_vehicle_time = current_time
             
-            # Collect predictions on interval (less frequently)
+            # Collect REST API predictions on interval
             if current_time - last_prediction_time >= PREDICTION_INTERVAL:
-                # Get vehicle IDs from last collection
                 active_vehicles = [str(v.get('vid', '')) for v in vehicle_data.get('vehicles', []) if v.get('vid')]
                 if active_vehicles:
                     collect_predictions(active_vehicles)
                 last_prediction_time = current_time
+            
+            # Build segment travel times (every 5 min)
+            if current_time - last_segment_time >= SEGMENT_BUILD_INTERVAL:
+                _build_segments()
+                last_segment_time = current_time
+
+            # Weekly tasks: refresh static GTFS + run DB maintenance (604800s = 7 days)
+            if current_time - last_gtfs_refresh_time >= 604800:
+                _init_static_gtfs()
+                if DB_MAINTENANCE_AVAILABLE and DATABASE_URL:
+                    try:
+                        run_full_maintenance()
+                    except Exception as e:
+                        logger.warning(f"Weekly maintenance failed: {e}")
+                last_gtfs_refresh_time = current_time
             
             # Log stats every hour
             if current_time - last_stats_time >= 3600:
                 log_stats()
                 last_stats_time = current_time
             
-            # Short sleep to prevent CPU spin
+            # Reset error counter on successful loop iteration
+            consecutive_errors = 0
             time.sleep(1)
             
         except KeyboardInterrupt:
@@ -567,8 +715,10 @@ def run_collector():
             log_stats()
             break
         except Exception as e:
-            logger.error(f"Collection error: {e}")
-            time.sleep(30)  # Back off on error
+            consecutive_errors += 1
+            backoff = min(30 * (2 ** (consecutive_errors - 1)), 300)
+            logger.error(f"Collection error (attempt {consecutive_errors}, backoff {backoff}s): {e}")
+            time.sleep(backoff)
 
 
 if __name__ == '__main__':
