@@ -21,10 +21,11 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
             try {
                 let apiMinutes = 10;
                 try {
-                    const predRes = await axios.get(`${API_BASE}/predictions?stpid=${trackedBus.stopId}`);
+                    // Fetch by VEHICLE (not stop) — always returns this bus's upcoming stops
+                    const predRes = await axios.get(`${API_BASE}/predictions?vid=${trackedBus.vid}`);
                     const prdData = predRes.data?.['bustime-response']?.prd;
                     const prds = Array.isArray(prdData) ? prdData : prdData ? [prdData] : [];
-                    const match = prds.find((p: any) => p.vid === trackedBus.vid);
+                    const match = prds.find((p: any) => String(p.stpid) === String(trackedBus.stopId));
                     if (match) {
                         apiMinutes = match.prdctdn === 'DUE' ? 0 : (parseInt(match.prdctdn) || 10);
                     }

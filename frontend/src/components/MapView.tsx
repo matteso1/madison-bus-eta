@@ -421,7 +421,7 @@ export default function MapView({
     const selectedStopPosition = useMemo(() => {
         if (!selectedStop) return null;
         const stop = stopsData.find((s: any) => String(s.stpid) === String(selectedStop.stpid));
-        if (stop) return [stop.lon, stop.lat] as [number, number];
+        if (stop?.position) return stop.position as [number, number];
         return null;
     }, [selectedStop, stopsData]);
 
