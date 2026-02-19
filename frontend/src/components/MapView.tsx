@@ -186,8 +186,8 @@ export default function MapView({
                 const detail = res.data;
                 const color = ROUTE_COLORS[selectedRoute] || DEFAULT_ROUTE_COLOR;
 
-                const allStops: any[] = [];
                 const allPatterns: any[] = [];
+                const primaryStops: any[] = [];
                 const seenStops = new Set<string>();
 
                 for (const dir of detail.directions || []) {
@@ -201,26 +201,49 @@ export default function MapView({
                             path, stops, color, route: selectedRoute,
                             pid: pat.pid, dir: dir.id, isPrimary: pat.is_primary,
                         });
-                    }
 
-                    for (const s of dir.stops || []) {
-                        const sid = String(s.stpid);
-                        if (seenStops.has(sid)) continue;
-                        seenStops.add(sid);
-                        allStops.push({
-                            position: [s.lon, s.lat] as [number, number],
-                            stpid: sid,
-                            stpnm: s.stpnm,
-                            route: selectedRoute,
-                            direction: dir.id,
-                        });
+                        // Only collect stops from primary patterns for display
+                        if (pat.is_primary) {
+                            for (const s of pat.stops || []) {
+                                const sid = String(s.stpid);
+                                if (seenStops.has(sid)) continue;
+                                seenStops.add(sid);
+                                primaryStops.push({
+                                    position: [s.lon, s.lat] as [number, number],
+                                    stpid: sid,
+                                    stpnm: s.stpnm,
+                                    route: selectedRoute,
+                                    direction: dir.id,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // If no primary patterns, fall back to all stops from first pattern per direction
+                if (primaryStops.length === 0) {
+                    for (const dir of detail.directions || []) {
+                        const firstPat = (dir.patterns || [])[0];
+                        if (!firstPat) continue;
+                        for (const s of firstPat.stops || []) {
+                            const sid = String(s.stpid);
+                            if (seenStops.has(sid)) continue;
+                            seenStops.add(sid);
+                            primaryStops.push({
+                                position: [s.lon, s.lat] as [number, number],
+                                stpid: sid,
+                                stpnm: s.stpnm,
+                                route: selectedRoute,
+                                direction: dir.id,
+                            });
+                        }
                     }
                 }
 
                 if (!cancelled) {
                     routeDirectionsRef.current = detail.directions || [];
                     setRoutePatterns(allPatterns);
-                    setStopsData(allStops);
+                    setStopsData(primaryStops);
                 }
             } catch (e) {
                 console.error('Route detail load failed:', e);
@@ -310,7 +333,17 @@ export default function MapView({
                     );
                     batchResults.forEach((res, j) => {
                         const rt = batch[j].rt;
-                        allPatterns.push(...parsePatternResponse(res, rt));
+                        const routePats = parsePatternResponse(res, rt);
+                        // Keep only the longest pattern per direction for clean overview
+                        const byDir: Record<string, any> = {};
+                        for (const p of routePats) {
+                            const key = p.dir || 'default';
+                            const existing = byDir[key];
+                            if (!existing || p.path.length > existing.path.length) {
+                                byDir[key] = { ...p, isPrimary: true };
+                            }
+                        }
+                        allPatterns.push(...Object.values(byDir));
                     });
                 }
                 setAllRoutePatterns(allPatterns);
