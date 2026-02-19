@@ -414,21 +414,7 @@ export default function MapView({
         return null;
     }, [trackedBus, stopsData]);
 
-    // Fit map to show both tracked bus and destination stop — once per tracking session
-    const fitBoundsKeyRef = useRef<string | null>(null);
-    useEffect(() => {
-        if (!trackedBus) { fitBoundsKeyRef.current = null; return; }
-        const key = `${trackedBus.vid}-${trackedBus.stopId}`;
-        if (fitBoundsKeyRef.current === key) return;
-        if (!trackedVehicle || !trackedStopPosition || !mapRef.current) return;
-        fitBoundsKeyRef.current = key;
-        const busPos = trackedVehicle.position;
-        const bounds = new maplibregl.LngLatBounds(
-            [Math.min(busPos[0], trackedStopPosition[0]), Math.min(busPos[1], trackedStopPosition[1])],
-            [Math.max(busPos[0], trackedStopPosition[0]), Math.max(busPos[1], trackedStopPosition[1])]
-        );
-        mapRef.current.fitBounds(bounds, { padding: { top: 80, bottom: 180, left: 60, right: 420 }, maxZoom: 15, duration: 600 });
-    }, [trackedBus, trackedVehicle, trackedStopPosition]);
+    // TODO: Auto-zoom to fit both bus and destination stop when tracking starts
 
     // (delayed bus indicators removed per user feedback)
 
