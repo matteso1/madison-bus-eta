@@ -4656,24 +4656,24 @@ def admin_purge_errors():
         if _is_api_error(CACHE[key].get("value")):
             CACHE.pop(key, None)
             purged.append(key)
-    conn = _get_db_conn()
-    if conn:
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT cache_key, data FROM api_cache")
-            for row in cur.fetchall():
-                try:
-                    val = json.loads(row[1]) if isinstance(row[1], str) else row[1]
-                    if _is_api_error(val):
-                        cur.execute("DELETE FROM api_cache WHERE cache_key = %s", (row[0],))
-                        purged.append(f"db:{row[0]}")
-                except Exception:
-                    pass
-            conn.commit()
+            from sqlalchemy import create_engine, text
+            engine = create_engine(database_url, pool_pre_ping=True)
+            with engine.connect() as conn:
+                rows = conn.execute(text("SELECT cache_key, value_json FROM api_cache")).fetchall()
+                for row in rows:
+                    try:
+                        val = row[1] if isinstance(row[1], (dict, list)) else json.loads(row[1])
+                        if _is_api_error(val):
+                            conn.execute(text("DELETE FROM api_cache WHERE cache_key = :key"), {"key": row[0]})
+                            purged.append(f"db:{row[0]}")
+                    except Exception:
+                        pass
+                conn.commit()
         except Exception as e:
-            logging.error(f"Purge error: {e}")
-        finally:
-            conn.close()
+            logging.error(f"Purge DB error: {e}")
     return jsonify({"purged": purged, "count": len(purged)})
 
 
