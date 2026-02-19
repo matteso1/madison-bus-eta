@@ -273,28 +273,19 @@ def _is_api_error(value) -> bool:
             return True
     return False
 
-def cache_get(key: str, db_fallback: bool = False):
+def cache_get(key: str):
+    """Pure in-memory cache lookup. No DB fallback — real-time data only."""
     item = CACHE.get(key)
     if item and time.time() < item["expires_at"]:
-        val = item["value"]
-        if _is_api_error(val):
-            CACHE.pop(key, None)
-        else:
-            return val
+        return item["value"]
     CACHE.pop(key, None)
-    if db_fallback:
-        db_val = _db_cache_load(key, max_age_hours=48)
-        if db_val is not None and not _is_api_error(db_val):
-            CACHE[key] = {"value": db_val, "expires_at": time.time() + 3600}
-            return db_val
     return None
 
-def cache_set(key: str, value, ttl_seconds: int, persist: bool = False):
+def cache_set(key: str, value, ttl_seconds: int):
+    """Pure in-memory cache. Never caches API errors. No DB persistence."""
     if _is_api_error(value):
         return
     CACHE[key] = {"value": value, "expires_at": time.time() + ttl_seconds}
-    if persist:
-        threading.Thread(target=_db_cache_save, args=(key, value), daemon=True).start()
 
 def _read_collector_status() -> Dict[str, Any]:
     """Read latest collector status persisted by the data collector."""
@@ -447,14 +438,14 @@ def fallback_empty(collection_name: str):
 @app.route("/routes")
 def get_routes():
     cache_key = "routes"
-    cached = cache_get(cache_key, db_fallback=True)
+    cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_routes()
     else:
         data = api_get("getroutes")
-    cache_set(cache_key, data, 6 * 3600, persist=True)
+    cache_set(cache_key, data, 6 * 3600)
     return jsonify(data)
 
 @app.route("/directions")
@@ -463,18 +454,14 @@ def get_directions():
     if not rt:
         return jsonify({"error": "Missing route param 'rt'"}), 400
     cache_key = f"directions:{rt}"
-    cached = cache_get(cache_key, db_fallback=True)
+    cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_directions(rt)
     else:
         data = api_get("getdirections", rt=rt)
-        if "bustime-response" in data and "error" in data["bustime-response"]:
-            db_val = _db_cache_load(cache_key, max_age_hours=48)
-            if db_val is not None:
-                return jsonify(db_val)
-    cache_set(cache_key, data, 6 * 3600, persist=True)
+    cache_set(cache_key, data, 6 * 3600)
     return jsonify(data)
 
 @app.route("/stops")
@@ -487,7 +474,7 @@ def get_stops():
     # If direction not specified, get stops for both directions
     if not dir_:
         cache_key = f"stops:{rt}:all"
-        cached = cache_get(cache_key, db_fallback=True)
+        cached = cache_get(cache_key)
         if cached is not None:
             return jsonify(cached)
         
@@ -520,19 +507,19 @@ def get_stops():
         
         stops_list = data.get("bustime-response", {}).get("stops", [])
         if stops_list:
-            cache_set(cache_key, data, 12 * 3600, persist=True)
+            cache_set(cache_key, data, 12 * 3600)
         return jsonify(data)
     
     # Original behavior with direction specified
     cache_key = f"stops:{rt}:{dir_}"
-    cached = cache_get(cache_key, db_fallback=True)
+    cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
     if OFFLINE_MODE:
         data = fallback_stops(rt, dir_)
     else:
         data = api_get("getstops", rt=rt, dir=dir_)
-    cache_set(cache_key, data, 12 * 3600, persist=True)
+    cache_set(cache_key, data, 12 * 3600)
     return jsonify(data)
 
 @app.route("/stops/nearby")
@@ -624,7 +611,7 @@ def get_vehicles():
     # Fetch ALL routes if no params provided (batching to avoid API limits).
     # NEVER use DB fallback for vehicle positions — stale data is worse than no data.
     cache_key = "vehicles:ALL"
-    cached = cache_get(cache_key, db_fallback=False)
+    cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
@@ -675,8 +662,7 @@ def get_vehicles():
     # 4. Construct Response
     result = {"bustime-response": {"vehicle": all_vehicles}}
     
-    # Short TTL, no DB persistence — vehicle positions must always be fresh
-    cache_set(cache_key, result, 15, persist=False)
+    cache_set(cache_key, result, 15)
     return jsonify(result)
 
 @app.route("/predictions")
@@ -714,7 +700,7 @@ def get_patterns():
         
         # Cache per-route+direction after filtering
         cache_key = f"patterns:{rt}:{dir_ or ''}"
-        cached = cache_get(cache_key, db_fallback=True)
+        cached = cache_get(cache_key)
         if cached is not None:
             return jsonify(cached)
         if OFFLINE_MODE:
@@ -744,7 +730,7 @@ def get_patterns():
             response["bustime-response"]["ptr"] = filtered_patterns
 
         # Cache filtered result for a while
-        cache_set(cache_key, response, 12 * 3600, persist=True)
+        cache_set(cache_key, response, 12 * 3600)
         return jsonify(response)
     except Exception as e:
         print(f"Error in patterns endpoint: {e}")
@@ -4539,7 +4525,7 @@ def get_route_detail():
         return jsonify({"error": "Missing param: rt"}), 400
 
     cache_key = f"route-detail:{rt}"
-    cached = cache_get(cache_key, db_fallback=True)
+    cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
@@ -4640,7 +4626,7 @@ def get_route_detail():
             "total_patterns": len(raw_ptrs),
         }
 
-        cache_set(cache_key, result, 3600, persist=True)
+        cache_set(cache_key, result, 3600)
         return jsonify(result)
 
     except Exception as e:
@@ -4648,33 +4634,23 @@ def get_route_detail():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/admin/purge-errors", methods=["POST"])
-def admin_purge_errors():
-    """Remove any cached API error responses from both memory and DB."""
-    purged = []
-    for key in list(CACHE.keys()):
-        if _is_api_error(CACHE[key].get("value")):
-            CACHE.pop(key, None)
-            purged.append(key)
-    database_url = os.getenv('DATABASE_URL')
-    if database_url:
-        try:
-            from sqlalchemy import create_engine, text
-            engine = create_engine(database_url, pool_pre_ping=True)
-            with engine.connect() as conn:
-                rows = conn.execute(text("SELECT cache_key, value_json FROM api_cache")).fetchall()
-                for row in rows:
-                    try:
-                        val = row[1] if isinstance(row[1], (dict, list)) else json.loads(row[1])
-                        if _is_api_error(val):
-                            conn.execute(text("DELETE FROM api_cache WHERE cache_key = :key"), {"key": row[0]})
-                            purged.append(f"db:{row[0]}")
-                    except Exception:
-                        pass
-                conn.commit()
-        except Exception as e:
-            logging.error(f"Purge DB error: {e}")
-    return jsonify({"purged": purged, "count": len(purged)})
+@app.route("/api/admin/cache-status", methods=["GET"])
+def admin_cache_status():
+    """Show current in-memory cache keys and their TTLs."""
+    now = time.time()
+    entries = {}
+    for key, item in CACHE.items():
+        remaining = max(0, int(item["expires_at"] - now))
+        is_error = _is_api_error(item.get("value"))
+        entries[key] = {"ttl_remaining_s": remaining, "is_error": is_error}
+    return jsonify({"cache_entries": len(entries), "keys": entries})
+
+@app.route("/api/admin/cache-clear", methods=["POST"])
+def admin_cache_clear():
+    """Clear all in-memory cache entries."""
+    count = len(CACHE)
+    CACHE.clear()
+    return jsonify({"cleared": count})
 
 
 if __name__ == "__main__":
