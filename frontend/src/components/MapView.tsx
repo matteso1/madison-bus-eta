@@ -427,7 +427,7 @@ export default function MapView({
 
     // (delayed bus indicators removed per user feedback)
 
-    // Extract bus route segment — fetches pattern on-demand if not already loaded
+    // Extract bus route segment — always fetches fresh pattern data for stability
     const [tripData, setTripData] = useState<{ segment: [number, number][] | null; fullPath: [number, number][] | null; segmentStops: any[] } | null>(null);
 
     useEffect(() => {
@@ -487,19 +487,21 @@ export default function MapView({
             return { segment: bestSegment, fullPath: bestFullPath, segmentStops };
         };
 
-        const existing = patternsData.filter(p => p.route === activeTripPlan.routeId);
-        if (existing.length > 0) {
-            setTripData(computeSegment(existing));
-        } else {
-            axios.get(`${API_BASE}/patterns?rt=${activeTripPlan.routeId}`).then(res => {
-                if (cancelled) return;
-                const fetched = parsePatternResponse(res, activeTripPlan.routeId);
-                setTripData(computeSegment(fetched));
-            }).catch(() => {});
-        }
+        // Always fetch pattern data directly — avoids race conditions with routePatterns state
+        axios.get(`${API_BASE}/patterns?rt=${activeTripPlan.routeId}`).then(res => {
+            if (cancelled) return;
+            const fetched = parsePatternResponse(res, activeTripPlan.routeId);
+            setTripData(computeSegment(fetched));
+        }).catch(() => {
+            // Fallback to whatever we have in allRoutePatterns
+            if (!cancelled) {
+                const existing = allRoutePatterns.filter(p => p.route === activeTripPlan.routeId);
+                if (existing.length > 0) setTripData(computeSegment(existing));
+            }
+        });
 
         return () => { cancelled = true; };
-    }, [activeTripPlan, patternsData, API_BASE, parsePatternResponse]);
+    }, [activeTripPlan, API_BASE, parsePatternResponse, allRoutePatterns]);
 
     // Walking routes via OSRM (actual street-following paths)
     const [tripWalkPaths, setTripWalkPaths] = useState<{ path: [number, number][]; label: string }[]>([]);
@@ -842,7 +844,7 @@ export default function MapView({
                     </Marker>
                 )}
 
-                {/* Selected stop highlight */}
+                {/* Selected stop highlight (visible both when browsing and tracking) */}
                 {selectedStopPosition && !trackedBus && (
                     <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
                         <div style={{
@@ -856,12 +858,24 @@ export default function MapView({
                     </Marker>
                 )}
 
-                {/* Tracked bus destination stop pin */}
+                {/* Tracked bus destination stop - show as a labeled pin */}
                 {trackedBus?.stopPosition && (
                     <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
-                        <div className="dest-pin-marker">
-                            <div className="pin"><div className="pin-inner" /></div>
-                            <div className="pin-shadow" />
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+                            <div style={{
+                                background: 'rgba(8,8,16,0.92)',
+                                border: '1px solid rgba(0,212,255,0.4)',
+                                borderRadius: 6,
+                                padding: '2px 8px',
+                                marginBottom: 4,
+                                whiteSpace: 'nowrap',
+                            }}>
+                                <span style={{ fontSize: 10, color: '#00d4ff', fontWeight: 600 }}>{trackedBus.stopName}</span>
+                            </div>
+                            <div className="dest-pin-marker">
+                                <div className="pin"><div className="pin-inner" /></div>
+                                <div className="pin-shadow" />
+                            </div>
                         </div>
                     </Marker>
                 )}

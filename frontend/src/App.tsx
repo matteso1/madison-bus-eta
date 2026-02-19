@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import axios from 'axios';
 import MapView from './components/MapView';
 import type { StopClickEvent, VehicleData, TrackedBus, TripPlan, BusClickEvent } from './components/MapView';
 import TopBar from './components/layout/TopBar';
@@ -37,6 +38,25 @@ export default function App() {
   const handleRoutesLoaded = useCallback((r: Array<{ rt: string; rtnm: string }>) => {
     setRoutes(r);
   }, []);
+
+  const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
+
+  // Fetch system-wide bus count when on All Routes view
+  useEffect(() => {
+    if (selectedRoute !== 'ALL') return;
+    const fetchAllBuses = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/vehicles`);
+        const vehicles = res.data?.['bustime-response']?.vehicle || [];
+        const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
+        setBusCount(arr.length);
+        setDelayedCount(arr.filter((v: any) => v.dly === true || v.dly === 'true').length);
+      } catch {}
+    };
+    fetchAllBuses();
+    const timer = setInterval(fetchAllBuses, 30000);
+    return () => clearInterval(timer);
+  }, [selectedRoute, API_BASE]);
 
   const handleLiveDataUpdated = useCallback((vehicles: VehicleData[], delayed: number) => {
     setBusCount(vehicles.length);

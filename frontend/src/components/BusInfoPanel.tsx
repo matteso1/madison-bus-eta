@@ -7,6 +7,8 @@ interface NextStop {
     stpid: string;
     eta: string;
     minutes: number;
+    lat: number;
+    lon: number;
 }
 
 interface BusInfoPanelProps {
@@ -37,6 +39,8 @@ export default function BusInfoPanel({ bus, onClose, onTrackBus }: BusInfoPanelP
                         stpid: String(p.stpid),
                         eta: p.prdctdn === 'DUE' ? 'DUE' : `${p.prdctdn} min`,
                         minutes: p.prdctdn === 'DUE' ? 0 : (parseInt(p.prdctdn) || 0),
+                        lat: parseFloat(p.stplat) || 0,
+                        lon: parseFloat(p.stplon) || 0,
                     })));
                 }
             } catch (e) {
@@ -58,6 +62,7 @@ export default function BusInfoPanel({ bus, onClose, onTrackBus }: BusInfoPanelP
             route: bus.route,
             stopId: stop.stpid,
             stopName: stop.stpnm,
+            stopPosition: stop.lat && stop.lon ? [stop.lon, stop.lat] : undefined,
         });
         onClose();
     };
