@@ -82,12 +82,13 @@ html, body, #root {
    DeckGL renders a canvas div on top of MapLibre. We need the
    marker container to sit above it. */
 .maplibregl-marker {
-  z-index: 10 !important;
+  z-index: 20 !important;
 }
-#deckgl-overlay {
+#deckgl-overlay,
+#deckgl-wrapper {
   z-index: 1 !important;
 }
-.maplibregl-map .maplibregl-canvas-container ~ div:not(.maplibregl-control-container) {
+.maplibregl-map .maplibregl-canvas-container ~ div:not(.maplibregl-control-container):not(.maplibregl-marker) {
   z-index: 1 !important;
 }
 .maplibregl-map .maplibregl-canvas-container + div {
@@ -140,43 +141,104 @@ html, body, #root {
   100% { transform: scale(2.8); opacity: 0; }
 }
 
+/* ── Live Bus Marker (professional pill with direction) ── */
+.bus-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.8s ease, opacity 0.3s;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+.bus-marker:hover {
+  filter: drop-shadow(0 2px 8px rgba(0,212,255,0.6));
+  z-index: 100 !important;
+}
+.bus-marker__body {
+  background: #1a1a2e;
+  border: 2px solid #00d4ff;
+  border-radius: 14px;
+  padding: 2px 8px;
+  min-width: 28px;
+  text-align: center;
+  position: relative;
+}
+.bus-marker__route {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.bus-marker__nose {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid #00d4ff;
+  margin-top: -1px;
+  transform: rotate(180deg);
+}
+.bus-marker--dimmed {
+  opacity: 0.35;
+}
+.bus-marker--dimmed:hover {
+  opacity: 0.8;
+}
+.bus-marker--delayed .bus-marker__body {
+  border-color: #ef4444;
+}
+.bus-marker--delayed .bus-marker__nose {
+  border-bottom-color: #ef4444;
+}
+
 /* ── Tracked Bus Marker ── */
 .tracked-bus-marker {
   position: relative;
-  width: 36px;
-  height: 36px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  filter: drop-shadow(0 2px 8px rgba(255, 140, 0, 0.6));
 }
 .tracked-bus-marker .bus-ring {
   position: absolute;
-  width: 100%;
-  height: 100%;
+  width: 48px;
+  height: 48px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 2px solid rgba(255, 140, 0, 0.6);
+  border: 2px solid rgba(255, 140, 0, 0.5);
   animation: bus-ping 2s ease-out infinite;
 }
 .tracked-bus-marker .bus-dot {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #fff;
-  border: 3px solid #333;
-  box-shadow: 0 0 12px rgba(255, 140, 0, 0.6);
+  background: #ff8c00;
+  border: 2px solid #fff;
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 16px;
   z-index: 1;
+  box-shadow: 0 0 16px rgba(255, 140, 0, 0.5);
 }
 .tracked-bus-marker .bus-arrow {
-  position: absolute;
-  top: -14px;
-  font-size: 16px;
-  color: #ff8c00;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 8px solid #ff8c00;
+  margin-top: -1px;
+  transform: rotate(180deg);
   z-index: 2;
-  filter: drop-shadow(0 0 4px rgba(255, 140, 0, 0.8));
 }
 @keyframes bus-ping {
-  0% { transform: scale(0.8); opacity: 1; }
-  100% { transform: scale(2.2); opacity: 0; }
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
 }
 
 /* ── Trip Stop Labels ── */

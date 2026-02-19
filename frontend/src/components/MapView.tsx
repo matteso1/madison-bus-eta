@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
-import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { Map, Marker } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
@@ -702,65 +702,18 @@ export default function MapView({
             }));
         }
 
-        // 8) Live bus dots — bright white with thick dark border, clearly bigger than stops
-        const nonTracked = trackedBus
-            ? filteredLive.filter(v => v.vid !== trackedBus.vid)
-            : filteredLive;
-
-        if (nonTracked.length > 0 && !activeTripPlan) {
-            L.push(new ScatterplotLayer({
-                id: 'live-buses',
-                data: nonTracked,
-                pickable: true,
-                opacity: trackedBus ? 0.4 : 1,
-                stroked: true,
-                filled: true,
-                radiusMinPixels: trackedBus ? 6 : 10,
-                radiusMaxPixels: trackedBus ? 12 : 22,
-                lineWidthMinPixels: 2.5,
-                getPosition: (d: any) => d.position,
-                getRadius: 50,
-                getFillColor: [255, 255, 255],
-                getLineColor: [30, 30, 50],
-                onClick: ({ object }) => {
-                    if (object && onBusClick) {
-                        onBusClick({
-                            vid: object.vid,
-                            route: object.route,
-                            destination: object.des,
-                            delayed: object.dly,
-                            position: object.position,
-                        });
-                    }
-                },
-            }));
-
-            // 9) Direction arrows on bus dots - small triangles above each bus
-            const arrowData = nonTracked.filter((d: VehicleData) => d.hdg > 0);
-            if (arrowData.length > 0) {
-                L.push(new TextLayer({
-                    id: 'bus-direction-arrows',
-                    data: arrowData,
-                    pickable: false,
-                    getPosition: (d: VehicleData) => d.position,
-                    getText: () => '▲',
-                    getSize: 12,
-                    getAngle: (d: VehicleData) => -d.hdg,
-                    getColor: [50, 50, 60, 200] as [number, number, number, number],
-                    getPixelOffset: (d: VehicleData) => {
-                        const rad = (d.hdg * Math.PI) / 180;
-                        return [Math.sin(rad) * 16, -Math.cos(rad) * 16];
-                    },
-                    billboard: true,
-                    sizeUnits: 'pixels' as const,
-                    characterSet: ['▲'],
-                }));
-            }
-        }
+        // Bus markers rendered as DOM Markers in JSX (below)
 
         return L;
-    }, [filteredPatterns, filteredLive, stopsData, onStopClick, onBusClick,
+    }, [filteredPatterns, stopsData, onStopClick,
         trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute]);
+
+    const nonTracked = useMemo(() => {
+        if (activeTripPlan) return [];
+        return trackedBus
+            ? filteredLive.filter(v => v.vid !== trackedBus.vid)
+            : filteredLive;
+    }, [filteredLive, trackedBus, activeTripPlan]);
 
     return (
         <DeckGL
@@ -796,21 +749,6 @@ export default function MapView({
                     };
                 }
 
-                if (object.vid) {
-                    return {
-                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:12px 16px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                                <span style="font-weight:700;font-size:16px;color:#00d4ff;">Route ${object.route}</span>
-                                <span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${object.dly ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};color:${object.dly ? '#ef4444' : '#10b981'};font-family:JetBrains Mono,monospace;">${object.dly ? 'DELAYED' : 'ON TIME'}</span>
-                            </div>
-                            <div style="font-size:12px;color:#e2e8f0;font-weight:500;">→ ${object.des || 'Unknown'}</div>
-                            <div style="font-size:10px;color:#475569;font-family:JetBrains Mono,monospace;margin-top:4px;">Bus ${object.vid}</div>
-                            <div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for upcoming stops</div>
-                        </div>`,
-                        style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
-                    };
-                }
-
                 return null;
             }}
         >
@@ -834,15 +772,37 @@ export default function MapView({
                 {/* Tracked bus highlight */}
                 {trackedVehicle && (
                     <Marker longitude={trackedVehicle.position[0]} latitude={trackedVehicle.position[1]} anchor="center">
-                        <div className="tracked-bus-marker">
+                        <div className="tracked-bus-marker" style={{ transform: trackedVehicle.hdg > 0 ? `rotate(${trackedVehicle.hdg}deg)` : undefined }}>
                             <div className="bus-ring" />
-                            <div className="bus-dot" />
-                            {trackedVehicle.hdg > 0 && (
-                                <div className="bus-arrow" style={{ transform: `rotate(${trackedVehicle.hdg}deg)` }}>▲</div>
-                            )}
+                            <div className="bus-dot">{trackedVehicle.route}</div>
+                            {trackedVehicle.hdg > 0 && <div className="bus-arrow" />}
                         </div>
                     </Marker>
                 )}
+
+                {/* Live bus markers (DOM-based for professional styling) */}
+                {!activeTripPlan && nonTracked.map((bus: VehicleData) => (
+                    <Marker
+                        key={bus.vid}
+                        longitude={bus.position[0]}
+                        latitude={bus.position[1]}
+                        anchor="center"
+                        onClick={(e) => {
+                            e.originalEvent.stopPropagation();
+                            if (onBusClick) onBusClick({ vid: bus.vid, route: bus.route, destination: bus.des, delayed: bus.dly, position: bus.position });
+                        }}
+                    >
+                        <div
+                            className={`bus-marker${trackedBus ? ' bus-marker--dimmed' : ''}${bus.dly ? ' bus-marker--delayed' : ''}`}
+                            style={{ transform: bus.hdg > 0 ? `rotate(${bus.hdg}deg)` : undefined }}
+                        >
+                            <div className="bus-marker__body">
+                                <span className="bus-marker__route">{bus.route}</span>
+                            </div>
+                            {bus.hdg > 0 && <div className="bus-marker__nose" />}
+                        </div>
+                    </Marker>
+                ))}
 
                 {/* Selected stop highlight (visible both when browsing and tracking) */}
                 {selectedStopPosition && !trackedBus && (
