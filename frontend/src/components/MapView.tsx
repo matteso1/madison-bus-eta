@@ -419,11 +419,7 @@ export default function MapView({
         return liveData.find(v => v.vid === trackedBus.vid) || null;
     }, [liveData, trackedBus]);
 
-    // Delayed buses for all-routes view (clean red dots instead of heatmap)
-    const delayedBuses = useMemo(() => {
-        if (selectedRoute !== 'ALL') return [];
-        return liveData.filter(v => v.dly);
-    }, [liveData, selectedRoute]);
+    // (delayed bus indicators removed per user feedback)
 
     // Extract bus route segment by matching stop IDs in pattern data
     const tripData = useMemo(() => {
@@ -547,22 +543,7 @@ export default function MapView({
             }));
         }
 
-        // 2) Delayed bus indicators — only on all-routes view, hidden during trip/tracking
-        if (delayedBuses.length > 0 && !activeTripPlan && !trackedBus) {
-            L.push(new ScatterplotLayer({
-                id: 'delayed-indicators',
-                data: delayedBuses,
-                getPosition: (d: any) => d.position,
-                getFillColor: [239, 68, 68],
-                getLineColor: [255, 255, 255],
-                getRadius: 60,
-                radiusMinPixels: 7,
-                radiusMaxPixels: 16,
-                stroked: true,
-                lineWidthMinPixels: 2,
-                opacity: 0.9,
-            }));
-        }
+        // (delayed indicators removed — cluttered and unlabeled on the All Routes view)
 
         // 3) Trip: full route pattern dimmed (context)
         if (tripData?.fullPath) {
@@ -695,7 +676,7 @@ export default function MapView({
             }));
         }
 
-        // 8) Bus dots — hidden during trip mode for clean map
+        // 8) Live bus dots — bright white with thick dark border, clearly bigger than stops
         const nonTracked = trackedBus
             ? filteredLive.filter(v => v.vid !== trackedBus.vid)
             : filteredLive;
@@ -705,22 +686,22 @@ export default function MapView({
                 id: 'live-buses',
                 data: nonTracked,
                 pickable: true,
-                opacity: trackedBus ? 0.35 : 1,
+                opacity: trackedBus ? 0.4 : 1,
                 stroked: true,
                 filled: true,
-                radiusMinPixels: trackedBus ? 5 : 9,
-                radiusMaxPixels: trackedBus ? 10 : 20,
-                lineWidthMinPixels: 3,
+                radiusMinPixels: trackedBus ? 6 : 10,
+                radiusMaxPixels: trackedBus ? 12 : 22,
+                lineWidthMinPixels: 2.5,
                 getPosition: (d: any) => d.position,
                 getRadius: 50,
-                getFillColor: (d: any) => d.dly ? [239, 68, 68] : [255, 255, 255],
-                getLineColor: (d: any) => d.dly ? [255, 255, 255] : d.color,
+                getFillColor: [255, 255, 255],
+                getLineColor: [30, 30, 50],
                 onHover: ({ object }) => setHoveredVehicle(object ? object.vid : null),
             }));
         }
 
         return L;
-    }, [filteredPatterns, filteredLive, stopsData, delayedBuses, onStopClick,
+    }, [filteredPatterns, filteredLive, stopsData, onStopClick,
         trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute]);
 
     return (
