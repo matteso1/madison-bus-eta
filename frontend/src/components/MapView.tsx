@@ -310,33 +310,33 @@ export default function MapView({
         load();
     }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
 
-    // Live vehicle polling — route-specific when a route is selected, all when on overview
+    // Live vehicle polling — only when a specific route is selected (bus dots aren't shown on overview)
     useEffect(() => {
         const isTracking = !!trackedBus;
         const hasRoute = selectedRoute !== 'ALL';
         const routeToFetch = trackedBus?.route || (hasRoute ? selectedRoute : null);
-        const interval = isTracking ? 5000 : hasRoute ? 10000 : 30000;
 
-        const mapVehicles = (vehicles: any[]): VehicleData[] =>
-            vehicles.map((v: any) => ({
-                position: [parseFloat(v.lon), parseFloat(v.lat)],
-                route: v.rt,
-                vid: v.vid,
-                des: v.des,
-                dly: v.dly === true || v.dly === 'true',
-                color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
-            }));
+        if (!routeToFetch) {
+            setLiveData([]);
+            return;
+        }
+
+        const interval = isTracking ? 5000 : 10000;
 
         const fetchLive = async () => {
             try {
-                const url = routeToFetch
-                    ? `${API_BASE}/vehicles?rt=${routeToFetch}`
-                    : `${API_BASE}/vehicles`;
-                const res = await axios.get(url);
+                const res = await axios.get(`${API_BASE}/vehicles?rt=${routeToFetch}`);
                 const vehicles = res.data?.['bustime-response']?.vehicle;
                 if (!vehicles) { setLiveData([]); return; }
                 const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
-                const mapped = mapVehicles(arr);
+                const mapped: VehicleData[] = arr.map((v: any) => ({
+                    position: [parseFloat(v.lon), parseFloat(v.lat)],
+                    route: v.rt,
+                    vid: v.vid,
+                    des: v.des,
+                    dly: v.dly === true || v.dly === 'true',
+                    color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
+                }));
                 setLiveData(mapped);
                 onLiveDataUpdated(mapped, mapped.filter(v => v.dly).length);
             } catch (e) {

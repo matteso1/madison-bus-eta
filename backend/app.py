@@ -265,19 +265,33 @@ def _get_route_stats() -> dict:
         return _route_stats_cache.get('data', {})
 
 
+def _is_api_error(value) -> bool:
+    """Detect BusTracker API error responses that should never be cached."""
+    if isinstance(value, dict):
+        br = value.get("bustime-response", {})
+        if isinstance(br, dict) and "error" in br and "routes" not in br and "vehicle" not in br:
+            return True
+    return False
+
 def cache_get(key: str, db_fallback: bool = False):
     item = CACHE.get(key)
     if item and time.time() < item["expires_at"]:
-        return item["value"]
+        val = item["value"]
+        if _is_api_error(val):
+            CACHE.pop(key, None)
+        else:
+            return val
     CACHE.pop(key, None)
     if db_fallback:
         db_val = _db_cache_load(key, max_age_hours=48)
-        if db_val is not None:
+        if db_val is not None and not _is_api_error(db_val):
             CACHE[key] = {"value": db_val, "expires_at": time.time() + 3600}
             return db_val
     return None
 
 def cache_set(key: str, value, ttl_seconds: int, persist: bool = False):
+    if _is_api_error(value):
+        return
     CACHE[key] = {"value": value, "expires_at": time.time() + ttl_seconds}
     if persist:
         threading.Thread(target=_db_cache_save, args=(key, value), daemon=True).start()
@@ -440,10 +454,6 @@ def get_routes():
         data = fallback_routes()
     else:
         data = api_get("getroutes")
-        if "bustime-response" in data and "error" in data["bustime-response"]:
-            db_val = _db_cache_load(cache_key, max_age_hours=48)
-            if db_val is not None:
-                return jsonify(db_val)
     cache_set(cache_key, data, 6 * 3600, persist=True)
     return jsonify(data)
 
@@ -608,7 +618,7 @@ def get_vehicles():
         else:
             data = api_get("getvehicles", **p)
             
-        cache_set(cache_key, data, 15)
+        cache_set(cache_key, data, 8)
         return jsonify(data)
 
     # Fetch ALL routes if no params provided (batching to avoid API limits).
@@ -4638,8 +4648,36 @@ def get_route_detail():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/purge-errors", methods=["POST"])
+def admin_purge_errors():
+    """Remove any cached API error responses from both memory and DB."""
+    purged = []
+    for key in list(CACHE.keys()):
+        if _is_api_error(CACHE[key].get("value")):
+            CACHE.pop(key, None)
+            purged.append(key)
+    conn = _get_db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT cache_key, data FROM api_cache")
+            for row in cur.fetchall():
+                try:
+                    val = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                    if _is_api_error(val):
+                        cur.execute("DELETE FROM api_cache WHERE cache_key = %s", (row[0],))
+                        purged.append(f"db:{row[0]}")
+                except Exception:
+                    pass
+            conn.commit()
+        except Exception as e:
+            logging.error(f"Purge error: {e}")
+        finally:
+            conn.close()
+    return jsonify({"purged": purged, "count": len(purged)})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    # Fire-and-forget stop cache build on startup if missing
     _ensure_stop_cache_async()
     app.run(host='0.0.0.0', port=port, debug=False)
