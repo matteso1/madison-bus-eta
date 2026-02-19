@@ -669,14 +669,17 @@ def get_vehicles():
 def get_predictions():
     stpid = request.args.get("stpid")
     vid = request.args.get("vid")
-    if not (stpid or vid):
-        return jsonify({"error": "Provide stpid or vid param"}), 400
+    rt = request.args.get("rt")
+    if not (stpid or vid or rt):
+        return jsonify({"error": "Provide stpid, vid, or rt param"}), 400
     p = {}
     if stpid:
         p['stpid'] = stpid
     if vid:
         p['vid'] = vid
-    cache_key = f"predictions:{stpid or ''}:{vid or ''}"
+    if rt and not stpid and not vid:
+        p['rt'] = rt
+    cache_key = f"predictions:{stpid or ''}:{vid or ''}:{rt or ''}"
     cached = cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
