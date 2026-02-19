@@ -4517,6 +4517,126 @@ def get_route_reliability_detail(route_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/route-detail")
+def get_route_detail():
+    """
+    Structured route data: directions, patterns, and ordered stops.
+    Returns everything the frontend needs for a clean, direction-aware map display.
+    """
+    rt = request.args.get("rt")
+    if not rt:
+        return jsonify({"error": "Missing param: rt"}), 400
+
+    cache_key = f"route-detail:{rt}"
+    cached = cache_get(cache_key, db_fallback=True)
+    if cached is not None:
+        return jsonify(cached)
+
+    try:
+        # 1. Get directions for this route
+        dir_resp = api_get("getdirections", rt=rt)
+        raw_dirs = dir_resp.get("bustime-response", {}).get("directions", [])
+        dir_ids = []
+        for d in raw_dirs:
+            if isinstance(d, dict):
+                dir_ids.append(d.get("id", d.get("dir", d.get("name", str(d)))))
+            else:
+                dir_ids.append(str(d))
+
+        # 2. Get patterns (all at once, then partition by direction)
+        pat_resp = api_get("getpatterns", rt=rt)
+        raw_ptrs = pat_resp.get("bustime-response", {}).get("ptr", [])
+        if not isinstance(raw_ptrs, list):
+            raw_ptrs = [raw_ptrs] if raw_ptrs else []
+
+        # 3. Get stops per direction
+        directions = []
+        for dir_id in dir_ids:
+            stops_resp = api_get("getstops", rt=rt, dir=dir_id)
+            raw_stops = stops_resp.get("bustime-response", {}).get("stops", [])
+            dir_stop_ids = {str(s.get("stpid")) for s in raw_stops}
+
+            # Partition patterns belonging to this direction
+            dir_patterns = [p for p in raw_ptrs if p.get("rtdir") == dir_id]
+
+            # Find the "primary" pattern (most stops = most complete variant)
+            primary = max(dir_patterns, key=lambda p: len(p.get("pt", [])), default=None)
+
+            parsed_patterns = []
+            for pat in dir_patterns:
+                pts = pat.get("pt", [])
+                path = []
+                stops = []
+                for pt in pts:
+                    coord = [float(pt["lon"]), float(pt["lat"])]
+                    path.append(coord)
+                    if pt.get("typ") == "S" and pt.get("stpid"):
+                        stops.append({
+                            "stpid": str(pt["stpid"]),
+                            "stpnm": pt.get("stpnm", ""),
+                            "lat": float(pt["lat"]),
+                            "lon": float(pt["lon"]),
+                            "seq": len(stops),
+                        })
+                parsed_patterns.append({
+                    "pid": str(pat.get("pid", "")),
+                    "path": path,
+                    "stops": stops,
+                    "stop_count": len(stops),
+                    "is_primary": pat == primary,
+                })
+
+            # Build ordered stop list from primary pattern, filling in any
+            # stops from the direction API that the pattern missed
+            ordered_stops = []
+            seen = set()
+            if primary:
+                for pt in primary.get("pt", []):
+                    if pt.get("typ") == "S" and pt.get("stpid"):
+                        sid = str(pt["stpid"])
+                        if sid not in seen:
+                            seen.add(sid)
+                            ordered_stops.append({
+                                "stpid": sid,
+                                "stpnm": pt.get("stpnm", ""),
+                                "lat": float(pt["lat"]),
+                                "lon": float(pt["lon"]),
+                            })
+            # Append any stops from the direction API not in the pattern
+            for s in raw_stops:
+                sid = str(s.get("stpid"))
+                if sid not in seen:
+                    seen.add(sid)
+                    ordered_stops.append({
+                        "stpid": sid,
+                        "stpnm": s.get("stpnm", ""),
+                        "lat": float(s["lat"]),
+                        "lon": float(s["lon"]),
+                    })
+
+            directions.append({
+                "id": dir_id,
+                "name": dir_id,
+                "stops": ordered_stops,
+                "patterns": parsed_patterns,
+                "primary_pid": str(primary["pid"]) if primary else None,
+            })
+
+        result = {
+            "route_id": rt,
+            "directions": directions,
+            "direction_count": len(directions),
+            "total_patterns": len(raw_ptrs),
+        }
+
+        cache_set(cache_key, result, 3600, persist=True)
+        return jsonify(result)
+
+    except Exception as e:
+        logging.error(f"Route detail error for {rt}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     # Fire-and-forget stop cache build on startup if missing

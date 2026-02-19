@@ -145,12 +145,13 @@ export default function MapView({
     onRoutesLoaded, onLiveDataUpdated, onStopClick, onMapClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
-    const [patternsData, setPatternsData] = useState<any[]>([]);
+    const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
+    const [routePatterns, setRoutePatterns] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
+    const routeDirectionsRef = useRef<any[]>([]);
     const [hoveredVehicle, setHoveredVehicle] = useState<string | null>(null);
     const [stopPredictions, setStopPredictions] = useState<Record<string, {route: string; minutes: number; destination: string}[]>>({});
     const mapRef = useRef<maplibregl.Map | null>(null);
-    const attemptedPatterns = useRef<Set<string>>(new Set());
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
@@ -177,18 +178,81 @@ export default function MapView({
         if (vehicle) getMLPrediction(vehicle).then(() => forceTooltipUpdate(c => c + 1));
     }, [hoveredVehicle, liveData, getMLPrediction]);
 
-    // Load stops for selected route
+    // Load structured route data: directions, patterns, ordered stops
     useEffect(() => {
-        if (selectedRoute === 'ALL') { setStopsData([]); return; }
-        axios.get(`${API_BASE}/stops?rt=${selectedRoute}`).then(res => {
-            const stops = res.data?.['bustime-response']?.stops || [];
-            setStopsData(stops.map((s: any) => ({
-                position: [parseFloat(s.lon), parseFloat(s.lat)],
-                stpid: String(s.stpid),
-                stpnm: s.stpnm,
-                route: selectedRoute
-            })));
-        }).catch(() => setStopsData([]));
+        if (selectedRoute === 'ALL') {
+            setStopsData([]);
+            setRoutePatterns([]);
+            routeDirectionsRef.current = [];
+            return;
+        }
+        let cancelled = false;
+        setStopsData([]);
+        setRoutePatterns([]);
+        routeDirectionsRef.current = [];
+
+        const loadRouteDetail = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/api/route-detail?rt=${selectedRoute}`);
+                if (cancelled) return;
+                const detail = res.data;
+                const color = ROUTE_COLORS[selectedRoute] || DEFAULT_ROUTE_COLOR;
+
+                const allStops: any[] = [];
+                const allPatterns: any[] = [];
+                const seenStops = new Set<string>();
+
+                for (const dir of detail.directions || []) {
+                    for (const pat of dir.patterns || []) {
+                        const path: [number, number][] = pat.path || [];
+                        const stops = (pat.stops || []).map((s: any, idx: number) => ({
+                            idx, stpid: String(s.stpid), stpnm: s.stpnm,
+                            pos: [s.lon, s.lat] as [number, number],
+                        }));
+                        allPatterns.push({
+                            path, stops, color, route: selectedRoute,
+                            pid: pat.pid, dir: dir.id, isPrimary: pat.is_primary,
+                        });
+                    }
+
+                    for (const s of dir.stops || []) {
+                        const sid = String(s.stpid);
+                        if (seenStops.has(sid)) continue;
+                        seenStops.add(sid);
+                        allStops.push({
+                            position: [s.lon, s.lat] as [number, number],
+                            stpid: sid,
+                            stpnm: s.stpnm,
+                            route: selectedRoute,
+                            direction: dir.id,
+                        });
+                    }
+                }
+
+                if (!cancelled) {
+                    routeDirectionsRef.current = detail.directions || [];
+                    setRoutePatterns(allPatterns);
+                    setStopsData(allStops);
+                }
+            } catch (e) {
+                console.error('Route detail load failed:', e);
+                if (cancelled) return;
+                // Fallback: load stops the old way
+                try {
+                    const res = await axios.get(`${API_BASE}/stops?rt=${selectedRoute}`);
+                    if (cancelled) return;
+                    const stops = res.data?.['bustime-response']?.stops || [];
+                    setStopsData(stops.map((s: any) => ({
+                        position: [parseFloat(s.lon), parseFloat(s.lat)],
+                        stpid: String(s.stpid),
+                        stpnm: s.stpnm,
+                        route: selectedRoute,
+                    })));
+                } catch { setStopsData([]); }
+            }
+        };
+        loadRouteDetail();
+        return () => { cancelled = true; };
     }, [selectedRoute, API_BASE]);
 
     // Fetch route-level predictions for stop tooltips
@@ -239,7 +303,7 @@ export default function MapView({
         return parsed;
     }, []);
 
-    // Load routes + patterns with batched requests to avoid API rate limits
+    // Load route list + all-routes patterns (for the city overview map)
     useEffect(() => {
         const load = async () => {
             try {
@@ -261,54 +325,13 @@ export default function MapView({
                         allPatterns.push(...parsePatternResponse(res, rt));
                     });
                 }
-                setPatternsData(allPatterns);
+                setAllRoutePatterns(allPatterns);
             } catch (e) {
                 console.error('Failed to load routes/patterns:', e);
             }
         };
         load();
     }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
-
-    // On-demand pattern loading: if a route is selected but has no pattern data, fetch it
-    const [patternlessRoutes, setPatternlessRoutes] = useState<Set<string>>(new Set());
-    useEffect(() => {
-        if (selectedRoute === 'ALL') return;
-        if (attemptedPatterns.current.has(selectedRoute)) return;
-        const hasPatterns = patternsData.some(p => p.route === selectedRoute);
-        if (hasPatterns) return;
-
-        attemptedPatterns.current.add(selectedRoute);
-        const loadRoutePattern = async () => {
-            try {
-                const res = await axios.get(`${API_BASE}/patterns?rt=${selectedRoute}`);
-                const parsed = parsePatternResponse(res, selectedRoute);
-                if (parsed.length > 0) {
-                    setPatternsData(prev => [...prev, ...parsed]);
-                    return;
-                }
-            } catch {}
-            setPatternlessRoutes(prev => new Set(prev).add(selectedRoute));
-        };
-        loadRoutePattern();
-    }, [selectedRoute, patternsData, API_BASE, parsePatternResponse]);
-
-    // Fallback: when a route's API pattern fetch failed/returned empty, build a path from stop positions
-    useEffect(() => {
-        if (selectedRoute === 'ALL' || stopsData.length < 2) return;
-        if (!patternlessRoutes.has(selectedRoute)) return;
-        const hasPatterns = patternsData.some(p => p.route === selectedRoute);
-        if (hasPatterns) return;
-
-        setPatternlessRoutes(prev => { const n = new Set(prev); n.delete(selectedRoute); return n; });
-        const color = ROUTE_COLORS[selectedRoute] || DEFAULT_ROUTE_COLOR;
-        const path: [number, number][] = stopsData.map((s: any) => s.position);
-        const stops = stopsData.map((s: any, idx: number) => ({
-            idx, stpid: String(s.stpid), stpnm: s.stpnm, pos: s.position,
-        }));
-        setPatternsData(prev => [...prev, {
-            path, stops, color, route: selectedRoute, pid: 'fallback', dir: 'fallback',
-        }]);
-    }, [selectedRoute, stopsData, patternsData, patternlessRoutes]);
 
     // Live vehicle polling — faster when tracking
     useEffect(() => {
@@ -369,10 +392,20 @@ export default function MapView({
 
     // ── Derived data ──
 
+    // Use direction-aware route patterns when available, fall back to all-route patterns
+    const patternsData = useMemo(() => {
+        if (selectedRoute === 'ALL') return allRoutePatterns;
+        if (routePatterns.length > 0) return routePatterns;
+        return allRoutePatterns.filter(p => p.route === selectedRoute);
+    }, [selectedRoute, allRoutePatterns, routePatterns]);
+
     const filteredPatterns = useMemo(() => {
         if (trackedBus) return patternsData.filter(p => p.route === trackedBus.route);
         if (activeTripPlan) return patternsData.filter(p => p.route === activeTripPlan.routeId);
-        return selectedRoute === 'ALL' ? patternsData : patternsData.filter(p => p.route === selectedRoute);
+        if (selectedRoute === 'ALL') return patternsData;
+        // For a selected route, show only primary patterns (one per direction) for cleaner visuals
+        const primaries = patternsData.filter(p => p.route === selectedRoute && p.isPrimary);
+        return primaries.length > 0 ? primaries : patternsData.filter(p => p.route === selectedRoute);
     }, [patternsData, selectedRoute, trackedBus, activeTripPlan]);
 
     const filteredLive = useMemo(() => {
