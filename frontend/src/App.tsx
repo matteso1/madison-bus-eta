@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import MapView from './components/MapView';
-import type { StopClickEvent, VehicleData, TrackedBus, TripPlan } from './components/MapView';
+import type { StopClickEvent, VehicleData, TrackedBus, TripPlan, BusClickEvent } from './components/MapView';
 import TopBar from './components/layout/TopBar';
 import BottomTabs from './components/layout/BottomTabs';
 import type { TabId } from './components/layout/BottomTabs';
 import ContextPanel from './components/panel/ContextPanel';
 import TrackingOverlay from './components/TrackingOverlay';
+import BusInfoPanel from './components/BusInfoPanel';
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('map');
@@ -19,6 +20,7 @@ export default function App() {
   const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
   const [liveVehicles, setLiveVehicles] = useState<VehicleData[]>([]);
   const [highlightedStops, setHighlightedStops] = useState<Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>>([]);
+  const [clickedBus, setClickedBus] = useState<BusClickEvent | null>(null);
 
   // Auto-request geolocation on mount
   useEffect(() => {
@@ -69,9 +71,14 @@ export default function App() {
     setUserLocation([lon, lat]);
   }, []);
 
+  const handleBusClick = useCallback((bus: BusClickEvent) => {
+    setClickedBus(bus);
+  }, []);
+
   const handleTrackBus = useCallback((bus: TrackedBus) => {
     setTrackedBus(bus);
     setSelectedStop(null);
+    setClickedBus(null);
   }, []);
 
   const handleStopTracking = useCallback(() => {
@@ -110,6 +117,7 @@ export default function App() {
             onRoutesLoaded={handleRoutesLoaded}
             onLiveDataUpdated={handleLiveDataUpdated}
             onStopClick={handleStopClick}
+            onBusClick={handleBusClick}
           />
 
           {trackedBus && (
@@ -117,6 +125,14 @@ export default function App() {
               trackedBus={trackedBus}
               vehicles={liveVehicles}
               onStopTracking={handleStopTracking}
+            />
+          )}
+
+          {clickedBus && !trackedBus && (
+            <BusInfoPanel
+              bus={clickedBus}
+              onClose={() => setClickedBus(null)}
+              onTrackBus={handleTrackBus}
             />
           )}
 

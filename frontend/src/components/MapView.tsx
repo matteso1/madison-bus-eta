@@ -125,6 +125,14 @@ export interface TripPlan {
     walkFromMin: number;
 }
 
+export interface BusClickEvent {
+    vid: string;
+    route: string;
+    destination: string;
+    delayed: boolean;
+    position: [number, number];
+}
+
 interface MapViewProps {
     selectedRoute: string;
     userLocation: [number, number] | null;
@@ -134,13 +142,14 @@ interface MapViewProps {
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
+    onBusClick?: (bus: BusClickEvent) => void;
     onMapClick?: (lngLat: [number, number]) => void;
 }
 
 
 export default function MapView({
     selectedRoute, userLocation, trackedBus, activeTripPlan, highlightedStops,
-    onRoutesLoaded, onLiveDataUpdated, onStopClick, onMapClick
+    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onMapClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
@@ -683,11 +692,22 @@ export default function MapView({
                 getRadius: 50,
                 getFillColor: [255, 255, 255],
                 getLineColor: [30, 30, 50],
+                onClick: ({ object }) => {
+                    if (object && onBusClick) {
+                        onBusClick({
+                            vid: object.vid,
+                            route: object.route,
+                            destination: object.des,
+                            delayed: object.dly,
+                            position: object.position,
+                        });
+                    }
+                },
             }));
         }
 
         return L;
-    }, [filteredPatterns, filteredLive, stopsData, onStopClick,
+    }, [filteredPatterns, filteredLive, stopsData, onStopClick, onBusClick,
         trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute]);
 
     return (

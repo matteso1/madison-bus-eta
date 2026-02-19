@@ -77,7 +77,7 @@ export default function ContextPanel({
       {tab === 'map' && (
         <div className="panel-scroll" style={{ flex: 1 }}>
           {selectedStop ? (
-            <StopPredictions stop={selectedStop} onClose={onStopClear} onTrackBus={onTrackBus} />
+            <StopPredictions stop={selectedStop} selectedRoute={selectedRoute} onClose={onStopClear} onTrackBus={onTrackBus} />
           ) : showTripPlanner ? (
             <TripPlanner
               userLocation={userLocation}

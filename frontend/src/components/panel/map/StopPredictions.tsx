@@ -5,6 +5,7 @@ import type { StopClickEvent, TrackedBus } from '../../MapView';
 
 interface StopPredictionsProps {
   stop: StopClickEvent;
+  selectedRoute: string;
   onClose: () => void;
   onTrackBus?: (bus: TrackedBus) => void;
 }
@@ -20,7 +21,7 @@ interface Prediction {
   vid: string;
 }
 
-export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredictionsProps) {
+export default function StopPredictions({ stop, selectedRoute, onClose, onTrackBus }: StopPredictionsProps) {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [stopLatLon, setStopLatLon] = useState<[number, number] | null>(null);
@@ -47,7 +48,10 @@ export default function StopPredictions({ stop, onClose, onTrackBus }: StopPredi
 
         const res = await axios.get(`${API_BASE}/predictions?stpid=${stop.stpid}`);
         const prdArray = res.data?.['bustime-response']?.prd || [];
-        const prds = Array.isArray(prdArray) ? prdArray : [prdArray];
+        const allPrds = Array.isArray(prdArray) ? prdArray : [prdArray];
+        const prds = selectedRoute && selectedRoute !== 'ALL'
+          ? allPrds.filter((p: any) => p.rt === selectedRoute)
+          : allPrds;
 
         const results: Prediction[] = [];
         for (const prd of prds.slice(0, 5)) {
