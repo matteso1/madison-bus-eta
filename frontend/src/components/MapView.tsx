@@ -405,6 +405,28 @@ export default function MapView({
         return null;
     }, [selectedStop, stopsData]);
 
+    // Resolve tracked bus destination position — from explicit stopPosition or stopsData lookup
+    const trackedStopPosition = useMemo((): [number, number] | null => {
+        if (!trackedBus) return null;
+        if (trackedBus.stopPosition) return trackedBus.stopPosition;
+        const stop = stopsData.find((s: any) => String(s.stpid) === String(trackedBus.stopId));
+        if (stop?.position) return stop.position as [number, number];
+        return null;
+    }, [trackedBus, stopsData]);
+
+    // Fit map to show both tracked bus and destination stop
+    useEffect(() => {
+        if (!trackedVehicle || !trackedStopPosition || !mapRef.current) return;
+        const busPos = trackedVehicle.position;
+        const bounds = new maplibregl.LngLatBounds(
+            [Math.min(busPos[0], trackedStopPosition[0]), Math.min(busPos[1], trackedStopPosition[1])],
+            [Math.max(busPos[0], trackedStopPosition[0]), Math.max(busPos[1], trackedStopPosition[1])]
+        );
+        mapRef.current.fitBounds(bounds, { padding: { top: 80, bottom: 180, left: 60, right: 420 }, maxZoom: 15, duration: 600 });
+    // Only run when tracking first starts, not on every position update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [trackedBus?.vid, trackedBus?.stopId]);
+
     // (delayed bus indicators removed per user feedback)
 
     // Extract bus route segment — always fetches fresh pattern data for stability
@@ -761,25 +783,20 @@ export default function MapView({
                     </div>
                 </Marker>
             )}
-            {trackedBus?.stopPosition && (
-                <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="center">
+            {/* Tracked bus destination — glow + label */}
+            {trackedStopPosition && (
+                <Marker longitude={trackedStopPosition[0]} latitude={trackedStopPosition[1]} anchor="center">
                     <div className="selected-stop-marker">
                         <div className="selected-stop-pulse" />
                         <div className="selected-stop-dot" />
                     </div>
                 </Marker>
             )}
-
-            {/* Tracked bus destination stop */}
-            {trackedBus?.stopPosition && (
-                <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
+            {trackedStopPosition && trackedBus && (
+                <Marker longitude={trackedStopPosition[0]} latitude={trackedStopPosition[1]} anchor="bottom" offset={[0, -16]}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
-                        <div style={{ background: 'rgba(8,8,16,0.92)', border: '1px solid rgba(0,212,255,0.4)', borderRadius: 6, padding: '2px 8px', marginBottom: 4, whiteSpace: 'nowrap' }}>
+                        <div style={{ background: 'rgba(8,8,16,0.92)', border: '1px solid rgba(0,212,255,0.4)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
                             <span style={{ fontSize: 10, color: '#00d4ff', fontWeight: 600 }}>{trackedBus.stopName}</span>
-                        </div>
-                        <div className="dest-pin-marker">
-                            <div className="pin"><div className="pin-inner" /></div>
-                            <div className="pin-shadow" />
                         </div>
                     </div>
                 </Marker>
