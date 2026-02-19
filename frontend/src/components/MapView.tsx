@@ -151,8 +151,9 @@ interface MapViewProps {
 
 export default function MapView({
     selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan, highlightedStops,
-    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onMapClick
+    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onMapClick: _onMapClick
 }: MapViewProps) {
+    void _onMapClick;
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
     const [routePatterns, setRoutePatterns] = useState<any[]>([]);
@@ -187,7 +188,7 @@ export default function MapView({
                 const color = ROUTE_COLORS[selectedRoute] || DEFAULT_ROUTE_COLOR;
 
                 const allPatterns: any[] = [];
-                const primaryStops: any[] = [];
+                const allStops: any[] = [];
                 const seenStops = new Set<string>();
 
                 for (const dir of detail.directions || []) {
@@ -202,34 +203,11 @@ export default function MapView({
                             pid: pat.pid, dir: dir.id, isPrimary: pat.is_primary,
                         });
 
-                        // Only collect stops from primary patterns for display
-                        if (pat.is_primary) {
-                            for (const s of pat.stops || []) {
-                                const sid = String(s.stpid);
-                                if (seenStops.has(sid)) continue;
-                                seenStops.add(sid);
-                                primaryStops.push({
-                                    position: [s.lon, s.lat] as [number, number],
-                                    stpid: sid,
-                                    stpnm: s.stpnm,
-                                    route: selectedRoute,
-                                    direction: dir.id,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // If no primary patterns, fall back to all stops from first pattern per direction
-                if (primaryStops.length === 0) {
-                    for (const dir of detail.directions || []) {
-                        const firstPat = (dir.patterns || [])[0];
-                        if (!firstPat) continue;
-                        for (const s of firstPat.stops || []) {
+                        for (const s of pat.stops || []) {
                             const sid = String(s.stpid);
                             if (seenStops.has(sid)) continue;
                             seenStops.add(sid);
-                            primaryStops.push({
+                            allStops.push({
                                 position: [s.lon, s.lat] as [number, number],
                                 stpid: sid,
                                 stpnm: s.stpnm,
@@ -243,7 +221,7 @@ export default function MapView({
                 if (!cancelled) {
                     routeDirectionsRef.current = detail.directions || [];
                     setRoutePatterns(allPatterns);
-                    setStopsData(primaryStops);
+                    setStopsData(allStops);
                 }
             } catch (e) {
                 console.error('Route detail load failed:', e);
@@ -333,17 +311,7 @@ export default function MapView({
                     );
                     batchResults.forEach((res, j) => {
                         const rt = batch[j].rt;
-                        const routePats = parsePatternResponse(res, rt);
-                        // Keep only the longest pattern per direction for clean overview
-                        const byDir: Record<string, any> = {};
-                        for (const p of routePats) {
-                            const key = p.dir || 'default';
-                            const existing = byDir[key];
-                            if (!existing || p.path.length > existing.path.length) {
-                                byDir[key] = { ...p, isPrimary: true };
-                            }
-                        }
-                        allPatterns.push(...Object.values(byDir));
+                        allPatterns.push(...parsePatternResponse(res, rt));
                     });
                 }
                 setAllRoutePatterns(allPatterns);
@@ -435,9 +403,7 @@ export default function MapView({
         if (trackedBus) return patternsData.filter(p => p.route === trackedBus.route);
         if (activeTripPlan) return patternsData.filter(p => p.route === activeTripPlan.routeId);
         if (selectedRoute === 'ALL') return patternsData;
-        // For a selected route, show only primary patterns (one per direction) for cleaner visuals
-        const primaries = patternsData.filter(p => p.route === selectedRoute && p.isPrimary);
-        return primaries.length > 0 ? primaries : patternsData.filter(p => p.route === selectedRoute);
+        return patternsData.filter(p => p.route === selectedRoute);
     }, [patternsData, selectedRoute, trackedBus, activeTripPlan]);
 
     const filteredLive = useMemo(() => {
@@ -748,20 +714,39 @@ export default function MapView({
             : filteredLive;
     }, [filteredLive, trackedBus, activeTripPlan]);
 
+    // Track map movement to reproject bus overlay positions
+    const [viewTick, setViewTick] = useState(0);
+    const handleViewChange = useCallback(() => setViewTick(t => t + 1), []);
+
+    // Project bus positions to screen pixels for the overlay
+    const busScreenData = useMemo(() => {
+        void viewTick;
+        const map = mapRef.current;
+        if (!map || nonTracked.length === 0) return [];
+        return nonTracked.map((bus: VehicleData) => {
+            const pt = map.project(new maplibregl.LngLat(bus.position[0], bus.position[1]));
+            return { ...bus, screenX: pt.x, screenY: pt.y };
+        });
+    }, [nonTracked, viewTick]);
+
+    const trackedScreenData = useMemo(() => {
+        void viewTick;
+        const map = mapRef.current;
+        if (!map || !trackedVehicle) return null;
+        const pt = map.project(new maplibregl.LngLat(trackedVehicle.position[0], trackedVehicle.position[1]));
+        return { ...trackedVehicle, screenX: pt.x, screenY: pt.y };
+    }, [trackedVehicle, viewTick]);
+
     return (
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         <DeckGL
             initialViewState={INITIAL_VIEW_STATE}
             controller={true}
             layers={layers}
             style={{ width: '100%', height: '100%' }}
-            onClick={({ coordinate }) => {
-                if (onMapClick && coordinate) {
-                    onMapClick([coordinate[0], coordinate[1]]);
-                }
-            }}
+            onViewStateChange={handleViewChange}
             getTooltip={({ object }) => {
                 if (!object) return null;
-
                 if (object.stpid) {
                     const preds = stopPredictions[object.stpid];
                     let predsHtml = '';
@@ -781,7 +766,6 @@ export default function MapView({
                         style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };
                 }
-
                 return null;
             }}
         >
@@ -790,6 +774,7 @@ export default function MapView({
                 mapLib={maplibregl}
                 mapStyle={MAP_STYLE}
                 onLoad={(e) => { mapRef.current = e.target; }}
+                onMove={handleViewChange}
             >
                 {/* Pulsing user location */}
                 {userLocation && (
@@ -802,42 +787,7 @@ export default function MapView({
                     </Marker>
                 )}
 
-                {/* Tracked bus highlight */}
-                {trackedVehicle && (
-                    <Marker longitude={trackedVehicle.position[0]} latitude={trackedVehicle.position[1]} anchor="center">
-                        <div className="tracked-bus-marker" style={{ transform: trackedVehicle.hdg > 0 ? `rotate(${trackedVehicle.hdg}deg)` : undefined }}>
-                            <div className="bus-ring" />
-                            <div className="bus-dot">{trackedVehicle.route}</div>
-                            {trackedVehicle.hdg > 0 && <div className="bus-arrow" />}
-                        </div>
-                    </Marker>
-                )}
-
-                {/* Live bus markers (DOM-based for professional styling) */}
-                {!activeTripPlan && nonTracked.map((bus: VehicleData) => (
-                    <Marker
-                        key={bus.vid}
-                        longitude={bus.position[0]}
-                        latitude={bus.position[1]}
-                        anchor="center"
-                        onClick={(e) => {
-                            e.originalEvent.stopPropagation();
-                            if (onBusClick) onBusClick({ vid: bus.vid, route: bus.route, destination: bus.des, delayed: bus.dly, position: bus.position });
-                        }}
-                    >
-                        <div
-                            className={`bus-marker${trackedBus ? ' bus-marker--dimmed' : ''}${bus.dly ? ' bus-marker--delayed' : ''}`}
-                            style={{ transform: bus.hdg > 0 ? `rotate(${bus.hdg}deg)` : undefined }}
-                        >
-                            <div className="bus-marker__body">
-                                <span className="bus-marker__route">{bus.route}</span>
-                            </div>
-                            {bus.hdg > 0 && <div className="bus-marker__nose" />}
-                        </div>
-                    </Marker>
-                ))}
-
-                {/* Selected stop highlight (visible both when browsing and tracking) */}
+                {/* Selected stop highlight */}
                 {selectedStopPosition && !trackedBus && (
                     <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
                         <div className="selected-stop-marker">
@@ -847,18 +797,11 @@ export default function MapView({
                     </Marker>
                 )}
 
-                {/* Tracked bus destination stop - show as a labeled pin */}
+                {/* Tracked bus destination stop */}
                 {trackedBus?.stopPosition && (
                     <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
-                            <div style={{
-                                background: 'rgba(8,8,16,0.92)',
-                                border: '1px solid rgba(0,212,255,0.4)',
-                                borderRadius: 6,
-                                padding: '2px 8px',
-                                marginBottom: 4,
-                                whiteSpace: 'nowrap',
-                            }}>
+                            <div style={{ background: 'rgba(8,8,16,0.92)', border: '1px solid rgba(0,212,255,0.4)', borderRadius: 6, padding: '2px 8px', marginBottom: 4, whiteSpace: 'nowrap' }}>
                                 <span style={{ fontSize: 10, color: '#00d4ff', fontWeight: 600 }}>{trackedBus.stopName}</span>
                             </div>
                             <div className="dest-pin-marker">
@@ -869,7 +812,7 @@ export default function MapView({
                     </Marker>
                 )}
 
-                {/* Trip origin stop label */}
+                {/* Trip labels */}
                 {activeTripPlan && (
                     <Marker longitude={activeTripPlan.originStop.lon} latitude={activeTripPlan.originStop.lat} anchor="bottom" offset={[0, -12]}>
                         <div className="trip-label trip-label--origin">
@@ -878,8 +821,6 @@ export default function MapView({
                         </div>
                     </Marker>
                 )}
-
-                {/* Trip dest stop label */}
                 {activeTripPlan && (
                     <Marker longitude={activeTripPlan.destStop.lon} latitude={activeTripPlan.destStop.lat} anchor="bottom" offset={[0, -12]}>
                         <div className="trip-label trip-label--dest">
@@ -887,8 +828,6 @@ export default function MapView({
                         </div>
                     </Marker>
                 )}
-
-                {/* Trip final destination pin */}
                 {activeTripPlan && (
                     <Marker longitude={activeTripPlan.finalDestination.lon} latitude={activeTripPlan.finalDestination.lat} anchor="bottom">
                         <div className="dest-pin-marker">
@@ -899,5 +838,42 @@ export default function MapView({
                 )}
             </Map>
         </DeckGL>
+
+        {/* Bus overlay — rendered OUTSIDE DeckGL so it's always on top and clickable */}
+        <div className="bus-overlay">
+            {trackedScreenData && (
+                <div
+                    className="bus-overlay__item"
+                    style={{ left: trackedScreenData.screenX, top: trackedScreenData.screenY }}
+                >
+                    <div className="tracked-bus-marker" style={{ transform: trackedScreenData.hdg > 0 ? `rotate(${trackedScreenData.hdg}deg)` : undefined }}>
+                        <div className="bus-ring" />
+                        <div className="bus-dot">{trackedScreenData.route}</div>
+                        {trackedScreenData.hdg > 0 && <div className="bus-arrow" />}
+                    </div>
+                </div>
+            )}
+            {busScreenData.map(bus => (
+                <div
+                    key={bus.vid}
+                    className="bus-overlay__item"
+                    style={{ left: bus.screenX, top: bus.screenY }}
+                    onClick={() => {
+                        if (onBusClick) onBusClick({ vid: bus.vid, route: bus.route, destination: bus.des, delayed: bus.dly, position: bus.position });
+                    }}
+                >
+                    <div
+                        className={`bus-marker${trackedBus ? ' bus-marker--dimmed' : ''}${bus.dly ? ' bus-marker--delayed' : ''}`}
+                        style={{ transform: bus.hdg > 0 ? `rotate(${bus.hdg}deg)` : undefined }}
+                    >
+                        <div className="bus-marker__body">
+                            <span className="bus-marker__route">{bus.route}</span>
+                        </div>
+                        {bus.hdg > 0 && <div className="bus-marker__nose" />}
+                    </div>
+                </div>
+            ))}
+        </div>
+        </div>
     );
 }
