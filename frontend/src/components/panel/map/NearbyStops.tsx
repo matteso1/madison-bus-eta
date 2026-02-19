@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
-import ConfidenceBand from '../../shared/ConfidenceBand';
 
 interface NearbyStopsProps {
   onBack: () => void;
@@ -21,10 +20,7 @@ interface NearbyStop {
 interface Arrival {
   route: string;
   destination: string;
-  apiMinutes: number;
-  mlLow: number;
-  mlMedian: number;
-  mlHigh: number;
+  minutes: number;
   delayed: boolean;
 }
 
@@ -45,39 +41,12 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onSt
       const res = await axios.get(`${API_BASE}/predictions?stpid=${stop.stpid}`);
       const prdArray = res.data?.['bustime-response']?.prd || [];
       const prds = Array.isArray(prdArray) ? prdArray : [prdArray];
-
-      const arrivals: Arrival[] = [];
-      for (const prd of prds.slice(0, 3)) {
-        const apiMinutes = parseInt(prd.prdctdn) || 0;
-        try {
-          const ml = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
-            route: prd.rt,
-            stop_id: stop.stpid,
-            vehicle_id: prd.vid,
-            api_prediction: apiMinutes,
-          });
-          arrivals.push({
-            route: prd.rt,
-            destination: prd.des,
-            apiMinutes,
-            mlLow: Math.round(ml.data.eta_low_min),
-            mlMedian: Math.round(ml.data.eta_median_min),
-            mlHigh: Math.round(ml.data.eta_high_min),
-            delayed: prd.dly === true || prd.dly === 'true',
-          });
-        } catch {
-          arrivals.push({
-            route: prd.rt,
-            destination: prd.des,
-            apiMinutes,
-            mlLow: Math.round(apiMinutes * 0.85),
-            mlMedian: apiMinutes,
-            mlHigh: Math.round(apiMinutes * 1.3),
-            delayed: prd.dly === true || prd.dly === 'true',
-          });
-        }
-      }
-      return arrivals;
+      return prds.slice(0, 3).map((prd: any) => ({
+        route: prd.rt,
+        destination: prd.des,
+        minutes: prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0),
+        delayed: prd.dly === true || prd.dly === 'true',
+      }));
     } catch {
       return [];
     }
@@ -285,31 +254,33 @@ export default function NearbyStops({ onBack, onUserLocation, onStopSelect, onSt
                       No buses arriving soon
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {stop.arrivals.map((arr, i) => (
-                        <div key={i}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span className="data-num" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                                {arr.route}
-                              </span>
-                              {arr.delayed && (
-                                <span style={{
-                                  fontSize: 9,
-                                  background: 'rgba(239,68,68,0.15)',
-                                  color: 'var(--danger)',
-                                  border: '1px solid rgba(239,68,68,0.25)',
-                                  borderRadius: 3,
-                                  padding: '1px 4px',
-                                  fontFamily: 'var(--font-data)',
-                                }}>DELAYED</span>
-                              )}
-                            </div>
-                            <span style={{ fontSize: 10, color: 'var(--text-secondary)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {arr.destination}
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {arr.route}
                             </span>
+                            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              → {arr.destination}
+                            </span>
+                            {arr.delayed && (
+                              <span style={{
+                                fontSize: 9,
+                                background: 'rgba(239,68,68,0.15)',
+                                color: 'var(--danger)',
+                                borderRadius: 3,
+                                padding: '1px 4px',
+                              }}>DELAYED</span>
+                            )}
                           </div>
-                          <ConfidenceBand low={arr.mlLow} median={arr.mlMedian} high={arr.mlHigh} />
+                          <span style={{
+                            fontSize: 15, fontWeight: 700,
+                            color: arr.minutes <= 1 ? 'var(--signal)' : 'var(--text-primary)',
+                            fontFamily: 'var(--font-data)',
+                          }}>
+                            {arr.minutes === 0 ? 'DUE' : `${arr.minutes}m`}
+                          </span>
                         </div>
                       ))}
                     </div>

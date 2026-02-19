@@ -721,15 +721,15 @@ export default function MapView({
                 data: nonTracked.filter((d: VehicleData) => d.hdg > 0),
                 pickable: false,
                 getPosition: (d: VehicleData) => d.position,
-                getText: () => '▸',
-                getSize: trackedBus ? 10 : 16,
-                getAngle: (d: VehicleData) => 90 - d.hdg,
-                getColor: trackedBus ? [100, 100, 120, 100] : [0, 212, 255, 220],
-                fontFamily: 'Arial',
-                fontWeight: 'bold' as any,
-                getPixelOffset: [0, 0],
-                billboard: false,
-                sizeUnits: 'pixels' as any,
+                getText: () => '➤',
+                getSize: 18,
+                getAngle: (d: VehicleData) => -(d.hdg),
+                getColor: [0, 200, 255, 240] as [number, number, number, number],
+                getPixelOffset: [0, -18],
+                billboard: true,
+                sizeUnits: 'pixels' as const,
+                fontFamily: 'Arial, sans-serif',
+                characterSet: ['➤'],
             }));
         }
 
@@ -765,7 +765,7 @@ export default function MapView({
                         html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:10px 14px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
                             <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${object.stpnm}</div>
                             <div style="font-size:10px;color:#64748b;font-family:JetBrains Mono,monospace;">Stop #${object.stpid}</div>
-                            ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for ML predictions</div>'}
+                            ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for arrival times</div>'}
                         </div>`,
                         style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };
@@ -780,7 +780,7 @@ export default function MapView({
                             </div>
                             <div style="font-size:12px;color:#e2e8f0;font-weight:500;">→ ${object.des || 'Unknown'}</div>
                             <div style="font-size:10px;color:#475569;font-family:JetBrains Mono,monospace;margin-top:4px;">Bus ${object.vid}</div>
-                            <div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click a stop for arrival times</div>
+                            <div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for upcoming stops</div>
                         </div>`,
                         style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
                     };

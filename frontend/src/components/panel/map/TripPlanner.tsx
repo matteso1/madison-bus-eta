@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import ConfidenceBand from '../../shared/ConfidenceBand';
 import type { TripPlan } from '../../MapView';
 
 interface TripPlannerProps {
@@ -473,9 +472,9 @@ export default function TripPlanner({ userLocation, onBack, onTripSelect, onUser
                       </div>
                     </div>
 
-                    {opt.mlEta && (
-                      <div style={{ marginLeft: 28, marginTop: 2 }}>
-                        <ConfidenceBand low={opt.mlEta.low} median={opt.mlEta.median} high={opt.mlEta.high} />
+                    {opt.nextBusMin != null && (
+                      <div style={{ marginLeft: 28, marginTop: 2, fontSize: 12, fontWeight: 600, color: opt.nextBusMin <= 1 ? 'var(--signal)' : 'var(--text-primary)' }}>
+                        {opt.nextBusMin <= 0 ? 'Bus arriving now' : `Bus in ${opt.nextBusMin} min`}
                       </div>
                     )}
 

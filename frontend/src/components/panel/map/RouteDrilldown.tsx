@@ -69,7 +69,7 @@ export default function RouteDrilldown({ route, onClose }: RouteDrilldownProps) 
           </div>
 
           <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 8 }}>
-            Click a stop on the map to see ML-corrected arrivals for this route.
+            Click a stop on the map to see upcoming arrivals for this route.
           </div>
         </>
       )}

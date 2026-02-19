@@ -19,37 +19,20 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
         if (!vehicleFound) return;
         const fetchEta = async () => {
             try {
-                let apiMinutes = 10;
-                try {
-                    // Fetch by VEHICLE (not stop) — always returns this bus's upcoming stops
-                    const predRes = await axios.get(`${API_BASE}/predictions?vid=${trackedBus.vid}`);
-                    const prdData = predRes.data?.['bustime-response']?.prd;
-                    const prds = Array.isArray(prdData) ? prdData : prdData ? [prdData] : [];
-                    const match = prds.find((p: any) => String(p.stpid) === String(trackedBus.stopId));
-                    if (match) {
-                        apiMinutes = match.prdctdn === 'DUE' ? 0 : (parseInt(match.prdctdn) || 10);
-                    }
-                } catch { /* use fallback */ }
-
-                const res = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
-                    route: trackedBus.route,
-                    stop_id: trackedBus.stopId,
-                    vehicle_id: trackedBus.vid,
-                    api_prediction: apiMinutes,
-                });
-                if (res.data?.eta_low_min != null) {
-                    setEta({
-                        low: Math.round(res.data.eta_low_min),
-                        median: Math.round(res.data.eta_median_min),
-                        high: Math.round(res.data.eta_high_min),
-                    });
+                const predRes = await axios.get(`${API_BASE}/predictions?vid=${trackedBus.vid}`);
+                const prdData = predRes.data?.['bustime-response']?.prd;
+                const prds = Array.isArray(prdData) ? prdData : prdData ? [prdData] : [];
+                const match = prds.find((p: any) => String(p.stpid) === String(trackedBus.stopId));
+                if (match) {
+                    const mins = match.prdctdn === 'DUE' ? 0 : (parseInt(match.prdctdn) || 0);
+                    setEta({ low: mins, median: mins, high: mins });
                 }
             } catch {}
         };
         fetchEta();
         const timer = setInterval(fetchEta, 15000);
         return () => clearInterval(timer);
-    }, [vehicleFound, trackedBus.vid, trackedBus.route, trackedBus.stopId, API_BASE]);
+    }, [vehicleFound, trackedBus.vid, trackedBus.stopId, API_BASE]);
 
     if (!vehicle) {
         return (
@@ -96,7 +79,7 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                                 {eta.median <= 1 ? 'DUE' : eta.median}
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                                {eta.median <= 1 ? 'Arriving now' : `min \u00b7 ${eta.low}\u2013${eta.high} range`}
+                                {eta.median <= 1 ? 'Arriving now' : 'minutes away'}
                             </div>
                         </>
                     ) : (

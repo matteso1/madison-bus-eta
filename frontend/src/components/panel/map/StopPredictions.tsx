@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import ConfidenceBand from '../../shared/ConfidenceBand';
 import type { StopClickEvent, TrackedBus } from '../../MapView';
 
 interface StopPredictionsProps {
@@ -13,10 +12,7 @@ interface StopPredictionsProps {
 interface Prediction {
   route: string;
   destination: string;
-  apiMinutes: number;
-  mlLow: number;
-  mlMedian: number;
-  mlHigh: number;
+  minutes: number;
   delayed: boolean;
   vid: string;
 }
@@ -59,41 +55,15 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
           })
           .slice(0, 3);
 
-        const results: Prediction[] = [];
-        for (const prd of prds) {
-          if (cancelled) return;
-          const apiMinutes = prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0);
-          try {
-            const mlRes = await axios.post(`${API_BASE}/api/predict-arrival-v2`, {
-              route: prd.rt,
-              stop_id: stop.stpid,
-              vehicle_id: prd.vid,
-              api_prediction: apiMinutes,
-            });
-            results.push({
-              route: prd.rt,
-              destination: prd.des,
-              apiMinutes,
-              mlLow: Math.round(mlRes.data.eta_low_min),
-              mlMedian: Math.round(mlRes.data.eta_median_min),
-              mlHigh: Math.round(mlRes.data.eta_high_min),
-              delayed: prd.dly === true || prd.dly === 'true',
-              vid: prd.vid,
-            });
-          } catch {
-            results.push({
-              route: prd.rt,
-              destination: prd.des,
-              apiMinutes,
-              mlLow: Math.round(apiMinutes * 0.85),
-              mlMedian: apiMinutes,
-              mlHigh: Math.round(apiMinutes * 1.3),
-              delayed: prd.dly === true || prd.dly === 'true',
-              vid: prd.vid,
-            });
-          }
+        if (!cancelled) {
+          setPredictions(prds.map((prd: any) => ({
+            route: prd.rt,
+            destination: prd.des,
+            minutes: prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0),
+            delayed: prd.dly === true || prd.dly === 'true',
+            vid: prd.vid,
+          })));
         }
-        if (!cancelled) setPredictions(results);
       } catch (e) {
         console.error('Stop predictions error:', e);
       } finally {
@@ -102,8 +72,9 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
     };
 
     load();
-    return () => { cancelled = true; };
-  }, [stop.stpid, stop.route, API_BASE]);
+    const timer = setInterval(load, 15000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [stop.stpid, stop.route, selectedRoute, API_BASE]);
 
   const handleTrack = (pred: Prediction) => {
     if (!onTrackBus) return;
@@ -145,7 +116,7 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
       </div>
 
       <div style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
-        ML-Corrected Arrivals
+        Upcoming Arrivals
       </div>
 
       {loading ? (
@@ -157,7 +128,7 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
           No buses approaching this stop
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {predictions.map((pred) => (
             <div
               key={`${pred.vid}-${pred.route}`}
@@ -168,48 +139,54 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
                 padding: '12px',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="data-num" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {pred.route}
-                  </span>
-                  {pred.delayed && (
-                    <span style={{
-                      fontSize: 9,
-                      background: 'rgba(239,68,68,0.15)',
-                      color: 'var(--danger)',
-                      border: '1px solid rgba(239,68,68,0.3)',
-                      borderRadius: 3,
-                      padding: '1px 5px',
-                      fontFamily: 'var(--font-data)',
-                    }}>
-                      DELAYED
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {pred.route}
                     </span>
-                  )}
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      → {pred.destination}
+                    </span>
+                    {pred.delayed && (
+                      <span style={{
+                        fontSize: 9,
+                        background: 'rgba(239,68,68,0.15)',
+                        color: 'var(--danger)',
+                        borderRadius: 3,
+                        padding: '1px 5px',
+                        fontFamily: 'var(--font-data)',
+                      }}>
+                        DELAYED
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="data-num" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  API: {pred.apiMinutes}m
+                <div style={{
+                  fontSize: pred.minutes === 0 ? 18 : 22,
+                  fontWeight: 700,
+                  color: pred.minutes <= 1 ? 'var(--signal)' : 'var(--text-primary)',
+                  fontFamily: 'var(--font-data)',
+                  lineHeight: 1,
+                }}>
+                  {pred.minutes === 0 ? 'DUE' : `${pred.minutes}`}
+                  {pred.minutes > 0 && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>min</span>}
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                {pred.destination}
-              </div>
-              <ConfidenceBand low={pred.mlLow} median={pred.mlMedian} high={pred.mlHigh} />
 
-              {/* Track Bus Button — only for buses arriving within 15 min */}
-              {onTrackBus && pred.apiMinutes <= 15 && (
+              {onTrackBus && pred.minutes <= 15 && (
                 <button
                   onClick={() => handleTrack(pred)}
                   style={{
                     width: '100%',
-                    marginTop: 10,
+                    marginTop: 6,
                     background: 'var(--signal-dim)',
                     border: '1px solid rgba(0,212,255,0.3)',
                     borderRadius: 6,
                     color: 'var(--signal)',
                     fontSize: 11,
                     fontWeight: 600,
-                    padding: '8px 12px',
+                    padding: '7px 12px',
                     cursor: 'pointer',
                     fontFamily: 'var(--font-ui)',
                     display: 'flex',
@@ -221,8 +198,7 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.2)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'var(--signal-dim)')}
                 >
-                  <span style={{ fontSize: 14 }}>&#9673;</span>
-                  Track This Bus
+                  ◉ Track This Bus
                 </button>
               )}
             </div>
