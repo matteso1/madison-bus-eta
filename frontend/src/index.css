@@ -83,6 +83,8 @@ html, body, #root {
    marker container to sit above it. */
 .maplibregl-marker {
   z-index: 10 !important;
+  pointer-events: auto !important;
+  cursor: pointer;
 }
 /* DeckGL tooltip must render above everything including MapLibre markers */
 .deck-tooltip {
@@ -129,24 +131,6 @@ html, body, #root {
 @keyframes loc-pulse {
   0% { transform: scale(0.5); opacity: 1; }
   100% { transform: scale(2.8); opacity: 0; }
-}
-
-/* ── Bus Overlay (rendered outside DeckGL for guaranteed top layer) ── */
-.bus-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 30;
-  overflow: hidden;
-}
-.bus-overlay__item {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  pointer-events: auto;
-  cursor: pointer;
 }
 
 /* ── Live Bus Marker (professional pill with direction) ── */

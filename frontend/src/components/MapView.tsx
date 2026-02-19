@@ -1,11 +1,17 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import DeckGL from '@deck.gl/react';
+import { MapboxOverlay } from '@deck.gl/mapbox';
 import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
-import { Map, Marker } from '@vis.gl/react-maplibre';
+import { Map, Marker, useControl } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import axios from 'axios';
+
+function DeckGLOverlay(props: { layers: any[] }) {
+    const overlay = useControl(() => new MapboxOverlay({ interleaved: true }));
+    overlay.setProps({ layers: props.layers });
+    return null;
+}
 
 const INITIAL_VIEW_STATE = {
     longitude: -89.384,
@@ -151,15 +157,14 @@ interface MapViewProps {
 
 export default function MapView({
     selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan, highlightedStops,
-    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onMapClick: _onMapClick
+    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick
 }: MapViewProps) {
-    void _onMapClick;
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
     const [routePatterns, setRoutePatterns] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
     const routeDirectionsRef = useRef<any[]>([]);
-    const [stopPredictions, setStopPredictions] = useState<Record<string, {route: string; minutes: number; destination: string}[]>>({});
+    // Stop predictions removed — users click stops for arrival info via StopPredictions panel
     const mapRef = useRef<maplibregl.Map | null>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
@@ -244,31 +249,7 @@ export default function MapView({
         return () => { cancelled = true; };
     }, [selectedRoute, API_BASE]);
 
-    // Fetch route-level predictions for stop tooltips
-    useEffect(() => {
-        if (selectedRoute === 'ALL' || activeTripPlan) { setStopPredictions({}); return; }
-        const fetchPredictions = async () => {
-            try {
-                const res = await axios.get(`${API_BASE}/predictions?rt=${selectedRoute}`);
-                const preds = res.data?.['bustime-response']?.prd;
-                if (!preds) return;
-                const arr = Array.isArray(preds) ? preds : [preds];
-                const grouped: Record<string, {route: string; minutes: number; destination: string}[]> = {};
-                arr.forEach((p: any) => {
-                    const stpid = String(p.stpid);
-                    const mins = parseInt(p.prdctdn === 'DUE' ? '0' : p.prdctdn, 10);
-                    if (!grouped[stpid]) grouped[stpid] = [];
-                    if (grouped[stpid].length < 3) {
-                        grouped[stpid].push({ route: p.rt, minutes: mins, destination: p.des || '' });
-                    }
-                });
-                setStopPredictions(grouped);
-            } catch { setStopPredictions({}); }
-        };
-        fetchPredictions();
-        const timer = setInterval(fetchPredictions, 30000);
-        return () => clearInterval(timer);
-    }, [selectedRoute, activeTripPlan, API_BASE]);
+    // Stop predictions fetched on-demand via StopPredictions panel (click a stop)
 
     const parsePatternResponse = useCallback((res: any, rt: string): any[] => {
         const parsed: any[] = [];
@@ -714,151 +695,37 @@ export default function MapView({
             : filteredLive;
     }, [filteredLive, trackedBus, activeTripPlan]);
 
-    // Track map movement to reproject bus overlay positions
-    const [viewTick, setViewTick] = useState(0);
-    const handleViewChange = useCallback(() => setViewTick(t => t + 1), []);
-
-    // Project bus positions to screen pixels for the overlay
-    const busScreenData = useMemo(() => {
-        void viewTick;
-        const map = mapRef.current;
-        if (!map || nonTracked.length === 0) return [];
-        return nonTracked.map((bus: VehicleData) => {
-            const pt = map.project(new maplibregl.LngLat(bus.position[0], bus.position[1]));
-            return { ...bus, screenX: pt.x, screenY: pt.y };
-        });
-    }, [nonTracked, viewTick]);
-
-    const trackedScreenData = useMemo(() => {
-        void viewTick;
-        const map = mapRef.current;
-        if (!map || !trackedVehicle) return null;
-        const pt = map.project(new maplibregl.LngLat(trackedVehicle.position[0], trackedVehicle.position[1]));
-        return { ...trackedVehicle, screenX: pt.x, screenY: pt.y };
-    }, [trackedVehicle, viewTick]);
-
     return (
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-        <DeckGL
+        <Map
             initialViewState={INITIAL_VIEW_STATE}
-            controller={true}
-            layers={layers}
+            mapLib={maplibregl}
+            mapStyle={MAP_STYLE}
             style={{ width: '100%', height: '100%' }}
-            onViewStateChange={handleViewChange}
-            getTooltip={({ object }) => {
-                if (!object) return null;
-                if (object.stpid) {
-                    const preds = stopPredictions[object.stpid];
-                    let predsHtml = '';
-                    if (preds?.length) {
-                        predsHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #1e1e2e;">` +
-                            preds.map((p: {destination: string; minutes: number}) => `<div style="display:flex;justify-content:space-between;gap:12px;margin-top:3px;">
-                                <span style="font-size:11px;color:#94a3b8;">${p.destination}</span>
-                                <span style="font-size:12px;font-weight:600;color:#00d4ff;font-family:JetBrains Mono,monospace;">${p.minutes === 0 ? 'DUE' : p.minutes + ' min'}</span>
-                            </div>`).join('') + `</div>`;
-                    }
-                    return {
-                        html: `<div style="background:rgba(8,8,16,0.95);color:#e2e8f0;padding:10px 14px;border-radius:8px;font-family:Inter,sans-serif;border:1px solid #1e1e2e;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-                            <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${object.stpnm}</div>
-                            <div style="font-size:10px;color:#64748b;font-family:JetBrains Mono,monospace;">Stop #${object.stpid}</div>
-                            ${predsHtml || '<div style="font-size:10px;color:#00d4ff;margin-top:6px;">Click for arrival times</div>'}
-                        </div>`,
-                        style: { backgroundColor: 'transparent', zIndex: '100', pointerEvents: 'none' }
-                    };
-                }
-                return null;
-            }}
+            onLoad={(e) => { mapRef.current = e.target; }}
+            reuseMaps
         >
-            <Map
-                reuseMaps
-                mapLib={maplibregl}
-                mapStyle={MAP_STYLE}
-                onLoad={(e) => { mapRef.current = e.target; }}
-                onMove={handleViewChange}
-            >
-                {/* Pulsing user location */}
-                {userLocation && (
-                    <Marker longitude={userLocation[0]} latitude={userLocation[1]} anchor="center">
-                        <div className="user-loc-marker">
-                            <div className="pulse-ring" />
-                            <div className="pulse-ring-2" />
-                            <div className="dot" />
-                        </div>
-                    </Marker>
-                )}
+            <DeckGLOverlay layers={layers} />
 
-                {/* Selected stop highlight */}
-                {selectedStopPosition && !trackedBus && (
-                    <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
-                        <div className="selected-stop-marker">
-                            <div className="selected-stop-pulse" />
-                            <div className="selected-stop-dot" />
-                        </div>
-                    </Marker>
-                )}
-
-                {/* Tracked bus destination stop */}
-                {trackedBus?.stopPosition && (
-                    <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
-                            <div style={{ background: 'rgba(8,8,16,0.92)', border: '1px solid rgba(0,212,255,0.4)', borderRadius: 6, padding: '2px 8px', marginBottom: 4, whiteSpace: 'nowrap' }}>
-                                <span style={{ fontSize: 10, color: '#00d4ff', fontWeight: 600 }}>{trackedBus.stopName}</span>
-                            </div>
-                            <div className="dest-pin-marker">
-                                <div className="pin"><div className="pin-inner" /></div>
-                                <div className="pin-shadow" />
-                            </div>
-                        </div>
-                    </Marker>
-                )}
-
-                {/* Trip labels */}
-                {activeTripPlan && (
-                    <Marker longitude={activeTripPlan.originStop.lon} latitude={activeTripPlan.originStop.lat} anchor="bottom" offset={[0, -12]}>
-                        <div className="trip-label trip-label--origin">
-                            <span className="trip-label__route">{activeTripPlan.routeId}</span>
-                            <span className="trip-label__name">{activeTripPlan.originStop.stpnm}</span>
-                        </div>
-                    </Marker>
-                )}
-                {activeTripPlan && (
-                    <Marker longitude={activeTripPlan.destStop.lon} latitude={activeTripPlan.destStop.lat} anchor="bottom" offset={[0, -12]}>
-                        <div className="trip-label trip-label--dest">
-                            <span className="trip-label__name">{activeTripPlan.destStop.stpnm}</span>
-                        </div>
-                    </Marker>
-                )}
-                {activeTripPlan && (
-                    <Marker longitude={activeTripPlan.finalDestination.lon} latitude={activeTripPlan.finalDestination.lat} anchor="bottom">
-                        <div className="dest-pin-marker">
-                            <div className="pin"><div className="pin-inner" /></div>
-                            <div className="pin-shadow" />
-                        </div>
-                    </Marker>
-                )}
-            </Map>
-        </DeckGL>
-
-        {/* Bus overlay — rendered OUTSIDE DeckGL so it's always on top and clickable */}
-        <div className="bus-overlay">
-            {trackedScreenData && (
-                <div
-                    className="bus-overlay__item"
-                    style={{ left: trackedScreenData.screenX, top: trackedScreenData.screenY }}
-                >
-                    <div className="tracked-bus-marker" style={{ transform: trackedScreenData.hdg > 0 ? `rotate(${trackedScreenData.hdg}deg)` : undefined }}>
-                        <div className="bus-ring" />
-                        <div className="bus-dot">{trackedScreenData.route}</div>
-                        {trackedScreenData.hdg > 0 && <div className="bus-arrow" />}
+            {/* Pulsing user location */}
+            {userLocation && (
+                <Marker longitude={userLocation[0]} latitude={userLocation[1]} anchor="center">
+                    <div className="user-loc-marker">
+                        <div className="pulse-ring" />
+                        <div className="pulse-ring-2" />
+                        <div className="dot" />
                     </div>
-                </div>
+                </Marker>
             )}
-            {busScreenData.map(bus => (
-                <div
+
+            {/* Live bus markers — DOM markers naturally above DeckGL canvas layers */}
+            {!activeTripPlan && nonTracked.map((bus: VehicleData) => (
+                <Marker
                     key={bus.vid}
-                    className="bus-overlay__item"
-                    style={{ left: bus.screenX, top: bus.screenY }}
-                    onClick={() => {
+                    longitude={bus.position[0]}
+                    latitude={bus.position[1]}
+                    anchor="center"
+                    onClick={(e) => {
+                        e.originalEvent.stopPropagation();
                         if (onBusClick) onBusClick({ vid: bus.vid, route: bus.route, destination: bus.des, delayed: bus.dly, position: bus.position });
                     }}
                 >
@@ -871,9 +738,69 @@ export default function MapView({
                         </div>
                         {bus.hdg > 0 && <div className="bus-marker__nose" />}
                     </div>
-                </div>
+                </Marker>
             ))}
-        </div>
-        </div>
+
+            {/* Tracked bus highlight */}
+            {trackedVehicle && (
+                <Marker longitude={trackedVehicle.position[0]} latitude={trackedVehicle.position[1]} anchor="center">
+                    <div className="tracked-bus-marker" style={{ transform: trackedVehicle.hdg > 0 ? `rotate(${trackedVehicle.hdg}deg)` : undefined }}>
+                        <div className="bus-ring" />
+                        <div className="bus-dot">{trackedVehicle.route}</div>
+                        {trackedVehicle.hdg > 0 && <div className="bus-arrow" />}
+                    </div>
+                </Marker>
+            )}
+
+            {/* Selected stop highlight */}
+            {selectedStopPosition && !trackedBus && (
+                <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
+                    <div className="selected-stop-marker">
+                        <div className="selected-stop-pulse" />
+                        <div className="selected-stop-dot" />
+                    </div>
+                </Marker>
+            )}
+
+            {/* Tracked bus destination stop */}
+            {trackedBus?.stopPosition && (
+                <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="bottom">
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none' }}>
+                        <div style={{ background: 'rgba(8,8,16,0.92)', border: '1px solid rgba(0,212,255,0.4)', borderRadius: 6, padding: '2px 8px', marginBottom: 4, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: 10, color: '#00d4ff', fontWeight: 600 }}>{trackedBus.stopName}</span>
+                        </div>
+                        <div className="dest-pin-marker">
+                            <div className="pin"><div className="pin-inner" /></div>
+                            <div className="pin-shadow" />
+                        </div>
+                    </div>
+                </Marker>
+            )}
+
+            {/* Trip labels */}
+            {activeTripPlan && (
+                <Marker longitude={activeTripPlan.originStop.lon} latitude={activeTripPlan.originStop.lat} anchor="bottom" offset={[0, -12]}>
+                    <div className="trip-label trip-label--origin">
+                        <span className="trip-label__route">{activeTripPlan.routeId}</span>
+                        <span className="trip-label__name">{activeTripPlan.originStop.stpnm}</span>
+                    </div>
+                </Marker>
+            )}
+            {activeTripPlan && (
+                <Marker longitude={activeTripPlan.destStop.lon} latitude={activeTripPlan.destStop.lat} anchor="bottom" offset={[0, -12]}>
+                    <div className="trip-label trip-label--dest">
+                        <span className="trip-label__name">{activeTripPlan.destStop.stpnm}</span>
+                    </div>
+                </Marker>
+            )}
+            {activeTripPlan && (
+                <Marker longitude={activeTripPlan.finalDestination.lon} latitude={activeTripPlan.finalDestination.lat} anchor="bottom">
+                    <div className="dest-pin-marker">
+                        <div className="pin"><div className="pin-inner" /></div>
+                        <div className="pin-shadow" />
+                    </div>
+                </Marker>
+            )}
+        </Map>
     );
 }
