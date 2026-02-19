@@ -110,6 +110,7 @@ export default function App() {
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           <MapView
             selectedRoute={selectedRoute}
+            selectedStop={selectedStop}
             userLocation={userLocation}
             trackedBus={trackedBus}
             activeTripPlan={activeTripPlan}

@@ -49,12 +49,18 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
         const res = await axios.get(`${API_BASE}/predictions?stpid=${stop.stpid}`);
         const prdArray = res.data?.['bustime-response']?.prd || [];
         const allPrds = Array.isArray(prdArray) ? prdArray : [prdArray];
-        const prds = selectedRoute && selectedRoute !== 'ALL'
+        const routeFiltered = selectedRoute && selectedRoute !== 'ALL'
           ? allPrds.filter((p: any) => p.rt === selectedRoute)
           : allPrds;
+        const prds = routeFiltered
+          .filter((p: any) => {
+            const mins = p.prdctdn === 'DUE' ? 0 : (parseInt(p.prdctdn) || 999);
+            return mins <= 30;
+          })
+          .slice(0, 3);
 
         const results: Prediction[] = [];
-        for (const prd of prds.slice(0, 5)) {
+        for (const prd of prds) {
           if (cancelled) return;
           const apiMinutes = prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0);
           try {
@@ -190,8 +196,8 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
               </div>
               <ConfidenceBand low={pred.mlLow} median={pred.mlMedian} high={pred.mlHigh} />
 
-              {/* Track Bus Button */}
-              {onTrackBus && (
+              {/* Track Bus Button — only for buses arriving within 15 min */}
+              {onTrackBus && pred.apiMinutes <= 15 && (
                 <button
                   onClick={() => handleTrack(pred)}
                   style={{

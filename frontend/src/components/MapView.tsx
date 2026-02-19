@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { Map, Marker } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
@@ -105,6 +105,7 @@ export interface VehicleData {
     vid: string;
     des: string;
     dly: boolean;
+    hdg: number;
     color: [number, number, number];
 }
 
@@ -135,6 +136,7 @@ export interface BusClickEvent {
 
 interface MapViewProps {
     selectedRoute: string;
+    selectedStop: StopClickEvent | null;
     userLocation: [number, number] | null;
     trackedBus: TrackedBus | null;
     activeTripPlan: TripPlan | null;
@@ -148,7 +150,7 @@ interface MapViewProps {
 
 
 export default function MapView({
-    selectedRoute, userLocation, trackedBus, activeTripPlan, highlightedStops,
+    selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan, highlightedStops,
     onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onMapClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
@@ -344,6 +346,7 @@ export default function MapView({
                     vid: v.vid,
                     des: v.des,
                     dly: v.dly === true || v.dly === 'true',
+                    hdg: parseInt(v.hdg) || 0,
                     color: ROUTE_COLORS[v.rt] || DEFAULT_ROUTE_COLOR,
                 }));
                 setLiveData(mapped);
@@ -414,6 +417,13 @@ export default function MapView({
         if (!trackedBus) return null;
         return liveData.find(v => v.vid === trackedBus.vid) || null;
     }, [liveData, trackedBus]);
+
+    const selectedStopPosition = useMemo(() => {
+        if (!selectedStop) return null;
+        const stop = stopsData.find((s: any) => String(s.stpid) === String(selectedStop.stpid));
+        if (stop) return [stop.lon, stop.lat] as [number, number];
+        return null;
+    }, [selectedStop, stopsData]);
 
     // (delayed bus indicators removed per user feedback)
 
@@ -704,6 +714,23 @@ export default function MapView({
                     }
                 },
             }));
+
+            // 9) Direction arrows on bus dots
+            L.push(new TextLayer({
+                id: 'bus-direction-arrows',
+                data: nonTracked.filter((d: VehicleData) => d.hdg > 0),
+                pickable: false,
+                getPosition: (d: VehicleData) => d.position,
+                getText: () => '▸',
+                getSize: trackedBus ? 10 : 16,
+                getAngle: (d: VehicleData) => 90 - d.hdg,
+                getColor: trackedBus ? [100, 100, 120, 100] : [0, 212, 255, 220],
+                fontFamily: 'Arial',
+                fontWeight: 'bold' as any,
+                getPixelOffset: [0, 0],
+                billboard: false,
+                sizeUnits: 'pixels' as any,
+            }));
         }
 
         return L;
@@ -786,6 +813,20 @@ export default function MapView({
                             <div className="bus-ring" />
                             <div className="bus-dot" />
                         </div>
+                    </Marker>
+                )}
+
+                {/* Selected stop highlight */}
+                {selectedStopPosition && !trackedBus && (
+                    <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
+                        <div style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: '#00d4ff',
+                            border: '3px solid white',
+                            boxShadow: '0 0 12px rgba(0,212,255,0.6), 0 0 24px rgba(0,212,255,0.3)',
+                        }} />
                     </Marker>
                 )}
 
