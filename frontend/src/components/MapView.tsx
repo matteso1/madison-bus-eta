@@ -752,9 +752,17 @@ export default function MapView({
                 </Marker>
             )}
 
-            {/* Selected stop highlight */}
+            {/* Selected stop highlight — from click or from tracking destination */}
             {selectedStopPosition && !trackedBus && (
                 <Marker longitude={selectedStopPosition[0]} latitude={selectedStopPosition[1]} anchor="center">
+                    <div className="selected-stop-marker">
+                        <div className="selected-stop-pulse" />
+                        <div className="selected-stop-dot" />
+                    </div>
+                </Marker>
+            )}
+            {trackedBus?.stopPosition && (
+                <Marker longitude={trackedBus.stopPosition[0]} latitude={trackedBus.stopPosition[1]} anchor="center">
                     <div className="selected-stop-marker">
                         <div className="selected-stop-pulse" />
                         <div className="selected-stop-dot" />
