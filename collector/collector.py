@@ -629,23 +629,28 @@ def run_collector():
     # Load static GTFS schedule data (one-time at startup)
     _init_static_gtfs()
     
-    # Initialize Arrival Detector for ground truth collection
+    # Initialize Arrival Detector using stops from static GTFS DB table
+    # (avoids burning REST API quota on startup — gtfs_stops loaded above)
     global arrival_detector
-    if ARRIVAL_DETECTOR_AVAILABLE and DB_AVAILABLE:
-        logger.info("Arrival Detector: Fetching stop locations...")
+    if ARRIVAL_DETECTOR_AVAILABLE and DB_AVAILABLE and DATABASE_URL:
         try:
-            routes = fetch_routes()
-            if routes:
-                stops = fetch_all_stops(routes)
-                if stops:
-                    arrival_detector = ArrivalDetector(stops)
-                    logger.info(f"Arrival Detector: ✓ Initialized with {len(stops)} stops")
-                else:
-                    logger.warning("Arrival Detector: No stops found")
+            from sqlalchemy import create_engine, text as sa_text
+            engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+            with engine.connect() as conn:
+                rows = conn.execute(sa_text(
+                    "SELECT stop_id, stop_name, stop_lat, stop_lon FROM gtfs_stops"
+                )).fetchall()
+            stops = [
+                StopLocation(stpid=r[0], stpnm=r[1], lat=r[2], lon=r[3])
+                for r in rows if r[2] and r[3]
+            ]
+            if stops:
+                arrival_detector = ArrivalDetector(stops)
+                logger.info(f"Arrival Detector: ✓ Initialized with {len(stops)} stops from gtfs_stops")
             else:
-                logger.warning("Arrival Detector: No routes found, will retry later")
+                logger.warning("Arrival Detector: gtfs_stops table empty, detector disabled")
         except Exception as e:
-            logger.warning(f"Arrival Detector: Failed to initialize: {e}")
+            logger.warning(f"Arrival Detector: Failed to initialize from DB: {e}")
     else:
         logger.info("Arrival Detector: Disabled (missing dependencies)")
     
