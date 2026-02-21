@@ -229,7 +229,7 @@ def main():
     # Step 2: Feature engineering with TEMPORAL SPLIT
     logger.info("Step 2: Engineering features with temporal split...")
     try:
-        X_train, X_test, y_train, y_test, feature_names, split_info = prepare_regression_training_data(
+        X_train, X_test, y_train, y_test, feature_names, split_info, aggregates = prepare_regression_training_data(
             df,
             test_days=2,  # Test on last 2 days
             use_temporal_split=True
@@ -324,11 +324,42 @@ def main():
         logger.info("Step 5: Deploying new model...")
         try:
             model_path = save_model(result['model'], new_metrics, notes=deploy_reason)
-            logger.info(f"✅ Model deployed: {model_path}")
+            logger.info(f"Model deployed: {model_path}")
         except Exception as e:
             logger.error(f"Failed to save model: {e}")
             should_deploy = False
             deploy_reason = f"save_failed: {e}"
+
+        # Serialize training aggregates for conformal calibration
+        if should_deploy:
+            try:
+                import json as _json
+
+                def _serialize_agg(agg: dict) -> dict:
+                    """Convert tuple keys to colon-separated strings for JSON serialization."""
+                    out = {}
+                    for k, v in agg.items():
+                        if isinstance(v, dict):
+                            serialized_inner = {}
+                            for key, val in v.items():
+                                if isinstance(key, tuple) and len(key) == 2:
+                                    str_key = f"{key[0]}:{key[1]}"
+                                else:
+                                    str_key = str(key)
+                                serialized_inner[str_key] = val
+                            out[k] = serialized_inner
+                        else:
+                            out[k] = v
+                    return out
+
+                agg_path = Path(__file__).parent.parent / 'models' / 'saved' / 'training_aggregates.json'
+                serialized = _serialize_agg(aggregates)
+                serialized['version'] = version
+                with open(agg_path, 'w') as f:
+                    _json.dump(serialized, f, indent=2, default=str)
+                logger.info(f"Training aggregates serialized to {agg_path}")
+            except Exception as e:
+                logger.error(f"Failed to serialize training aggregates: {e}")
     else:
         logger.info("Step 5: Skipping deployment (no improvement)")
     

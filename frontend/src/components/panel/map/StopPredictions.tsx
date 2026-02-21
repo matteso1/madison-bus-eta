@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import type { StopClickEvent, TrackedBus } from '../../MapView';
+import ConfidenceBand from '../../shared/ConfidenceBand';
 
 interface StopPredictionsProps {
   stop: StopClickEvent;
@@ -17,10 +18,20 @@ interface Prediction {
   vid: string;
 }
 
+interface ConformaResult {
+  eta_low_min: number;
+  eta_median_min: number;
+  eta_high_min: number;
+  confidence: number;
+  stratum: string;
+  model_available: boolean;
+}
+
 export default function StopPredictions({ stop, selectedRoute, onClose, onTrackBus }: StopPredictionsProps) {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [stopLatLon, setStopLatLon] = useState<[number, number] | null>(null);
+  const [conformalMap, setConformalMap] = useState<Record<string, ConformaResult>>({});
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
@@ -28,6 +39,7 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
     setLoading(true);
     setPredictions([]);
     setStopLatLon(null);
+    setConformalMap({});
 
     const load = async () => {
       try {
@@ -64,6 +76,26 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
             vid: prd.vid,
           })));
         }
+
+        // Fire conformal prediction calls in parallel (non-blocking enhancement)
+        const conformalResults: Record<string, ConformaResult> = {};
+        await Promise.all(
+          prds.map(async (prd: any) => {
+            try {
+              const minutes = prd.prdctdn === 'DUE' ? 0 : (parseInt(prd.prdctdn) || 0);
+              const res = await axios.post(`${API_BASE}/api/conformal-prediction`, {
+                route: prd.rt,
+                stop_id: stop.stpid,
+                api_prediction_min: minutes,
+                vehicle_id: prd.vid,
+              });
+              if (res.data?.model_available) {
+                conformalResults[prd.vid] = res.data;
+              }
+            } catch {} // Non-blocking — conformal is enhancement, not core
+          })
+        );
+        if (!cancelled) setConformalMap(conformalResults);
       } catch (e) {
         console.error('Stop predictions error:', e);
       } finally {
@@ -173,6 +205,19 @@ export default function StopPredictions({ stop, selectedRoute, onClose, onTrackB
                   {pred.minutes > 0 && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>min</span>}
                 </div>
               </div>
+
+              {conformalMap[pred.vid] && (
+                <div style={{ marginTop: 8 }}>
+                  <ConfidenceBand
+                    low={Math.round(conformalMap[pred.vid].eta_low_min * 10) / 10}
+                    median={Math.round(conformalMap[pred.vid].eta_median_min * 10) / 10}
+                    high={Math.round(conformalMap[pred.vid].eta_high_min * 10) / 10}
+                  />
+                  <div style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center' }}>
+                    90% confidence window
+                  </div>
+                </div>
+              )}
 
               {onTrackBus && pred.minutes <= 15 && (
                 <button

@@ -616,4 +616,4 @@ def prepare_regression_training_data(
     split_info['train_samples'] = len(X_train)
     split_info['test_samples'] = len(X_test)
 
-    return X_train, X_test, y_train, y_test, feature_cols, split_info
+    return X_train, X_test, y_train, y_test, feature_cols, split_info, aggregates

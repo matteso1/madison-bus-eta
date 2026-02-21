@@ -23,6 +23,13 @@ except ImportError:
 
 # Note: Legacy Smart ML API removed - using new autonomous ML pipeline in ml/training/
 
+# Conformal prediction serving layer
+try:
+    from conformal_serving import get_conformal_artifact, get_daytype, get_horizon_bucket, lookup_quantiles
+    CONFORMAL_AVAILABLE = True
+except ImportError:
+    CONFORMAL_AVAILABLE = False
+
 # Optional GTFS-RT alerts client
 try:
     from utils.gtfs_rt_alerts import GTFSRTAlerts
@@ -102,6 +109,41 @@ COLLECTOR_STATUS_PATH = Path(__file__).parent / 'collector_status.json'
 import pickle as _pickle
 
 _model_cache: dict = {'ensemble': None, 'mtime': 0.0}
+
+_regression_cache: dict = {'model': None, 'bias': 0.0, 'mtime': 0.0}
+
+def _get_regression_model():
+    """Load XGBoost regression model from registry.json; reload on registry change."""
+    ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+    registry_path = ml_path / 'registry.json'
+    if not registry_path.exists():
+        return None, 0.0
+    mtime = registry_path.stat().st_mtime
+    if _regression_cache['model'] is not None and mtime == _regression_cache['mtime']:
+        return _regression_cache['model'], _regression_cache['bias']
+    try:
+        with open(registry_path) as f:
+            reg = json.load(f)
+        latest = reg.get('latest')
+        if not latest:
+            return None, 0.0
+        model_path = ml_path / f'model_{latest}.pkl'
+        if not model_path.exists():
+            return None, 0.0
+        with open(model_path, 'rb') as f:
+            _regression_cache['model'] = _pickle.load(f)
+        bias = 0.0
+        for entry in reg.get('models', []):
+            if entry['version'] == latest:
+                bias = entry.get('metrics', {}).get('bias_correction_seconds', 0.0) or 0.0
+                break
+        _regression_cache['bias'] = bias
+        _regression_cache['mtime'] = mtime
+        return _regression_cache['model'], _regression_cache['bias']
+    except Exception as e:
+        logging.warning(f"Failed to load regression model: {e}")
+        return None, 0.0
+
 
 def _get_model():
     """Load quantile ensemble once; reload only when file changes on disk."""
@@ -1886,6 +1928,225 @@ def predict_arrival_v2():
             "api_prediction_min": data.get('api_prediction', 0) if 'data' in dir() else 0,
             "error": str(e)
         }), 500
+
+
+@app.route("/api/conformal-prediction", methods=["POST"])
+def conformal_prediction():
+    """
+    Mondrian conformal prediction interval for a bus arrival.
+    Returns a statistically calibrated 90% confidence window.
+
+    Input:  { route, stop_id, api_prediction_min, vehicle_id }
+    Output: { eta_low_min, eta_median_min, eta_high_min, confidence: 0.90,
+              stratum, stratum_n_cal, xgb_correction_sec, model_available }
+    """
+    try:
+        from datetime import datetime, timezone
+        import numpy as np
+
+        data = request.get_json() or {}
+        route = data.get('route')
+        stop_id = data.get('stop_id')
+        api_prediction_min = data.get('api_prediction_min')
+        vehicle_id = data.get('vehicle_id')
+
+        if api_prediction_min is None:
+            return jsonify({"error": "Missing api_prediction_min"}), 400
+
+        api_prediction_min = float(api_prediction_min)
+
+        ml_path = Path(__file__).parent.parent / 'ml' / 'models' / 'saved'
+
+        # Load XGBoost regression model
+        xgb_model, bias = _get_regression_model()
+
+        # Build feature vector (same logic as predict_arrival_v2)
+        now = datetime.now(timezone.utc)
+        hour = now.hour
+        day_of_week = now.weekday()
+
+        hour_sin = np.sin(2 * np.pi * hour / 24)
+        hour_cos = np.cos(2 * np.pi * hour / 24)
+        day_sin = np.sin(2 * np.pi * day_of_week / 7)
+        day_cos = np.cos(2 * np.pi * day_of_week / 7)
+        month = now.month
+        month_sin = np.sin(2 * np.pi * (month - 1) / 12)
+        month_cos = np.cos(2 * np.pi * (month - 1) / 12)
+
+        is_weekend = 1 if day_of_week >= 5 else 0
+        is_morning_rush = 1 if 7 <= hour <= 9 else 0
+        is_evening_rush = 1 if 16 <= hour <= 18 else 0
+        is_rush_hour = 1 if is_morning_rush or is_evening_rush else 0
+        is_holiday = 0
+
+        horizon_min = min(api_prediction_min, 60)
+        horizon_squared = horizon_min ** 2
+        horizon_log = np.log1p(horizon_min)
+        horizon_bucket = (
+            0 if horizon_min <= 2 else
+            1 if horizon_min <= 5 else
+            2 if horizon_min <= 10 else
+            3 if horizon_min <= 20 else 4
+        )
+        is_long_horizon = 1 if horizon_min > 15 else 0
+
+        rs = _get_route_stats()
+        rt_data = rs.get('routes', {}).get(str(route) if route else '', {})
+        global_error = rs.get('global_error', 60.0)
+        global_std = rs.get('global_std', 45.0)
+
+        route_frequency = rt_data.get('route_frequency', 1000)
+        route_encoded = rt_data.get('route_encoded', hash(str(route)) % 30 if route else 0)
+        route_avg_error = rt_data.get('route_avg_error', global_error)
+        route_error_std = rt_data.get('route_error_std', global_std)
+        hr_route_error = rt_data.get('hr_errors', {}).get(hour, route_avg_error)
+        route_horizon_error = rt_data.get('horizon_errors', {}).get(horizon_bucket, route_avg_error)
+        route_horizon_std = rt_data.get('horizon_stds', {}).get(horizon_bucket, global_std)
+        dow_avg_error = rs.get('dow_errors', {}).get(day_of_week, global_error)
+        stop_avg_error_val = rs.get('stop_errors', {}).get(str(stop_id) if stop_id else '', global_error)
+        stop_error_std = rs.get('stop_stds', {}).get(str(stop_id) if stop_id else '', global_std)
+        predicted_minutes = api_prediction_min
+
+        # Weather defaults
+        temp_celsius = 10.0
+        is_cold = 0
+        is_hot = 0
+        precipitation_mm = 0.0
+        snow_mm = 0.0
+        is_raining = 0
+        is_snowing = 0
+        is_precipitating = 0
+        wind_speed = 0.0
+        is_windy = 0
+        visibility_km = 10.0
+        low_visibility = 0
+        is_severe_weather = 0
+
+        # Velocity defaults
+        avg_speed = 15.0
+        speed_stddev = 5.0
+        speed_variability = speed_stddev / max(avg_speed, 1.0)
+        is_stopped = 0
+        is_slow = 0
+        is_moving_fast = 0
+        has_velocity_data = 0
+
+        features_44 = [
+            horizon_min, horizon_squared, horizon_log, horizon_bucket, is_long_horizon,
+            hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
+            is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
+            route_frequency, route_encoded,
+            predicted_minutes,
+            route_avg_error, route_error_std, hr_route_error,
+            route_horizon_error, route_horizon_std,
+            dow_avg_error,
+            stop_avg_error_val, stop_error_std,
+            temp_celsius, is_cold, is_hot, precipitation_mm, snow_mm,
+            is_raining, is_snowing, is_precipitating,
+            wind_speed, is_windy, visibility_km, low_visibility, is_severe_weather,
+            avg_speed, speed_stddev, speed_variability,
+            is_stopped, is_slow, is_moving_fast, has_velocity_data,
+        ]
+
+        # Compute XGBoost correction
+        xgb_correction = 0.0
+        model_available = False
+        if xgb_model is not None:
+            try:
+                n_expected = xgb_model.n_features_in_
+                if n_expected == 44:
+                    features = np.array([features_44])
+                else:
+                    features = np.array([features_44[:n_expected] if n_expected <= 44 else features_44])
+                xgb_correction = float(xgb_model.predict(features)[0]) + bias
+                model_available = True
+            except Exception as e:
+                logging.warning(f"XGBoost predict failed: {e}")
+                xgb_correction = 0.0
+
+        point_estimate_min = api_prediction_min + xgb_correction / 60
+
+        # Load conformal artifact
+        if not CONFORMAL_AVAILABLE:
+            return jsonify({
+                "eta_low_min": round(max(0, api_prediction_min * 0.9), 1),
+                "eta_median_min": round(api_prediction_min, 1),
+                "eta_high_min": round(api_prediction_min * 1.2, 1),
+                "confidence": 0.90,
+                "stratum": "unavailable",
+                "stratum_n_cal": 0,
+                "xgb_correction_sec": round(xgb_correction, 1),
+                "model_available": False,
+            })
+
+        artifact = get_conformal_artifact(ml_path)
+        if artifact is None:
+            return jsonify({
+                "eta_low_min": round(max(0, api_prediction_min * 0.9), 1),
+                "eta_median_min": round(api_prediction_min, 1),
+                "eta_high_min": round(api_prediction_min * 1.2, 1),
+                "confidence": 0.90,
+                "stratum": "global_fallback",
+                "stratum_n_cal": 0,
+                "xgb_correction_sec": round(xgb_correction, 1),
+                "model_available": False,
+            })
+
+        daytype = get_daytype(now)
+        horizon_bucket_str = get_horizon_bucket(api_prediction_min)
+        cell = lookup_quantiles(artifact, str(route) if route else '', daytype, horizon_bucket_str)
+
+        # Compute final interval
+        q_low = cell['q_low']
+        q_high = cell['q_high']
+        eta_low = round(max(0.0, point_estimate_min + q_low / 60), 1)
+        eta_high = round(point_estimate_min + q_high / 60, 1)
+        eta_median = round(point_estimate_min, 1)
+        eta_high = max(eta_high, eta_median)
+
+        # Determine stratum label used
+        route_str = str(route) if route else ''
+        full_key = f"{route_str}__{daytype}__{horizon_bucket_str}"
+        if full_key in artifact.get('by_route_daytype_horizon', {}):
+            stratum_label = full_key
+        elif f"{route_str}__{daytype}" in artifact.get('by_route_daytype', {}):
+            stratum_label = f"{route_str}__{daytype}"
+        elif route_str in artifact.get('by_route', {}):
+            stratum_label = route_str
+        elif f"{daytype}__{horizon_bucket_str}" in artifact.get('by_daytype_horizon', {}):
+            stratum_label = f"{daytype}__{horizon_bucket_str}"
+        else:
+            stratum_label = 'global'
+
+        return jsonify({
+            "eta_low_min": eta_low,
+            "eta_median_min": eta_median,
+            "eta_high_min": eta_high,
+            "confidence": artifact.get('coverage_target', 0.90),
+            "stratum": stratum_label,
+            "stratum_n_cal": cell.get('n', 0),
+            "xgb_correction_sec": round(xgb_correction, 1),
+            "model_available": model_available,
+        })
+
+    except Exception as e:
+        logging.error(f"Conformal prediction error: {e}")
+        import traceback
+        traceback.print_exc()
+        api_min = data.get('api_prediction_min', 0) if 'data' in dir() else 0
+        return jsonify({
+            "eta_low_min": round(max(0, float(api_min) * 0.9), 1),
+            "eta_median_min": round(float(api_min), 1),
+            "eta_high_min": round(float(api_min) * 1.2, 1),
+            "confidence": 0.90,
+            "stratum": "error",
+            "stratum_n_cal": 0,
+            "xgb_correction_sec": 0.0,
+            "model_available": False,
+            "error": str(e),
+        }), 500
+
+
 def log_ml_prediction(route, stop_id, api_prediction, ml_prediction,
                       delay_probability, model_version, features):
     """Log ML prediction to database for accuracy tracking."""
