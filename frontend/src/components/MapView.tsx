@@ -566,7 +566,7 @@ export default function MapView({
 
         // 2) Bunching overlay — highlights the road segment between bunched buses
         // Only shown when a single route is selected and its path geometry is loaded.
-        if (bunchingPairs.length > 0 && selectedRoute !== 'ALL' && filteredPatterns.length > 0) {
+        if (bunchingPairs.length > 0 && selectedRoute !== 'ALL' && filteredPatterns.length > 0 && !activeTripPlan) {
             // Snap a lat/lon point to the nearest index in a path array
             const snapToPath = (path: [number, number][], lon: number, lat: number): number => {
                 let best = 0;
