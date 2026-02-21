@@ -615,8 +615,13 @@ def run_collector():
     else:
         logger.info("Database: not configured (set DATABASE_URL)")
     
-    # Run DB maintenance on startup (drop obsolete tables, enforce retention, ensure indexes)
+    # Run DB maintenance on startup (truncate unused tables, enforce retention, ensure indexes)
     if DB_MAINTENANCE_AVAILABLE and DATABASE_URL:
+        try:
+            from db_maintenance import emergency_truncate_gtfsrt
+            emergency_truncate_gtfsrt()
+        except Exception as e:
+            logger.warning(f"Emergency truncation failed (non-critical): {e}")
         try:
             run_full_maintenance()
         except Exception as e:
@@ -672,12 +677,11 @@ def run_collector():
     while True:
         try:
             current_time = time.time()
-            
-            # Collect GTFS-RT feeds (every 30s, free, no API key)
-            if current_time - last_gtfsrt_time >= GTFSRT_INTERVAL:
-                _collect_gtfsrt()
-                last_gtfsrt_time = current_time
-            
+
+            # GTFS-RT collection disabled — gtfsrt_stop_times writes ~3M rows/day
+            # and is not used by any active ML feature. Re-enable when segment
+            # travel time features are ready.
+
             # Collect REST API vehicles on interval
             if current_time - last_vehicle_time >= VEHICLE_INTERVAL:
                 vehicle_data = collect_vehicles()
@@ -691,13 +695,10 @@ def run_collector():
                     collect_predictions(active_vehicles)
                 last_prediction_time = current_time
             
-            # Build segment travel times (every 5 min)
-            if current_time - last_segment_time >= SEGMENT_BUILD_INTERVAL:
-                _build_segments()
-                last_segment_time = current_time
+            # Segment building disabled — depends on GTFS-RT data which is not being collected.
 
-            # Weekly tasks: refresh static GTFS + run DB maintenance (604800s = 7 days)
-            if current_time - last_gtfs_refresh_time >= 604800:
+            # Daily tasks: refresh static GTFS + run DB maintenance (86400s = 1 day)
+            if current_time - last_gtfs_refresh_time >= 86400:
                 _init_static_gtfs()
                 if DB_MAINTENANCE_AVAILABLE and DATABASE_URL:
                     try:
