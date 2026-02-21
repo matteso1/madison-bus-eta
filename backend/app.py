@@ -4680,10 +4680,11 @@ def bunching_active():
         engine = create_engine(os.getenv('DATABASE_URL'), pool_pre_ping=True)
         with engine.connect() as conn:
             rows = conn.execute(sa_text("""
-                SELECT rt, lat_a, lon_a, lat_b, lon_b, dist_km
+                SELECT DISTINCT ON (rt, vid_a, vid_b)
+                    rt, lat_a, lon_a, lat_b, lon_b, dist_km
                 FROM analytics_bunching
-                WHERE detected_at >= NOW() - INTERVAL '2 minutes'
-                ORDER BY detected_at DESC
+                WHERE detected_at >= NOW() - INTERVAL '30 minutes'
+                ORDER BY rt, vid_a, vid_b, detected_at DESC
             """)).fetchall()
         data = {'pairs': [
             {'rt': r[0], 'lat_a': r[1], 'lon_a': r[2], 'lat_b': r[3], 'lon_b': r[4], 'dist_km': r[5]}

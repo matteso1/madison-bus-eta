@@ -580,19 +580,27 @@ export default function MapView({
 
             // For each bunched pair on this route, find the road segment slice
             const bunchingSegments: Array<{ path: [number, number][] }> = [];
-            const routePairs = bunchingPairs.filter((p: any) => p.rt === selectedRoute);
+            const routePairs = bunchingPairs.filter((p: any) => String(p.rt) === String(selectedRoute));
             for (const pair of routePairs) {
-                // Try each pattern until we find one that contains both snap points
+                // Try each pattern, pick the one where the two snap points are furthest apart
+                let bestSegment: [number, number][] | null = null;
+                let bestSpan = 0;
                 for (const pattern of filteredPatterns) {
                     const path = pattern.path as [number, number][];
                     if (path.length < 2) continue;
                     const iA = snapToPath(path, pair.lon_a, pair.lat_a);
                     const iB = snapToPath(path, pair.lon_b, pair.lat_b);
-                    if (iA === iB) continue;
-                    const lo = Math.min(iA, iB);
-                    const hi = Math.max(iA, iB);
-                    bunchingSegments.push({ path: path.slice(lo, hi + 1) });
-                    break;
+                    const span = Math.abs(iA - iB);
+                    if (span > bestSpan) {
+                        bestSpan = span;
+                        const lo = Math.min(iA, iB);
+                        const hi = Math.max(iA, iB);
+                        bestSegment = path.slice(lo, hi + 1);
+                    }
+                }
+                // Accept even a single-segment slice (span >= 1)
+                if (bestSegment && bestSpan >= 1) {
+                    bunchingSegments.push({ path: bestSegment });
                 }
             }
 
