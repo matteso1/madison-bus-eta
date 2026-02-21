@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { PathLayer, ScatterplotLayer, LineLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { Map, Marker, useControl } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
@@ -564,28 +564,62 @@ export default function MapView({
 
         // (delayed indicators removed — cluttered and unlabeled on the All Routes view)
 
-        // 2) Bunching overlay — orange lines between actively-bunched bus pairs
-        if (bunchingPairs.length > 0) {
-            // Glow outline
-            L.push(new LineLayer({
-                id: 'bunching-glow',
-                data: bunchingPairs,
-                getSourcePosition: (d: any) => [d.lon_a, d.lat_a],
-                getTargetPosition: (d: any) => [d.lon_b, d.lat_b],
-                getColor: [245, 158, 11, 60],
-                getWidth: 14,
-                widthMinPixels: 10,
-            }));
-            // Core line
-            L.push(new LineLayer({
-                id: 'bunching-lines',
-                data: bunchingPairs,
-                getSourcePosition: (d: any) => [d.lon_a, d.lat_a],
-                getTargetPosition: (d: any) => [d.lon_b, d.lat_b],
-                getColor: [245, 158, 11, 220],
-                getWidth: 6,
-                widthMinPixels: 4,
-            }));
+        // 2) Bunching overlay — highlights the road segment between bunched buses
+        // Only shown when a single route is selected and its path geometry is loaded.
+        if (bunchingPairs.length > 0 && selectedRoute !== 'ALL' && filteredPatterns.length > 0) {
+            // Snap a lat/lon point to the nearest index in a path array
+            const snapToPath = (path: [number, number][], lon: number, lat: number): number => {
+                let best = 0;
+                let bestDist = Infinity;
+                for (let i = 0; i < path.length; i++) {
+                    const d = Math.hypot(path[i][0] - lon, path[i][1] - lat);
+                    if (d < bestDist) { bestDist = d; best = i; }
+                }
+                return best;
+            };
+
+            // For each bunched pair on this route, find the road segment slice
+            const bunchingSegments: Array<{ path: [number, number][] }> = [];
+            const routePairs = bunchingPairs.filter((p: any) => p.rt === selectedRoute);
+            for (const pair of routePairs) {
+                // Try each pattern until we find one that contains both snap points
+                for (const pattern of filteredPatterns) {
+                    const path = pattern.path as [number, number][];
+                    if (path.length < 2) continue;
+                    const iA = snapToPath(path, pair.lon_a, pair.lat_a);
+                    const iB = snapToPath(path, pair.lon_b, pair.lat_b);
+                    if (iA === iB) continue;
+                    const lo = Math.min(iA, iB);
+                    const hi = Math.max(iA, iB);
+                    bunchingSegments.push({ path: path.slice(lo, hi + 1) });
+                    break;
+                }
+            }
+
+            if (bunchingSegments.length > 0) {
+                // Glow outline
+                L.push(new PathLayer({
+                    id: 'bunching-glow',
+                    data: bunchingSegments,
+                    getPath: (d: any) => d.path,
+                    getColor: [245, 158, 11, 55],
+                    getWidth: 16,
+                    widthMinPixels: 12,
+                    capRounded: true,
+                    jointRounded: true,
+                }));
+                // Core highlight
+                L.push(new PathLayer({
+                    id: 'bunching-lines',
+                    data: bunchingSegments,
+                    getPath: (d: any) => d.path,
+                    getColor: [245, 158, 11, 230],
+                    getWidth: 7,
+                    widthMinPixels: 5,
+                    capRounded: true,
+                    jointRounded: true,
+                }));
+            }
         }
 
         // 3) Trip: full route pattern dimmed (context)
