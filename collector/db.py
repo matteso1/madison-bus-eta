@@ -144,10 +144,13 @@ class GTFSRTStopTime(Base):
     departure_delay = Column(Integer, nullable=True)
     departure_time = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        UniqueConstraint('trip_id', 'stop_id', 'collected_at', name='uq_gtfsrt_trip_stop_collected'),
-        Index('ix_gtfsrt_stop_times_trip_stop_collected', 'trip_id', 'stop_id', 'collected_at'),
+        # One row per trip+stop — upserted in place, not appended every poll.
+        UniqueConstraint('trip_id', 'stop_id', name='uq_gtfsrt_trip_stop'),
+        Index('ix_gtfsrt_stop_times_trip_stop', 'trip_id', 'stop_id'),
+        Index('ix_gtfsrt_stop_times_collected', 'collected_at'),
     )
 
 
@@ -155,6 +158,7 @@ class GTFSRTVehiclePosition(Base):
     """
     Vehicle positions from GTFS-RT VehiclePositions feed.
     Richer than REST API: includes trip_id, stop status, speed.
+    One row per vehicle — upserted in place on each poll.
     """
     __tablename__ = 'gtfsrt_vehicle_positions'
 
@@ -172,6 +176,11 @@ class GTFSRTVehiclePosition(Base):
     current_status = Column(Integer, nullable=True)       # 0=INCOMING, 1=STOPPED, 2=IN_TRANSIT
     timestamp = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint('vehicle_id', name='uq_gtfsrt_vehicle'),
+    )
 
 
 class GTFSStop(Base):
@@ -482,7 +491,13 @@ def get_pending_predictions(vehicle_ids: list, minutes_back: int = 30) -> list:
 # ---------------------------------------------------------------------------
 
 def save_gtfsrt_stop_times(records: list) -> int:
-    """Save GTFS-RT trip update stop-time records. Returns count saved."""
+    """
+    Upsert GTFS-RT trip update stop-time records.
+
+    One row per (trip_id, stop_id). On conflict, update only when
+    arrival_delay has changed — avoids redundant writes on unchanged data.
+    Returns count of rows inserted or updated.
+    """
     from sqlalchemy import text
     session = get_session()
     if session is None:
@@ -490,15 +505,27 @@ def save_gtfsrt_stop_times(records: list) -> int:
 
     try:
         count = 0
+        now = datetime.now(timezone.utc)
         for r in records:
-            session.execute(text("""
+            result = session.execute(text("""
                 INSERT INTO gtfsrt_stop_times
                     (trip_id, route_id, direction_id, vehicle_id, stop_id, stop_sequence,
-                     arrival_delay, arrival_time, departure_delay, departure_time, collected_at)
+                     arrival_delay, arrival_time, departure_delay, departure_time,
+                     collected_at, updated_at)
                 VALUES
                     (:trip_id, :route_id, :direction_id, :vehicle_id, :stop_id, :stop_sequence,
-                     :arrival_delay, :arrival_time, :departure_delay, :departure_time, :collected_at)
-                ON CONFLICT ON CONSTRAINT uq_gtfsrt_trip_stop_collected DO NOTHING
+                     :arrival_delay, :arrival_time, :departure_delay, :departure_time,
+                     :now, :now)
+                ON CONFLICT ON CONSTRAINT uq_gtfsrt_trip_stop DO UPDATE SET
+                    route_id        = EXCLUDED.route_id,
+                    vehicle_id      = EXCLUDED.vehicle_id,
+                    arrival_delay   = EXCLUDED.arrival_delay,
+                    arrival_time    = EXCLUDED.arrival_time,
+                    departure_delay = EXCLUDED.departure_delay,
+                    departure_time  = EXCLUDED.departure_time,
+                    updated_at      = EXCLUDED.updated_at
+                WHERE gtfsrt_stop_times.arrival_delay IS DISTINCT FROM EXCLUDED.arrival_delay
+                   OR gtfsrt_stop_times.departure_delay IS DISTINCT FROM EXCLUDED.departure_delay
             """), {
                 "trip_id": r.get("trip_id"),
                 "route_id": r.get("route_id"),
@@ -510,9 +537,9 @@ def save_gtfsrt_stop_times(records: list) -> int:
                 "arrival_time": r.get("arrival_time"),
                 "departure_delay": r.get("departure_delay"),
                 "departure_time": r.get("departure_time"),
-                "collected_at": r.get("collected_at"),
+                "now": now,
             })
-            count += 1
+            count += result.rowcount
         session.commit()
         return count
     except Exception as e:
@@ -524,32 +551,63 @@ def save_gtfsrt_stop_times(records: list) -> int:
 
 
 def save_gtfsrt_vehicle_positions(records: list) -> int:
-    """Save GTFS-RT vehicle position records. Returns count saved."""
+    """
+    Upsert GTFS-RT vehicle position records.
+
+    One row per vehicle_id. Updated in place on each poll — no historical
+    accumulation. Returns count of rows inserted or updated.
+    """
+    from sqlalchemy import text
     session = get_session()
     if session is None:
         return 0
 
     try:
-        objs = []
+        count = 0
+        now = datetime.now(timezone.utc)
         for r in records:
-            objs.append(GTFSRTVehiclePosition(
-                vehicle_id=r.get("vehicle_id"),
-                trip_id=r.get("trip_id"),
-                route_id=r.get("route_id"),
-                direction_id=r.get("direction_id"),
-                lat=r.get("lat"),
-                lon=r.get("lon"),
-                bearing=r.get("bearing"),
-                speed=r.get("speed"),
-                stop_id=r.get("stop_id"),
-                current_stop_sequence=r.get("current_stop_sequence"),
-                current_status=r.get("current_status"),
-                timestamp=r.get("timestamp"),
-                collected_at=r.get("collected_at"),
-            ))
-        session.bulk_save_objects(objs)
+            result = session.execute(text("""
+                INSERT INTO gtfsrt_vehicle_positions
+                    (vehicle_id, trip_id, route_id, direction_id,
+                     lat, lon, bearing, speed,
+                     stop_id, current_stop_sequence, current_status,
+                     timestamp, collected_at, updated_at)
+                VALUES
+                    (:vehicle_id, :trip_id, :route_id, :direction_id,
+                     :lat, :lon, :bearing, :speed,
+                     :stop_id, :current_stop_sequence, :current_status,
+                     :timestamp, :now, :now)
+                ON CONFLICT ON CONSTRAINT uq_gtfsrt_vehicle DO UPDATE SET
+                    trip_id               = EXCLUDED.trip_id,
+                    route_id              = EXCLUDED.route_id,
+                    direction_id          = EXCLUDED.direction_id,
+                    lat                   = EXCLUDED.lat,
+                    lon                   = EXCLUDED.lon,
+                    bearing               = EXCLUDED.bearing,
+                    speed                 = EXCLUDED.speed,
+                    stop_id               = EXCLUDED.stop_id,
+                    current_stop_sequence = EXCLUDED.current_stop_sequence,
+                    current_status        = EXCLUDED.current_status,
+                    timestamp             = EXCLUDED.timestamp,
+                    updated_at            = EXCLUDED.updated_at
+            """), {
+                "vehicle_id": r.get("vehicle_id"),
+                "trip_id": r.get("trip_id"),
+                "route_id": r.get("route_id"),
+                "direction_id": r.get("direction_id"),
+                "lat": r.get("lat"),
+                "lon": r.get("lon"),
+                "bearing": r.get("bearing"),
+                "speed": r.get("speed"),
+                "stop_id": r.get("stop_id"),
+                "current_stop_sequence": r.get("current_stop_sequence"),
+                "current_status": r.get("current_status"),
+                "timestamp": r.get("timestamp"),
+                "now": now,
+            })
+            count += result.rowcount
         session.commit()
-        return len(objs)
+        return count
     except Exception as e:
         logger.error(f"Error saving GTFS-RT vehicle positions: {e}")
         session.rollback()

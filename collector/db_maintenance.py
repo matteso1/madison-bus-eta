@@ -98,6 +98,62 @@ def enforce_retention_policy(engine=None):
         conn.commit()
 
 
+def migrate_gtfsrt_schema(engine=None):
+    """
+    One-time migration: replace the old per-poll unique constraint
+    (trip_id, stop_id, collected_at) with the new upsert-safe one (trip_id, stop_id).
+    Also adds uq_gtfsrt_vehicle on gtfsrt_vehicle_positions if missing.
+    Safe to run repeatedly — all operations are conditional.
+    """
+    engine = engine or get_engine()
+    if engine is None:
+        return
+
+    with engine.connect() as conn:
+        # gtfsrt_stop_times: drop old constraint, add new one
+        try:
+            conn.execute(text(
+                "ALTER TABLE gtfsrt_stop_times "
+                "DROP CONSTRAINT IF EXISTS uq_gtfsrt_trip_stop_collected"
+            ))
+        except Exception as e:
+            logger.debug(f"Drop old gtfsrt constraint: {e}")
+        try:
+            conn.execute(text(
+                "ALTER TABLE gtfsrt_stop_times "
+                "ADD CONSTRAINT uq_gtfsrt_trip_stop UNIQUE (trip_id, stop_id)"
+            ))
+        except Exception as e:
+            logger.debug(f"Add uq_gtfsrt_trip_stop: {e}")
+        # Add updated_at column if missing
+        try:
+            conn.execute(text(
+                "ALTER TABLE gtfsrt_stop_times "
+                "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"
+            ))
+        except Exception as e:
+            logger.debug(f"Add updated_at to gtfsrt_stop_times: {e}")
+
+        # gtfsrt_vehicle_positions: add unique constraint and updated_at
+        try:
+            conn.execute(text(
+                "ALTER TABLE gtfsrt_vehicle_positions "
+                "ADD CONSTRAINT uq_gtfsrt_vehicle UNIQUE (vehicle_id)"
+            ))
+        except Exception as e:
+            logger.debug(f"Add uq_gtfsrt_vehicle: {e}")
+        try:
+            conn.execute(text(
+                "ALTER TABLE gtfsrt_vehicle_positions "
+                "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"
+            ))
+        except Exception as e:
+            logger.debug(f"Add updated_at to gtfsrt_vehicle_positions: {e}")
+
+        conn.commit()
+    logger.info("GTFS-RT schema migration complete")
+
+
 def ensure_indexes(engine=None):
     """Create optimized indexes for ML queries if they don't exist."""
     engine = engine or get_engine()
@@ -105,14 +161,14 @@ def ensure_indexes(engine=None):
         return
 
     indexes = [
-        "CREATE INDEX IF NOT EXISTS ix_segment_route_from_dep ON segment_travel_times (route_id, from_stop_id, departure_time)",
-        "CREATE INDEX IF NOT EXISTS ix_segment_trip_seq ON segment_travel_times (trip_id, stop_sequence)",
-        "CREATE INDEX IF NOT EXISTS ix_gtfsrt_stop_times_trip_stop_collected ON gtfsrt_stop_times (trip_id, stop_id, collected_at)",
-        "CREATE INDEX IF NOT EXISTS ix_gtfsrt_vp_vehicle_collected ON gtfsrt_vehicle_positions (vehicle_id, collected_at)",
+        "CREATE INDEX IF NOT EXISTS ix_gtfsrt_stop_times_trip_stop ON gtfsrt_stop_times (trip_id, stop_id)",
+        "CREATE INDEX IF NOT EXISTS ix_gtfsrt_stop_times_collected ON gtfsrt_stop_times (collected_at)",
+        "CREATE INDEX IF NOT EXISTS ix_gtfsrt_vp_vehicle ON gtfsrt_vehicle_positions (vehicle_id)",
         "CREATE INDEX IF NOT EXISTS ix_pred_outcomes_rt_stpid ON prediction_outcomes (rt, stpid)",
         "CREATE INDEX IF NOT EXISTS ix_pred_outcomes_created ON prediction_outcomes (created_at)",
         "CREATE INDEX IF NOT EXISTS ix_vehicle_obs_rt_collected ON vehicle_observations (rt, collected_at)",
         "CREATE INDEX IF NOT EXISTS ix_gtfs_stop_times_trip_stop ON gtfs_stop_times (trip_id, stop_id)",
+        "CREATE INDEX IF NOT EXISTS ix_segment_route_from_dep ON segment_travel_times (route_id, from_stop_id, departure_time)",
     ]
 
     with engine.connect() as conn:
@@ -134,6 +190,7 @@ def run_full_maintenance():
 
     logger.info("Running database maintenance...")
     drop_obsolete_tables(engine)
+    migrate_gtfsrt_schema(engine)
     enforce_retention_policy(engine)
     ensure_indexes(engine)
     logger.info("Database maintenance complete")

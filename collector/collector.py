@@ -90,7 +90,7 @@ API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.c
 # Collection intervals (in seconds) — configurable via env vars
 VEHICLE_INTERVAL = int(os.getenv('VEHICLE_INTERVAL', '60'))
 PREDICTION_INTERVAL = int(os.getenv('PREDICTION_INTERVAL', '120'))
-GTFSRT_INTERVAL = int(os.getenv('GTFSRT_INTERVAL', '30'))
+GTFSRT_INTERVAL = int(os.getenv('GTFSRT_INTERVAL', '120'))
 SEGMENT_BUILD_INTERVAL = int(os.getenv('SEGMENT_BUILD_INTERVAL', '300'))
 
 DATA_DIR = Path(__file__).parent / 'data'
@@ -678,9 +678,10 @@ def run_collector():
         try:
             current_time = time.time()
 
-            # GTFS-RT collection disabled — gtfsrt_stop_times writes ~3M rows/day
-            # and is not used by any active ML feature. Re-enable when segment
-            # travel time features are ready.
+            # Collect GTFS-RT feeds (every 120s — upsert-only, no row accumulation)
+            if current_time - last_gtfsrt_time >= GTFSRT_INTERVAL:
+                _collect_gtfsrt()
+                last_gtfsrt_time = current_time
 
             # Collect REST API vehicles on interval
             if current_time - last_vehicle_time >= VEHICLE_INTERVAL:
@@ -695,7 +696,10 @@ def run_collector():
                     collect_predictions(active_vehicles)
                 last_prediction_time = current_time
             
-            # Segment building disabled — depends on GTFS-RT data which is not being collected.
+            # Build segment travel times (every 5 min)
+            if current_time - last_segment_time >= SEGMENT_BUILD_INTERVAL:
+                _build_segments()
+                last_segment_time = current_time
 
             # Daily tasks: refresh static GTFS + run DB maintenance (86400s = 1 day)
             if current_time - last_gtfs_refresh_time >= 86400:
