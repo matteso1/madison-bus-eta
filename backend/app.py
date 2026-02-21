@@ -4668,6 +4668,34 @@ def bunching_recent():
     CACHE[cache_key] = {'ts': time.time(), 'data': data}
     return jsonify(data)
 
+@app.route("/api/bunching/active", methods=["GET"])
+def bunching_active():
+    cache_key = 'bunching_active'
+    cached = CACHE.get(cache_key)
+    if cached and time.time() - cached['ts'] < 30:
+        return jsonify(cached['data'])
+
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(os.getenv('DATABASE_URL'), pool_pre_ping=True)
+        with engine.connect() as conn:
+            rows = conn.execute(sa_text("""
+                SELECT rt, lat_a, lon_a, lat_b, lon_b, dist_km
+                FROM analytics_bunching
+                WHERE detected_at >= NOW() - INTERVAL '2 minutes'
+                ORDER BY detected_at DESC
+            """)).fetchall()
+        data = {'pairs': [
+            {'rt': r[0], 'lat_a': r[1], 'lon_a': r[2], 'lat_b': r[3], 'lon_b': r[4], 'dist_km': r[5]}
+            for r in rows
+        ]}
+    except Exception as e:
+        logging.warning(f"bunching_active error: {e}")
+        data = {'pairs': []}
+
+    CACHE[cache_key] = {'ts': time.time(), 'data': data}
+    return jsonify(data)
+
 
 @app.route("/api/route-reliability", methods=["GET"])
 def get_route_reliability():
