@@ -1,126 +1,203 @@
 # Madison Metro ETA
 
-A real-time bus tracking and ML prediction system for Madison, WI transit. Built to outperform the official API's arrival estimates by learning from ground truth.
+A real-time bus tracking, ML prediction, and transit analytics system for Madison, WI. Built because the official Metro app is genuinely bad and in 2025 there's no excuse for it.
 
 **Live:** [madison-bus-eta.vercel.app](https://madison-bus-eta.vercel.app)
+**GitHub:** [github.com/matteso1/madison-bus-eta](https://github.com/matteso1/madison-bus-eta)
+
+> **Heads up:** The Madison Metro API has a cap of ~10,000 requests/day. If this gets a lot of traffic simultaneously, live bus data may degrade. Working on it.
 
 ---
 
-## What It Does
+## What's Actually Built Right Now
 
-The Madison Metro API tells you a bus arrives in 8 minutes. This system asks: *how wrong is that, historically, for this route, at this hour, in these conditions?* It then corrects the prediction.
+```mermaid
+graph LR
+    subgraph "Live Today"
+        A[Real-time map<br/>all 29 routes] --> B[Stop predictions<br/>with ML correction]
+        B --> C[Confidence intervals<br/>conformal prediction]
+        A --> D[Bus bunching<br/>detection + map overlay]
+        D --> E[Analytics panel<br/>bunching / reliability / errors]
+    end
 
-Beyond predictions, it monitors the transit network in real-time — detecting bus bunching (two buses running too close together), scoring route reliability, and surfacing analytics that the official app doesn't expose.
+    subgraph "Pipeline"
+        F[Collector<br/>60s polls, 24/7] --> G[(PostgreSQL<br/>Railway)]
+        G --> H[Nightly retraining<br/>GitHub Actions]
+        H --> B
+    end
+```
 
----
+### The Map
+Dark-mode, DeckGL-accelerated map (MapLibre + deck.gl). Click any stop to see arrival predictions. Select a route to see its path and live vehicle positions. The map renders ~60 simultaneous bus markers without breaking a sweat. Compare this to the official Metro app.
 
-## Performance
+### ML Predictions
+The API tells you a bus arrives in 8 minutes. This system learns when that estimate is off — by how much, in which direction, for which routes at which times. An XGBoost regression model trained on `error_seconds` (actual minus predicted) corrects the API estimate. Uncertainty bounds come from Mondrian conformal prediction, stratified by route × day-type × horizon bucket — meaning the 90% confidence interval is statistically guaranteed to contain the actual arrival 90% of the time. No other transit app does this.
 
-| Metric | This Model | API Baseline | Improvement |
-|--------|-----------|--------------|-------------|
-| MAE | 48s | ~80s | **40% better** |
-| Within 2 min | 87% | ~70% | **+17pp** |
-| Predictions | 41K/week | — | Continuous |
+> **Current status:** The ML model is only as good as the ground truth data accumulated so far. The pipeline is running and collecting — the model improves every night. The interesting part right now is the architecture, not the numbers.
 
----
+### Bus Bunching Detection
+Two buses on the same route within 500m for 2+ consecutive 60s polls = confirmed bunching event. The map highlights the road segment between them in amber, snapped to the actual route polyline (not a GPS diagonal). Looks like Google Maps traffic. The Analytics > Bunching tab shows frequency by route over 7 days. This is a feature no transit app currently surfaces to riders.
 
-## Features
-
-**Live Map**
-- Real-time bus positions across all 29 Madison Metro routes
-- Click any stop for ML-corrected arrival predictions with confidence intervals
-- Bus tracking mode — follow a specific vehicle to your stop
-- Trip planner with walking directions via OSRM
-- Bus bunching overlay — orange road segments where buses are running bunched (like Google Maps traffic)
-
-**Analytics Panel**
-- Performance tab — MAE trend, model coverage, training history
-- Errors tab — prediction error by horizon and hour-of-day bias
-- Routes tab — per-route reliability scores and breakdown
-- Bunching tab — bunching events by route over 7 days
-
-**System Panel**
-- Collector status, model version, drift check (OK / WARNING / CRITICAL)
+### Analytics Panel
+- **Performance** — MAE trend, model coverage, training history
+- **Errors** — prediction error by horizon, hour-of-day bias
+- **Routes** — reliability scores per route
+- **Bunching** — bunching events by route, recent feed
 
 ---
 
 ## Architecture
 
-```
-Madison Metro API ──► Collector (Railway, 24/7)
-                           │
-                           ▼
-                      PostgreSQL ──► ML Training (GitHub Actions, nightly)
-                           │                │
-                           │                ▼
-                           └──────► Flask Backend (Railway)
-                                          │
-                                          ▼
-                                   React Frontend (Vercel)
-```
+```mermaid
+graph TB
+    subgraph "Data Collection - Railway, 24/7"
+        COL[collector.py<br/>60s vehicle polls] --> API[Madison Metro REST API]
+        COL --> BUNCH[bunch_detector.py<br/>in-memory state machine]
+        COL --> ARR[arrival_detector.py<br/>haversine stop matching]
+        ARR --> DB
+        BUNCH --> DB
+    end
 
-**Collector** polls the Madison Metro REST API every 60s for vehicle positions, detects when buses arrive at stops using haversine distance, and matches those arrivals to earlier predictions to compute `error_seconds` — the ground truth the ML model trains on. It also runs real-time bus bunching detection.
+    subgraph "Storage"
+        DB[(PostgreSQL<br/>Railway<br/>30-day rolling retention)]
+    end
 
-**ML Pipeline** runs nightly via GitHub Actions. XGBoost regressor trained on 44 features including temporal patterns, route history, stop-level aggregates, weather, and vehicle speed. Only deploys if new model beats current by ≥2s MAE with no regression on any route.
+    subgraph "ML Pipeline - GitHub Actions 3AM CST"
+        DB --> TRAIN[train_regression.py<br/>XGBoost, 44 features]
+        TRAIN --> GATE{MAE improved<br/>by ≥2s?}
+        GATE -->|yes| DEPLOY[commit model<br/>to repo]
+        GATE -->|no| SKIP[keep current]
+        DEPLOY --> CONF[conformal_calibration.py<br/>Mondrian CP]
+    end
 
-**Conformal Prediction** wraps the point estimate in calibrated uncertainty bounds (Mondrian conformal, stratified by route × day-type × horizon bucket) — so the confidence interval is actually meaningful.
+    subgraph "Backend - Railway"
+        FLASK[Flask app.py<br/>~4100 lines]
+        FLASK --> DB
+        FLASK --> DEPLOY
+    end
 
----
-
-## ML Feature Vector (44 features)
-
-```
-Temporal:   horizon_min, horizon_squared, horizon_log, horizon_bucket,
-            hour_sin/cos, day_sin/cos, month_sin/cos,
-            is_weekend, is_rush_hour, is_morning_rush, is_evening_rush, is_holiday
-
-Route:      route_frequency, route_encoded, predicted_minutes,
-            route_avg_error, route_error_std, hr_route_error,
-            route_horizon_error, route_horizon_std, dow_avg_error
-
-Stop:       stop_avg_error, stop_error_std (shrinkage for <50 samples)
-
-Weather:    temp_celsius, is_cold, is_hot, precipitation_mm, snow_mm,
-            is_raining, is_snowing, wind_speed, is_windy,
-            visibility_km, low_visibility, is_severe_weather
-
-Vehicle:    avg_speed, speed_stddev, speed_variability,
-            is_stopped, is_slow, is_moving_fast, has_velocity_data
+    subgraph "Frontend - Vercel"
+        REACT[React 19 + Vite 7<br/>DeckGL 9.2 + MapLibre 5.13]
+        REACT --> FLASK
+    end
 ```
 
 ---
 
-## Bus Bunching Detection
+## Ground Truth Pipeline
 
-The collector tracks vehicle pairs per route in memory. A pair is confirmed bunched when they stay within 500m for 2+ consecutive 60s polls (filters GPS jitter). Events are persisted to `analytics_bunching` with a 10-minute cooldown per pair.
+This is the core of the ML system. The API gives predictions — we measure how wrong they are.
 
-The map overlay snaps each bus position to the nearest index on the loaded route polyline, extracts the path slice between them, and renders it as an amber `PathLayer` — following roads, not GPS diagonals.
+```mermaid
+sequenceDiagram
+    participant C as Collector
+    participant API as Metro API
+    participant AD as Arrival Detector
+    participant DB as PostgreSQL
+
+    loop Every 60s
+        C->>API: GET /getvehicles
+        API-->>C: lat, lon, vid, rt for all buses
+        C->>AD: check each vehicle against 1000+ stop locations
+        AD-->>DB: INSERT stop_arrivals (haversine < 30m)
+        AD->>DB: match arrival → prediction → INSERT prediction_outcomes (error_seconds)
+    end
+
+    Note over DB: prediction_outcomes is the training table<br/>error_seconds = actual_arrival - predicted_arrival
+```
 
 ---
 
-## Deployment
+## ML Feature Vector
 
-| Component | Platform | Notes |
-|-----------|----------|-------|
-| Frontend | Vercel | Auto-deploy on push to main |
-| Backend API | Railway | Flask, ~4100 lines |
-| Data Collector | Railway Worker | Runs 24/7 |
-| PostgreSQL | Railway | 30-day rolling retention |
+44 features. Order matters for the model.
+
+```mermaid
+mindmap
+  root((44 Features))
+    Temporal
+      horizon_min / squared / log / bucket
+      hour_sin/cos, day_sin/cos, month_sin/cos
+      is_weekend, is_rush_hour, is_holiday
+    Route
+      route_avg_error, route_error_std
+      hr_route_error, route_horizon_error
+      route_frequency, route_encoded
+    Stop
+      stop_avg_error, stop_error_std
+      shrinkage for under 50 samples
+    Weather
+      temp, precipitation, snow, wind
+      visibility, is_severe_weather
+    Vehicle
+      avg_speed, speed_stddev
+      is_stopped, is_slow, is_moving_fast
+```
+
+---
+
+## Deployment Gates
+
+The nightly pipeline won't deploy a model that isn't better:
+
+```mermaid
+flowchart LR
+    NEW[New model trained] --> S1{MIN_IMPROVEMENT<br/>≥ 2s MAE?}
+    S1 -->|no| REJECT
+    S1 -->|yes| S2{MAX_MAE<br/>≤ 90s?}
+    S2 -->|no| REJECT
+    S2 -->|yes| S3{MIN_TEST_SAMPLES<br/>≥ 1000?}
+    S3 -->|no| REJECT
+    S3 -->|yes| S4{No regression<br/>vs previous?}
+    S4 -->|no| REJECT
+    S4 -->|yes| DEPLOY[Deploy + commit]
+    REJECT[Keep current model]
+```
+
+---
+
+## What's Next
+
+This is a research project and the roadmap is ambitious.
+
+```mermaid
+gantt
+    title Roadmap
+    dateFormat  YYYY-MM
+    section Done
+    Live map + route paths         :done, 2025-10, 2025-11
+    ML regression pipeline         :done, 2025-11, 2025-12
+    Conformal prediction           :done, 2025-12, 2026-01
+    Bus bunching detection + map   :done, 2026-01, 2026-02
+    section In Progress
+    Ground truth accumulation      :active, 2026-02, 2026-04
+    section Planned
+    Segment-level LSTM             :2026-04, 2026-06
+    Bunching alerts to riders      :2026-04, 2026-05
+    GTFS-RT deeper integration     :2026-03, 2026-05
+```
+
+**Segment-level travel time decomposition** — decompose each route into stop-to-stop segments, learn a travel time distribution per segment conditioned on time/weather/headway. Sum segments for the full prediction. Inspired by recent work on Montreal's STM network (LSTM outperforming transformers by 18-52% at 275x fewer parameters). This is the approach most likely to actually beat the API.
+
+**Bunching alerts** — "Route B is bunching near East Campus right now, next bus may be delayed." No transit app does this. The detection is already running — surfacing it as a user-facing alert is the next step.
+
+**Calibrated confidence as the differentiator** — the conformal prediction layer already gives statistically guaranteed intervals. Once enough ground truth accumulates to properly validate coverage, this becomes a publishable result.
 
 ---
 
 ## Stack
 
-| Layer | Technologies |
-|-------|-------------|
+| Layer | Tech |
+|-------|------|
 | Frontend | React 19, TypeScript, Vite 7, Tailwind 4, DeckGL 9.2, MapLibre 5.13, Recharts |
 | Backend | Flask, SQLAlchemy, Python 3.11 |
-| ML | XGBoost, scikit-learn, pandas, NumPy |
-| Infra | Railway, Vercel, GitHub Actions |
+| ML | XGBoost, scikit-learn, Mondrian conformal prediction |
+| Database | PostgreSQL (Railway, 30-day retention) |
+| Infra | Railway (backend + collector + DB), Vercel (frontend), GitHub Actions (nightly training) |
 
 ---
 
-## Local Development
+## Local Dev
 
 ```bash
 # Backend
@@ -135,51 +212,16 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-The frontend works without an API key for the map and static data. ML predictions and live vehicles require the Madison Metro API key.
+The frontend works read-only without an API key. Live vehicles and ML predictions require `MADISON_METRO_API_KEY`.
 
 ---
 
-## Project Structure
+## Contributing / Feedback
 
-```
-├── backend/
-│   ├── app.py                   # Flask API (~4100 lines)
-│   └── conformal_serving.py     # Quantile prediction serving
-│
-├── collector/
-│   ├── collector.py             # Main 60s collection loop
-│   ├── arrival_detector.py      # Haversine stop detection
-│   ├── bunch_detector.py        # Bus bunching detection
-│   └── db.py                    # SQLAlchemy models
-│
-├── frontend/
-│   └── src/
-│       ├── App.tsx
-│       └── components/
-│           ├── MapView.tsx      # DeckGL + MapLibre map
-│           ├── layout/          # TopBar, BottomTabs
-│           ├── panel/           # ContextPanel, analytics, map, system
-│           └── shared/          # MetricCard, StatusBadge, etc.
-│
-├── ml/
-│   ├── training/
-│   │   └── train_regression.py  # XGBoost training + deployment gates
-│   ├── features/
-│   │   └── regression_features.py
-│   └── models/saved/            # Versioned model registry
-│
-└── .github/workflows/
-    └── nightly-training.yml     # 3 AM CST nightly retraining
-```
+This is an active research project. If you're a Madison student or dev and want to poke at it, break it, or contribute — open an issue or email [nilsmatteson@icloud.com](mailto:nilsmatteson@icloud.com).
+
+If you hit the API rate limit or see something wrong, please report it. Real usage data is genuinely useful for the research.
 
 ---
 
-## Found a bug?
-
-Open an issue on GitHub or email [nilsmatteson@icloud.com](mailto:nilsmatteson@icloud.com). This is a research project — feedback is genuinely useful.
-
----
-
-## License
-
-MIT
+MIT License
