@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from flask_cors import CORS
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import logging
 import math
@@ -4601,6 +4601,72 @@ def check_model_drift():
     except Exception as e:
         logging.error(f"Drift check error: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+# ==================== BUS BUNCHING ====================
+
+@app.route("/api/bunching/summary", methods=["GET"])
+def bunching_summary():
+    cache_key = 'bunching_summary'
+    cached = CACHE.get(cache_key)
+    if cached and time.time() - cached['ts'] < 120:
+        return jsonify(cached['data'])
+
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(os.getenv('DATABASE_URL'), pool_pre_ping=True)
+        with engine.connect() as conn:
+            rows = conn.execute(sa_text("""
+                SELECT rt, COUNT(*) AS event_count, MAX(detected_at) AS last_seen
+                FROM analytics_bunching
+                WHERE detected_at >= NOW() - INTERVAL '7 days'
+                GROUP BY rt
+                ORDER BY event_count DESC
+            """)).fetchall()
+            total = conn.execute(sa_text(
+                "SELECT COUNT(*) FROM analytics_bunching WHERE detected_at >= NOW() - INTERVAL '7 days'"
+            )).scalar() or 0
+        data = {
+            'routes': [{'rt': r[0], 'event_count': r[1], 'last_seen': r[2].isoformat() if r[2] else None} for r in rows],
+            'total_events': total,
+            'as_of': datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logging.warning(f"bunching_summary error: {e}")
+        data = {'routes': [], 'total_events': 0, 'as_of': datetime.now(timezone.utc).isoformat()}
+
+    CACHE[cache_key] = {'ts': time.time(), 'data': data}
+    return jsonify(data)
+
+
+@app.route("/api/bunching/recent", methods=["GET"])
+def bunching_recent():
+    cache_key = 'bunching_recent'
+    cached = CACHE.get(cache_key)
+    if cached and time.time() - cached['ts'] < 60:
+        return jsonify(cached['data'])
+
+    try:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(os.getenv('DATABASE_URL'), pool_pre_ping=True)
+        with engine.connect() as conn:
+            rows = conn.execute(sa_text("""
+                SELECT rt, vid_a, vid_b, dist_km, detected_at
+                FROM analytics_bunching
+                ORDER BY detected_at DESC
+                LIMIT 50
+            """)).fetchall()
+        data = {'events': [
+            {'rt': r[0], 'vid_a': r[1], 'vid_b': r[2], 'dist_km': r[3],
+             'detected_at': r[4].isoformat() if r[4] else None}
+            for r in rows
+        ]}
+    except Exception as e:
+        logging.warning(f"bunching_recent error: {e}")
+        data = {'events': []}
+
+    CACHE[cache_key] = {'ts': time.time(), 'data': data}
+    return jsonify(data)
 
 
 @app.route("/api/route-reliability", methods=["GET"])

@@ -2,13 +2,15 @@ import { useState } from 'react';
 import PerformanceTab from './PerformanceTab';
 import ErrorsTab from './ErrorsTab';
 import RoutesTab from './RoutesTab';
+import BunchingTab from './BunchingTab';
 
-type SubTab = 'performance' | 'errors' | 'routes';
+type SubTab = 'performance' | 'errors' | 'routes' | 'bunching';
 
 const SUB_TABS: Array<{ id: SubTab; label: string }> = [
   { id: 'performance', label: 'Performance' },
   { id: 'errors', label: 'Errors' },
   { id: 'routes', label: 'Routes' },
+  { id: 'bunching', label: 'Bunching' },
 ];
 
 export default function AnalyticsPanel() {
@@ -50,6 +52,7 @@ export default function AnalyticsPanel() {
         {sub === 'performance' && <PerformanceTab />}
         {sub === 'errors' && <ErrorsTab />}
         {sub === 'routes' && <RoutesTab />}
+        {sub === 'bunching' && <BunchingTab />}
       </div>
     </div>
   );

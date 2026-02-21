@@ -34,6 +34,7 @@ try:
         save_gtfs_stops, save_gtfs_trips, save_gtfs_stop_times,
         save_gtfs_feed_info, save_segment_travel_times,
         get_unprocessed_gtfsrt_stop_times, get_scheduled_travel_time,
+        save_bunching_events,
     )
     DB_AVAILABLE = True
 except ImportError:
@@ -81,6 +82,14 @@ except ImportError as e:
     logging.warning(f"DB maintenance import error: {e}")
     DB_MAINTENANCE_AVAILABLE = False
 
+# Import bunch detector
+try:
+    from bunch_detector import BunchDetector
+    BUNCH_DETECTOR_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Bunch detector import error: {e}")
+    BUNCH_DETECTOR_AVAILABLE = False
+
 load_dotenv()
 
 # Configuration
@@ -117,6 +126,7 @@ stats = {
     'gtfsrt_trip_updates': 0,
     'gtfsrt_vehicle_positions': 0,
     'segments_built': 0,
+    'bunching_events': 0,
     'started_at': None,
     'last_vehicle_fetch': None,
     'last_prediction_fetch': None,
@@ -126,6 +136,9 @@ stats = {
 
 # Global arrival detector instance
 arrival_detector: Optional[ArrivalDetector] = None
+
+# Global bunch detector instance
+_bunch_detector: Optional[object] = None
 
 
 def api_get(endpoint: str, **params) -> dict:
@@ -425,7 +438,15 @@ def collect_vehicles() -> dict:
     # Detect arrivals and generate ground truth for ML
     if vehicles:
         process_arrivals(vehicles)
-    
+
+    # Detect bus bunching
+    if vehicles and _bunch_detector is not None and DB_AVAILABLE and DATABASE_URL:
+        bunch_events = _bunch_detector.detect_bunching(vehicles)
+        if bunch_events:
+            saved = save_bunching_events(bunch_events)
+            stats['bunching_events'] += saved
+            logger.info(f"Bunching: {saved} events ({', '.join(sorted(set(e.rt for e in bunch_events)))})")
+
     logger.info(f"Vehicles: {len(vehicles)} total, {delayed_count} delayed, {len(active_routes)} routes → {filename.name}{db_msg}")
     
     return data
@@ -481,6 +502,7 @@ def log_stats():
     logger.info(f"  GTFS-RT trip updates: {stats['gtfsrt_trip_updates']}")
     logger.info(f"  GTFS-RT vehicle positions: {stats['gtfsrt_vehicle_positions']}")
     logger.info(f"  Segments built: {stats['segments_built']}")
+    logger.info(f"  Bunching events: {stats['bunching_events']}")
     logger.info(f"  API requests today: {stats['requests_today']}")
     logger.info(f"  Rate: {stats['requests_today']/max(hours,0.1):.1f} req/hour")
     logger.info("=" * 50)
@@ -658,7 +680,13 @@ def run_collector():
             logger.warning(f"Arrival Detector: Failed to initialize from DB: {e}")
     else:
         logger.info("Arrival Detector: Disabled (missing dependencies)")
-    
+
+    # Initialize Bunch Detector
+    global _bunch_detector
+    if BUNCH_DETECTOR_AVAILABLE:
+        _bunch_detector = BunchDetector()
+        logger.info("Bunch Detector: initialized")
+
     logger.info("Starting collection loop...")
     stats['started_at'] = datetime.now(timezone.utc).isoformat()
     

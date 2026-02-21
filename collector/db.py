@@ -238,6 +238,23 @@ class GTFSFeedInfo(Base):
     stop_times_count = Column(Integer, default=0)
 
 
+class BunchingEventRow(Base):
+    """Detected bus bunching events (two buses on same route running too close)."""
+    __tablename__ = 'analytics_bunching'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rt = Column(String(10), index=True)
+    vid_a = Column(String(20))
+    vid_b = Column(String(20))
+    lat_a = Column(Float)
+    lon_a = Column(Float)
+    lat_b = Column(Float)
+    lon_b = Column(Float)
+    dist_km = Column(Float)
+    detected_at = Column(DateTime(timezone=True), index=True,
+                         default=lambda: datetime.now(timezone.utc))
+
+
 class SegmentTravelTime(Base):
     """
     Stop-to-stop actual travel times computed from GTFS-RT data.
@@ -847,6 +864,26 @@ def get_unprocessed_gtfsrt_stop_times(since_minutes: int = 10) -> list:
         return []
     finally:
         session.close()
+
+
+def save_bunching_events(events: list) -> int:
+    """Save detected bunching events to database. Returns count saved."""
+    if not events:
+        return 0
+    engine = get_db_engine()
+    if engine is None:
+        return 0
+    Session = sessionmaker(bind=engine)
+    with Session() as session:
+        for e in events:
+            session.add(BunchingEventRow(
+                rt=e.rt, vid_a=e.vid_a, vid_b=e.vid_b,
+                lat_a=e.lat_a, lon_a=e.lon_a,
+                lat_b=e.lat_b, lon_b=e.lon_b,
+                dist_km=e.dist_km, detected_at=e.detected_at,
+            ))
+        session.commit()
+    return len(events)
 
 
 def get_scheduled_travel_time(trip_id: str, from_seq: int, to_seq: int) -> int | None:

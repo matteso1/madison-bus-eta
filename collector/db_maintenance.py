@@ -72,6 +72,7 @@ def enforce_retention_policy(engine=None):
             ("vehicle_observations", "collected_at"),
             ("predictions", "collected_at"),
             ("stop_arrivals", "arrived_at"),
+            ("analytics_bunching", "detected_at"),
         ]:
             try:
                 result = conn.execute(
