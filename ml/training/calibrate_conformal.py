@@ -149,22 +149,33 @@ def fetch_calibration_data(cal_start: datetime, cal_end: datetime, engine) -> pd
     return df
 
 
-def load_training_aggregates(models_dir: Path) -> dict:
+def load_training_aggregates(models_dir: Path, df_fallback: pd.DataFrame = None) -> dict:
     """
     Load training aggregates serialized by train_regression.py.
 
     Converts colon-separated string keys back to tuple keys for
     route_horizon_error and route_horizon_std dicts.
 
-    Raises FileNotFoundError if training_aggregates.json is missing
-    (training must run before calibration).
+    If training_aggregates.json is missing (e.g., model hasn't redeployed since
+    Phase 2 was added), falls back to computing aggregates from df_fallback.
+    This is a bootstrap path — once train_regression.py runs and deploys, the
+    file will exist and the proper training-window aggregates will be used.
     """
+    from features.regression_features import compute_historical_eta_aggregates, engineer_regression_features
+
     agg_path = models_dir / 'training_aggregates.json'
     if not agg_path.exists():
-        raise FileNotFoundError(
-            f"training_aggregates.json not found at {agg_path}. "
-            "Run train_regression.py first."
+        if df_fallback is None or len(df_fallback) == 0:
+            raise FileNotFoundError(
+                f"training_aggregates.json not found at {agg_path} and no fallback data provided."
+            )
+        logger.warning(
+            f"training_aggregates.json not found — computing aggregates from calibration data as bootstrap. "
+            "This is less accurate than using training-window aggregates. "
+            "Will be corrected once train_regression.py deploys a new model."
         )
+        df_eng = engineer_regression_features(df_fallback)
+        return compute_historical_eta_aggregates(df_eng)
 
     with open(agg_path) as f:
         raw = json.load(f)
@@ -482,22 +493,14 @@ def main():
         bias = model_info.get('metrics', {}).get('bias_correction_seconds', 0.0) or 0.0
     logger.info(f"Model version: {model_version}, bias_correction: {bias:.2f}s")
 
-    # Step 2: Load training aggregates
-    logger.info("Step 2: Loading training aggregates...")
-    try:
-        aggregates = load_training_aggregates(models_dir)
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        return False
-
-    # Step 3: Compute calibration window
+    # Step 2: Compute calibration window
     now = datetime.now(timezone.utc)
     cal_end = now - timedelta(days=CAL_LAG_DAYS)
     cal_start = cal_end - timedelta(days=CAL_WINDOW_DAYS)
-    logger.info(f"Step 3: Calibration window: {cal_start.date()} to {cal_end.date()} ({CAL_WINDOW_DAYS} days)")
+    logger.info(f"Step 2: Calibration window: {cal_start.date()} to {cal_end.date()} ({CAL_WINDOW_DAYS} days)")
 
-    # Step 4: Fetch calibration data
-    logger.info("Step 4: Fetching calibration data from DB...")
+    # Step 3: Fetch calibration data
+    logger.info("Step 3: Fetching calibration data from DB...")
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         logger.error("DATABASE_URL not set")
@@ -519,8 +522,17 @@ def main():
 
     logger.info(f"Fetched {len(df_cal)} calibration rows")
 
+    # Step 4: Load training aggregates (with fallback to cal data if file missing)
+    logger.info("Step 4: Loading training aggregates...")
+    try:
+        aggregates = load_training_aggregates(models_dir, df_fallback=df_cal)
+    except Exception as e:
+        logger.error(f"Failed to load training aggregates: {e}")
+        return False
+
     # Step 5: Compute conformal quantiles
     logger.info("Step 5: Computing conformal quantiles per stratum...")
+
     feature_cols = get_regression_feature_columns()
     try:
         strata = compute_conformal_quantiles(df_cal, xgb_model, bias, aggregates, feature_cols)

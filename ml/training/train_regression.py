@@ -247,7 +247,37 @@ def main():
     if split_info.get('split_type') == 'temporal':
         logger.info(f"  Train period: {split_info.get('train_date_range', 'N/A')}")
         logger.info(f"  Test period: {split_info.get('test_date_range', 'N/A')}")
-    
+
+    # Always write training aggregates so conformal calibration can use them
+    # even on runs where no new model is deployed.
+    try:
+        import json as _json
+
+        def _serialize_agg(agg: dict) -> dict:
+            out = {}
+            for k, v in agg.items():
+                if isinstance(v, dict):
+                    serialized_inner = {}
+                    for key, val in v.items():
+                        if isinstance(key, tuple) and len(key) == 2:
+                            str_key = f"{key[0]}:{key[1]}"
+                        else:
+                            str_key = str(key)
+                        serialized_inner[str_key] = val
+                    out[k] = serialized_inner
+                else:
+                    out[k] = v
+            return out
+
+        agg_path = Path(__file__).parent.parent / 'models' / 'saved' / 'training_aggregates.json'
+        serialized = _serialize_agg(aggregates)
+        serialized['version'] = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        with open(agg_path, 'w') as f:
+            _json.dump(serialized, f, indent=2, default=str)
+        logger.info(f"Training aggregates written to {agg_path}")
+    except Exception as e:
+        logger.error(f"Failed to write training aggregates: {e}")
+
     # Step 3: Train model
     logger.info("Step 3: Training XGBoost regressor...")
     try:
@@ -330,36 +360,6 @@ def main():
             should_deploy = False
             deploy_reason = f"save_failed: {e}"
 
-        # Serialize training aggregates for conformal calibration
-        if should_deploy:
-            try:
-                import json as _json
-
-                def _serialize_agg(agg: dict) -> dict:
-                    """Convert tuple keys to colon-separated strings for JSON serialization."""
-                    out = {}
-                    for k, v in agg.items():
-                        if isinstance(v, dict):
-                            serialized_inner = {}
-                            for key, val in v.items():
-                                if isinstance(key, tuple) and len(key) == 2:
-                                    str_key = f"{key[0]}:{key[1]}"
-                                else:
-                                    str_key = str(key)
-                                serialized_inner[str_key] = val
-                            out[k] = serialized_inner
-                        else:
-                            out[k] = v
-                    return out
-
-                agg_path = Path(__file__).parent.parent / 'models' / 'saved' / 'training_aggregates.json'
-                serialized = _serialize_agg(aggregates)
-                serialized['version'] = version
-                with open(agg_path, 'w') as f:
-                    _json.dump(serialized, f, indent=2, default=str)
-                logger.info(f"Training aggregates serialized to {agg_path}")
-            except Exception as e:
-                logger.error(f"Failed to serialize training aggregates: {e}")
     else:
         logger.info("Step 5: Skipping deployment (no improvement)")
     
