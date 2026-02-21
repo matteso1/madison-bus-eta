@@ -176,7 +176,7 @@ The frontend works without an API key for the map and static data. ML prediction
 
 ## Found a bug?
 
-Open an issue on GitHub or email [nils.mikkola@wisc.edu](mailto:nils.mikkola@wisc.edu). This is a research project — feedback is genuinely useful.
+Open an issue on GitHub or email [nilsmatteson@icloud.com](mailto:nilsmatteson@icloud.com). This is a research project — feedback is genuinely useful.
 
 ---
 
