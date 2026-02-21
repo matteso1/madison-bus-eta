@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { MapboxOverlay } from '@deck.gl/mapbox';
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer, LineLayer } from '@deck.gl/layers';
 import { PathStyleExtension } from '@deck.gl/extensions';
 import { Map, Marker, useControl } from '@vis.gl/react-maplibre';
 import maplibregl from 'maplibre-gl';
@@ -164,6 +164,7 @@ export default function MapView({
     const [routePatterns, setRoutePatterns] = useState<any[]>([]);
     const [stopsData, setStopsData] = useState<any[]>([]);
     const routeDirectionsRef = useRef<any[]>([]);
+    const [bunchingPairs, setBunchingPairs] = useState<any[]>([]);
     // Stop predictions removed — users click stops for arrival info via StopPredictions panel
     const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -341,6 +342,18 @@ export default function MapView({
         const timer = setInterval(fetchLive, interval);
         return () => clearInterval(timer);
     }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute]);
+
+    // Poll active bunching pairs every 30s for map overlay
+    useEffect(() => {
+        const fetchBunching = () => {
+            axios.get(`${API_BASE}/api/bunching/active`).then(res => {
+                setBunchingPairs(res.data.pairs || []);
+            }).catch(() => {});
+        };
+        fetchBunching();
+        const timer = setInterval(fetchBunching, 30000);
+        return () => clearInterval(timer);
+    }, [API_BASE]);
 
     // Auto-pan to tracked bus
     useEffect(() => {
@@ -551,6 +564,30 @@ export default function MapView({
 
         // (delayed indicators removed — cluttered and unlabeled on the All Routes view)
 
+        // 2) Bunching overlay — orange lines between actively-bunched bus pairs
+        if (bunchingPairs.length > 0) {
+            // Glow outline
+            L.push(new LineLayer({
+                id: 'bunching-glow',
+                data: bunchingPairs,
+                getSourcePosition: (d: any) => [d.lon_a, d.lat_a],
+                getTargetPosition: (d: any) => [d.lon_b, d.lat_b],
+                getColor: [245, 158, 11, 60],
+                getWidth: 14,
+                widthMinPixels: 10,
+            }));
+            // Core line
+            L.push(new LineLayer({
+                id: 'bunching-lines',
+                data: bunchingPairs,
+                getSourcePosition: (d: any) => [d.lon_a, d.lat_a],
+                getTargetPosition: (d: any) => [d.lon_b, d.lat_b],
+                getColor: [245, 158, 11, 220],
+                getWidth: 6,
+                widthMinPixels: 4,
+            }));
+        }
+
         // 3) Trip: full route pattern dimmed (context)
         if (tripData?.fullPath) {
             L.push(new PathLayer({
@@ -697,7 +734,8 @@ export default function MapView({
 
         return L;
     }, [filteredPatterns, stopsData, onStopClick,
-        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute]);
+        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute,
+        bunchingPairs]);
 
     const nonTracked = useMemo(() => {
         if (activeTripPlan) return [];
