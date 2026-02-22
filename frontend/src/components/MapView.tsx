@@ -103,6 +103,8 @@ export interface StopClickEvent {
     stpid: string;
     stpnm: string;
     route: string;
+    lat?: number;
+    lon?: number;
 }
 
 export interface VehicleData {
@@ -415,6 +417,8 @@ export default function MapView({
         if (!selectedStop) return null;
         const stop = stopsData.find((s: any) => String(s.stpid) === String(selectedStop.stpid));
         if (stop?.position) return stop.position as [number, number];
+        // Fallback: use lat/lon passed with the click event (e.g. from nearby stops in ALL mode)
+        if (selectedStop.lon != null && selectedStop.lat != null) return [selectedStop.lon, selectedStop.lat] as [number, number];
         return null;
     }, [selectedStop, stopsData]);
 
@@ -767,7 +771,7 @@ export default function MapView({
                 lineWidthMinPixels: 2,
                 opacity: 1,
                 onClick: ({ object }) => {
-                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.routes?.[0] || '' });
+                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.routes?.[0] || '', lat: object.position[1], lon: object.position[0] });
                 }
             }));
         }

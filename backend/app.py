@@ -2031,7 +2031,7 @@ def conformal_prediction():
         is_moving_fast = 0
         has_velocity_data = 0
 
-        features_44 = [
+        features_47 = [
             horizon_min, horizon_squared, horizon_log, horizon_bucket, is_long_horizon,
             hour_sin, hour_cos, day_sin, day_cos, month_sin, month_cos,
             is_weekend, is_rush_hour, is_holiday, is_morning_rush, is_evening_rush,
@@ -2050,16 +2050,13 @@ def conformal_prediction():
 
         # Compute XGBoost correction
         xgb_correction = 0.0
-        model_available = False
+        xgb_available = False
         if xgb_model is not None:
             try:
                 n_expected = xgb_model.n_features_in_
-                if n_expected == 44:
-                    features = np.array([features_44])
-                else:
-                    features = np.array([features_44[:n_expected] if n_expected <= 44 else features_44])
-                xgb_correction = float(xgb_model.predict(features)[0]) + bias
-                model_available = True
+                feat_vec = features_47[:n_expected] if n_expected <= len(features_47) else features_47
+                xgb_correction = float(xgb_model.predict(np.array([feat_vec]))[0]) + bias
+                xgb_available = True
             except Exception as e:
                 logging.warning(f"XGBoost predict failed: {e}")
                 xgb_correction = 0.0
@@ -2126,7 +2123,7 @@ def conformal_prediction():
             "stratum": stratum_label,
             "stratum_n_cal": cell.get('n', 0),
             "xgb_correction_sec": round(xgb_correction, 1),
-            "model_available": model_available,
+            "model_available": True,  # conformal artifact is available
         })
 
     except Exception as e:
