@@ -286,7 +286,9 @@ def compute_conformal_quantiles(
     df_feat = apply_historical_eta_features(df_feat, aggregates)
 
     # Drop rows with missing feature values
-    df_feat = df_feat[feature_cols + ['error_seconds', 'rt', 'day_of_week', 'is_holiday', 'horizon_min']].copy()
+    # Note: is_holiday and horizon_min are already in feature_cols — avoid duplicate column names
+    extra_cols = [c for c in ['error_seconds', 'rt', 'day_of_week'] if c not in feature_cols]
+    df_feat = df_feat[feature_cols + extra_cols].copy()
     df_feat = df_feat.dropna(subset=feature_cols + ['error_seconds'])
     logger.info(f"After feature engineering and dropna: {len(df_feat)} rows")
 
