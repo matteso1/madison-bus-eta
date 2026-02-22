@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import type { TrackedBus, VehicleData } from './MapView';
+import ConfidenceBand from './shared/ConfidenceBand';
 
 interface TrackingOverlayProps {
     trackedBus: TrackedBus;
@@ -8,8 +9,16 @@ interface TrackingOverlayProps {
     onStopTracking: () => void;
 }
 
+interface ConformalResult {
+    eta_low_min: number;
+    eta_median_min: number;
+    eta_high_min: number;
+    model_available: boolean;
+}
+
 export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }: TrackingOverlayProps) {
     const [eta, setEta] = useState<{ low: number; median: number; high: number } | null>(null);
+    const [conformal, setConformal] = useState<ConformalResult | null>(null);
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
 
     const vehicle = vehicles.find(v => v.vid === trackedBus.vid);
@@ -26,13 +35,26 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                 if (match) {
                     const mins = match.prdctdn === 'DUE' ? 0 : (parseInt(match.prdctdn) || 0);
                     setEta({ low: mins, median: mins, high: mins });
+
+                    // Conformal prediction — non-blocking enhancement
+                    try {
+                        const confRes = await axios.post(`${API_BASE}/api/conformal-prediction`, {
+                            route: trackedBus.route,
+                            stop_id: trackedBus.stopId,
+                            api_prediction_min: mins,
+                            vehicle_id: trackedBus.vid,
+                        });
+                        if (confRes.data?.model_available) {
+                            setConformal(confRes.data);
+                        }
+                    } catch {}
                 }
             } catch {}
         };
         fetchEta();
         const timer = setInterval(fetchEta, 15000);
         return () => clearInterval(timer);
-    }, [vehicleFound, trackedBus.vid, trackedBus.stopId, API_BASE]);
+    }, [vehicleFound, trackedBus.vid, trackedBus.stopId, trackedBus.route, API_BASE]);
 
     if (!vehicle) {
         return (
@@ -104,6 +126,19 @@ export default function TrackingOverlay({ trackedBus, vehicles, onStopTracking }
                     </div>
                 </div>
             </div>
+
+            {conformal && (
+                <div style={{ marginTop: 10 }}>
+                    <ConfidenceBand
+                        low={Math.round(conformal.eta_low_min * 10) / 10}
+                        median={Math.round(conformal.eta_median_min * 10) / 10}
+                        high={Math.round(conformal.eta_high_min * 10) / 10}
+                    />
+                    <div style={{ fontSize: 9, color: 'var(--text-secondary)', marginTop: 3, textAlign: 'center' }}>
+                        90% confidence window
+                    </div>
+                </div>
+            )}
 
             <div style={{ marginTop: 12, height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
                 <div style={{

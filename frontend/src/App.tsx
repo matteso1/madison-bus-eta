@@ -72,7 +72,6 @@ export default function App() {
     setSelectedStop(stop);
     setTab('map');
     setActiveTripPlan(null);
-    setHighlightedStops([]);
   }, []);
 
   const handleRouteSelect = useCallback((rt: string) => {
