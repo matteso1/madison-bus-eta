@@ -20,7 +20,6 @@ export default function App() {
   const [trackedBus, setTrackedBus] = useState<TrackedBus | null>(null);
   const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
   const [liveVehicles, setLiveVehicles] = useState<VehicleData[]>([]);
-  const [highlightedStops, setHighlightedStops] = useState<Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>>([]);
   const [clickedBus, setClickedBus] = useState<BusClickEvent | null>(null);
 
   // Auto-request geolocation on mount
@@ -64,10 +63,6 @@ export default function App() {
     setLiveVehicles(vehicles);
   }, []);
 
-  const handleNearbyStopsLoaded = useCallback((stops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>) => {
-    setHighlightedStops(stops);
-  }, []);
-
   const handleStopClick = useCallback((stop: StopClickEvent) => {
     setSelectedStop(stop);
     setTab('map');
@@ -79,7 +74,6 @@ export default function App() {
     setSelectedStop(null);
     setTrackedBus(null);
     setActiveTripPlan(null);
-    setHighlightedStops([]);
   }, []);
 
   const handleStopClear = useCallback(() => {
@@ -107,7 +101,6 @@ export default function App() {
   const handleTripPlanSelect = useCallback((plan: TripPlan) => {
     setActiveTripPlan(plan);
     setSelectedRoute(plan.routeId);
-    setHighlightedStops([]);
   }, []);
 
   const handleTripPlanClear = useCallback(() => {
@@ -133,7 +126,6 @@ export default function App() {
             userLocation={userLocation}
             trackedBus={trackedBus}
             activeTripPlan={activeTripPlan}
-            highlightedStops={highlightedStops}
             onRoutesLoaded={handleRoutesLoaded}
             onLiveDataUpdated={handleLiveDataUpdated}
             onStopClick={handleStopClick}
@@ -173,13 +165,11 @@ export default function App() {
           userLocation={userLocation}
           onRouteSelect={handleRouteSelect}
           onStopClear={handleStopClear}
-          onStopSelect={handleStopClick}
           onUserLocation={handleUserLocation}
           onTrackBus={handleTrackBus}
           onTripPlanSelect={handleTripPlanSelect}
           onTripPlanClear={handleTripPlanClear}
           activeTripPlan={activeTripPlan}
-          onNearbyStopsLoaded={handleNearbyStopsLoaded}
         />
       </div>
     </div>

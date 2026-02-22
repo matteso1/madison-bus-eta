@@ -4,7 +4,6 @@ import type { StopClickEvent, TrackedBus, TripPlan } from '../MapView';
 import CityOverview from './map/CityOverview';
 import RouteDrilldown from './map/RouteDrilldown';
 import StopPredictions from './map/StopPredictions';
-import NearbyStops from './map/NearbyStops';
 import TripPlanner from './map/TripPlanner';
 import AnalyticsPanel from './analytics/AnalyticsPanel';
 import SystemPanel from './system/SystemPanel';
@@ -18,13 +17,11 @@ interface ContextPanelProps {
   userLocation: [number, number] | null;
   onRouteSelect: (rt: string) => void;
   onStopClear: () => void;
-  onStopSelect: (stop: StopClickEvent) => void;
   onUserLocation: (lat: number, lon: number) => void;
   onTrackBus: (bus: TrackedBus) => void;
   onTripPlanSelect: (plan: TripPlan) => void;
   onTripPlanClear: () => void;
   activeTripPlan: TripPlan | null;
-  onNearbyStopsLoaded: (stops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>) => void;
 }
 
 export default function ContextPanel({
@@ -36,29 +33,21 @@ export default function ContextPanel({
   userLocation,
   onRouteSelect,
   onStopClear,
-  onStopSelect,
   onUserLocation,
   onTrackBus,
   onTripPlanSelect,
   onTripPlanClear,
   activeTripPlan,
-  onNearbyStopsLoaded,
 }: ContextPanelProps) {
-  const [showNearby, setShowNearby] = useState(false);
   const [showTripPlanner, setShowTripPlanner] = useState(false);
 
   useEffect(() => {
-    if (selectedStop) {
-      setShowNearby(false);
-      setShowTripPlanner(false);
-    } else if (selectedRoute !== 'ALL' && !activeTripPlan) {
-      setShowNearby(false);
+    if (selectedStop || (selectedRoute !== 'ALL' && !activeTripPlan)) {
       setShowTripPlanner(false);
     }
   }, [selectedRoute, selectedStop, activeTripPlan]);
 
   const handleRouteSelect = (rt: string) => {
-    setShowNearby(false);
     setShowTripPlanner(false);
     onRouteSelect(rt);
   };
@@ -86,16 +75,6 @@ export default function ContextPanel({
               onUserLocation={onUserLocation}
               activePlan={activeTripPlan}
             />
-          ) : showNearby ? (
-            <NearbyStops
-              onBack={() => setShowNearby(false)}
-              onUserLocation={onUserLocation}
-              onStopSelect={(stpid, stpnm, route) => {
-                setShowNearby(false);
-                onStopSelect({ stpid, stpnm, route });
-              }}
-              onStopsLoaded={onNearbyStopsLoaded}
-            />
           ) : selectedRoute !== 'ALL' ? (
             <RouteDrilldown route={selectedRoute} onClose={() => handleRouteSelect('ALL')} />
           ) : (
@@ -103,7 +82,6 @@ export default function ContextPanel({
               busCount={busCount}
               delayedCount={delayedCount}
               onRouteSelect={handleRouteSelect}
-              onNearMe={() => setShowNearby(true)}
               onTripPlan={() => setShowTripPlanner(true)}
             />
           )}

@@ -148,7 +148,6 @@ interface MapViewProps {
     userLocation: [number, number] | null;
     trackedBus: TrackedBus | null;
     activeTripPlan: TripPlan | null;
-    highlightedStops: Array<{stpid: string; stpnm: string; lat: number; lon: number; routes: string[]}>;
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
@@ -158,7 +157,7 @@ interface MapViewProps {
 
 
 export default function MapView({
-    selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan, highlightedStops,
+    selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan,
     onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
@@ -750,37 +749,11 @@ export default function MapView({
             }));
         }
 
-        // 7b) Nearby stops highlights — visible when NearbyStops panel is active
-        if (highlightedStops.length > 0 && !activeTripPlan) {
-            L.push(new ScatterplotLayer({
-                id: 'nearby-stops',
-                data: highlightedStops.map(s => ({
-                    position: [s.lon, s.lat],
-                    stpid: s.stpid,
-                    stpnm: s.stpnm,
-                    routes: s.routes,
-                })),
-                pickable: true,
-                getPosition: (d: any) => d.position,
-                getFillColor: [16, 185, 129],
-                getLineColor: [255, 255, 255],
-                getRadius: 40,
-                radiusMinPixels: 7,
-                radiusMaxPixels: 14,
-                stroked: true,
-                lineWidthMinPixels: 2,
-                opacity: 1,
-                onClick: ({ object }) => {
-                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.routes?.[0] || '', lat: object.position[1], lon: object.position[0] });
-                }
-            }));
-        }
-
         // Bus markers rendered as DOM Markers in JSX (below)
 
         return L;
     }, [filteredPatterns, stopsData, onStopClick,
-        trackedBus, activeTripPlan, tripData, tripWalkPaths, highlightedStops, selectedRoute,
+        trackedBus, activeTripPlan, tripData, tripWalkPaths, selectedRoute,
         bunchingPairs]);
 
     const nonTracked = useMemo(() => {

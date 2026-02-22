@@ -8,11 +8,10 @@ interface CityOverviewProps {
   busCount: number;
   delayedCount: number;
   onRouteSelect: (rt: string) => void;
-  onNearMe: () => void;
   onTripPlan: () => void;
 }
 
-export default function CityOverview({ busCount, delayedCount, onRouteSelect, onNearMe, onTripPlan }: CityOverviewProps) {
+export default function CityOverview({ busCount, delayedCount, onRouteSelect, onTripPlan }: CityOverviewProps) {
   const [reliability, setReliability] = useState<any[]>([]);
   const [drift, setDrift] = useState<any>(null);
   const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
@@ -75,34 +74,6 @@ export default function CityOverview({ busCount, delayedCount, onRouteSelect, on
           <span style={{ fontSize: 16, color: 'var(--signal)' }}>&#10132;</span>
         </div>
         Where to?
-      </button>
-
-      {/* Near Me CTA */}
-      <button
-        onClick={onNearMe}
-        style={{
-          width: '100%',
-          background: 'var(--signal-dim)',
-          border: '1px solid rgba(0,212,255,0.35)',
-          borderRadius: 8,
-          color: 'var(--signal)',
-          fontSize: 13,
-          fontWeight: 600,
-          padding: '10px 16px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          marginBottom: 16,
-          transition: 'background 0.15s',
-          fontFamily: 'var(--font-ui)',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,212,255,0.2)')}
-        onMouseLeave={e => (e.currentTarget.style.background = 'var(--signal-dim)')}
-      >
-        <span style={{ fontSize: 16 }}>&#9678;</span>
-        Stops Near Me
       </button>
 
       <div style={{ fontSize: 10, color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
