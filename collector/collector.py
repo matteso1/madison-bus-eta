@@ -342,53 +342,76 @@ def _update_ab_test_matches(outcomes: list) -> None:
 def process_arrivals(vehicles: list) -> None:
     """
     Detect vehicle arrivals at stops and match to predictions.
-    
+
     This generates ground truth for ML training:
     - Saves arrivals to stop_arrivals table
     - Matches arrivals to predictions
     - Saves prediction outcomes with error_seconds
     """
     global arrival_detector
-    
+
     if not ARRIVAL_DETECTOR_AVAILABLE or arrival_detector is None:
         return
-    
+
     if not DB_AVAILABLE or not DATABASE_URL:
         return
-    
+
     # Detect arrivals
     arrivals = arrival_detector.detect_arrivals(vehicles)
-    
+
     if not arrivals:
         return
-    
+
     # Save arrivals to database
     arrivals_saved = save_arrivals_to_db(arrivals)
     stats['arrivals_detected'] += arrivals_saved
-    
+
     # Get pending predictions for vehicles that just arrived
     vehicle_ids = [a.vid for a in arrivals]
     pending = get_pending_predictions(vehicle_ids, minutes_back=30)
-    
+
     if not pending:
+        # Log diagnostic: arrivals detected but no predictions found in DB
+        sample = arrivals[:3]
+        logger.warning(
+            f"Ground truth gap: {len(arrivals)} arrivals but 0 pending predictions. "
+            f"Sample arrival stpids: {[a.stpid for a in sample]}, "
+            f"vids: {[a.vid for a in sample]}"
+        )
         return
-    
+
+    # Log stpid formats for diagnostic (detect GTFS vs API ID mismatch)
+    arrival_stpids = set(a.stpid for a in arrivals)
+    pred_stpids = set(p['stpid'] for p in pending)
+    overlap = arrival_stpids & pred_stpids
+    if not overlap and arrival_stpids and pred_stpids:
+        logger.warning(
+            f"Ground truth ID MISMATCH: arrival stpids (GTFS) {list(arrival_stpids)[:5]} "
+            f"vs prediction stpids (API) {list(pred_stpids)[:5]} — zero overlap!"
+        )
+
     # Match arrivals to predictions
     outcomes = match_predictions_to_arrivals(arrivals, pending)
-    
+
     if outcomes:
         outcomes_saved = save_prediction_outcomes_to_db(outcomes)
         stats['predictions_matched'] += outcomes_saved
-        
+
         # Update A/B test records for matched arrivals
         _update_ab_test_matches(outcomes)
-        
+
         # Log summary
         avg_error = sum(o['error_seconds'] for o in outcomes) / len(outcomes)
         logger.info(
             f"Ground truth: {arrivals_saved} arrivals, "
             f"{outcomes_saved} predictions matched, "
             f"avg error: {avg_error/60:.1f}min"
+        )
+    else:
+        logger.warning(
+            f"Ground truth: {arrivals_saved} arrivals, {len(pending)} pending predictions, "
+            f"but 0 matched. Arrival stpids: {list(arrival_stpids)[:5]}, "
+            f"Pred stpids: {list(pred_stpids)[:5]}"
         )
 
 

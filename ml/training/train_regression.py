@@ -208,7 +208,7 @@ def main():
     logger.info("ETA ERROR REGRESSION TRAINING PIPELINE")
     logger.info("=" * 60)
     
-    days = 30
+    days = 7
     
     # Step 1: Fetch prediction outcomes data
     logger.info("Step 1: Fetching prediction outcomes data...")
