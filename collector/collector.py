@@ -408,10 +408,11 @@ def process_arrivals(vehicles: list) -> None:
             f"avg error: {avg_error/60:.1f}min"
         )
     else:
+        a_ids = [a.stpid for a in arrivals[:5]]
+        p_ids = [p['stpid'] for p in pending[:5]]
         logger.warning(
             f"Ground truth: {arrivals_saved} arrivals, {len(pending)} pending predictions, "
-            f"but 0 matched. Arrival stpids: {list(arrival_stpids)[:5]}, "
-            f"Pred stpids: {list(pred_stpids)[:5]}"
+            f"but 0 matched. Arrival stpids: {a_ids}, Pred stpids: {p_ids}"
         )
 
 
