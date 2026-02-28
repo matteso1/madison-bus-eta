@@ -680,8 +680,9 @@ def run_collector():
     # Load static GTFS schedule data (one-time at startup)
     _init_static_gtfs()
     
-    # Initialize Arrival Detector using stops from static GTFS DB table
-    # (avoids burning REST API quota on startup — gtfs_stops loaded above)
+    # Initialize Arrival Detector using stops from static GTFS DB table.
+    # Use stop_code (public-facing ID that matches BusTime API stpid) instead
+    # of stop_id (GTFS internal ID) — these are different numbering systems.
     global arrival_detector
     if ARRIVAL_DETECTOR_AVAILABLE and DB_AVAILABLE and DATABASE_URL:
         try:
@@ -689,7 +690,8 @@ def run_collector():
             engine = create_engine(DATABASE_URL, pool_pre_ping=True)
             with engine.connect() as conn:
                 rows = conn.execute(sa_text(
-                    "SELECT stop_id, stop_name, stop_lat, stop_lon FROM gtfs_stops"
+                    "SELECT stop_code, stop_name, stop_lat, stop_lon FROM gtfs_stops "
+                    "WHERE stop_code IS NOT NULL"
                 )).fetchall()
             stops = [
                 StopLocation(stpid=r[0], stpnm=r[1], lat=r[2], lon=r[3])
@@ -697,9 +699,9 @@ def run_collector():
             ]
             if stops:
                 arrival_detector = ArrivalDetector(stops)
-                logger.info(f"Arrival Detector: ✓ Initialized with {len(stops)} stops from gtfs_stops")
+                logger.info(f"Arrival Detector: ✓ Initialized with {len(stops)} stops (using stop_code)")
             else:
-                logger.warning("Arrival Detector: gtfs_stops table empty, detector disabled")
+                logger.warning("Arrival Detector: no stops with stop_code found, detector disabled")
         except Exception as e:
             logger.warning(f"Arrival Detector: Failed to initialize from DB: {e}")
     else:
