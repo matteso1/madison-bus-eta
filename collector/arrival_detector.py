@@ -200,30 +200,38 @@ class ArrivalDetector:
         return arrivals
 
 
+def _normalize_stpid(stpid: str) -> str:
+    """Normalize stop ID for matching: GTFS uses '623', API uses '0623'.
+    Strip leading zeros so both formats compare equal."""
+    return stpid.lstrip('0') or '0'
+
+
 def match_predictions_to_arrivals(
     arrivals: List[DetectedArrival],
     pending_predictions: List[dict]
 ) -> List[dict]:
     """
     Match detected arrivals to their original predictions.
-    
+
     This creates the ground truth: actual_arrival vs predicted_arrival.
-    
+
     Args:
         arrivals: List of DetectedArrival objects
         pending_predictions: List of prediction records from database
             Each has: id, vid, stpid, prdtm (predicted arrival time)
-    
+
     Returns:
         List of prediction outcomes with error_seconds calculated
     """
     outcomes = []
-    
+
     for arrival in arrivals:
         # Find matching predictions for this vehicle + stop
+        # Normalize stop IDs: GTFS uses bare ints ('623'), API zero-pads ('0623')
+        arrival_stpid = _normalize_stpid(arrival.stpid)
         matches = [
             p for p in pending_predictions
-            if p['vid'] == arrival.vid and p['stpid'] == arrival.stpid
+            if p['vid'] == arrival.vid and _normalize_stpid(p['stpid']) == arrival_stpid
         ]
         
         if not matches:

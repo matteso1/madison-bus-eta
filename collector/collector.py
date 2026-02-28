@@ -380,15 +380,15 @@ def process_arrivals(vehicles: list) -> None:
         )
         return
 
-    # Log stpid formats for diagnostic (detect GTFS vs API ID mismatch)
-    arrival_stpids = set(a.stpid for a in arrivals)
-    pred_stpids = set(p['stpid'] for p in pending)
-    overlap = arrival_stpids & pred_stpids
-    if not overlap and arrival_stpids and pred_stpids:
-        logger.warning(
-            f"Ground truth ID MISMATCH: arrival stpids (GTFS) {list(arrival_stpids)[:5]} "
-            f"vs prediction stpids (API) {list(pred_stpids)[:5]} — zero overlap!"
-        )
+    # Log stpid format diagnostic (kept for monitoring)
+    if arrivals and pending:
+        arrival_stpids_raw = set(a.stpid for a in arrivals)
+        pred_stpids_raw = set(p['stpid'] for p in pending)
+        if not (arrival_stpids_raw & pred_stpids_raw):
+            logger.info(
+                f"Ground truth: stop IDs normalized for matching. "
+                f"GTFS format: {list(arrival_stpids_raw)[:3]}, API format: {list(pred_stpids_raw)[:3]}"
+            )
 
     # Match arrivals to predictions
     outcomes = match_predictions_to_arrivals(arrivals, pending)
