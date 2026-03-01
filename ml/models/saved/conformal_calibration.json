@@ -1,774 +1,739 @@
 {
-  "version": "20260226_093640",
-  "calibrated_at": "2026-02-26T09:36:40.593659+00:00",
+  "version": "20260301_091819",
+  "calibrated_at": "2026-03-01T09:18:19.979584+00:00",
   "xgb_model_version": "20260210_094651",
   "coverage_target": 0.9,
   "cal_window_days": 14,
-  "cal_start": "2026-02-05T09:36:40.593659+00:00",
-  "cal_end": "2026-02-19T09:36:40.593659+00:00",
-  "total_cal_points": 102265,
+  "cal_start": "2026-02-08T09:18:19.979584+00:00",
+  "cal_end": "2026-02-22T09:18:19.979584+00:00",
+  "total_cal_points": 84029,
   "global": {
-    "n": 102265,
-    "q_low": -198.15,
-    "q_high": 80.1
+    "n": 84029,
+    "q_low": -659.21,
+    "q_high": -16.66
   },
   "by_daytype_horizon": {
     "weekday__long": {
-      "n": 70,
-      "q_low": -428.33,
-      "q_high": 77.83
+      "n": 62,
+      "q_low": -552.57,
+      "q_high": -20.27
     },
     "weekday__medium": {
-      "n": 1176,
-      "q_low": -226.3,
-      "q_high": 41.62
+      "n": 1037,
+      "q_low": -544.69,
+      "q_high": 20.59
     },
     "weekday__short": {
-      "n": 76150,
-      "q_low": -202.85,
-      "q_high": 79.46
-    },
-    "weekend_holiday__long": {
-      "n": 31,
-      "q_low": -325.59,
-      "q_high": 325.56
+      "n": 63904,
+      "q_low": -659.03,
+      "q_high": -17.85
     },
     "weekend_holiday__medium": {
-      "n": 342,
-      "q_low": -355.3,
-      "q_high": 72.78
+      "n": 266,
+      "q_low": -539.76,
+      "q_high": 49.93
     },
     "weekend_holiday__short": {
-      "n": 24496,
-      "q_low": -182.53,
-      "q_high": 85.2
+      "n": 18735,
+      "q_low": -663.3,
+      "q_high": -18.19
     }
   },
   "by_route": {
     "28": {
-      "n": 5202,
-      "q_low": -265.77,
-      "q_high": 54.19
+      "n": 4476,
+      "q_low": -635.91,
+      "q_high": -38.09
     },
     "38": {
-      "n": 5254,
-      "q_low": -258.13,
-      "q_high": 84.25
+      "n": 4283,
+      "q_low": -635.19,
+      "q_high": -20.05
     },
     "55": {
-      "n": 226,
-      "q_low": -144.99,
-      "q_high": 57.89
+      "n": 177,
+      "q_low": -653.28,
+      "q_high": -88.88
     },
     "60": {
-      "n": 140,
-      "q_low": -125.11,
-      "q_high": 1.88
+      "n": 112,
+      "q_low": -703.33,
+      "q_high": -120.32
     },
     "61": {
-      "n": 259,
-      "q_low": -112.03,
-      "q_high": 9.77
+      "n": 208,
+      "q_low": -702.58,
+      "q_high": -198.61
     },
     "62": {
-      "n": 340,
-      "q_low": -112.49,
-      "q_high": 9.51
+      "n": 281,
+      "q_low": -654.42,
+      "q_high": -57.28
     },
     "63": {
-      "n": 369,
-      "q_low": -107.68,
-      "q_high": 36.32
-    },
-    "64": {
-      "n": 40,
-      "q_low": -106.79,
-      "q_high": 65.74
+      "n": 299,
+      "q_low": -680.54,
+      "q_high": -77.47
     },
     "65": {
-      "n": 908,
-      "q_low": -133.7,
-      "q_high": 618.46
+      "n": 776,
+      "q_low": -616.92,
+      "q_high": 291.59
     },
     "75": {
-      "n": 529,
-      "q_low": -105.42,
-      "q_high": 86.65
+      "n": 428,
+      "q_low": -648.03,
+      "q_high": -75.17
     },
     "80": {
-      "n": 13985,
-      "q_low": -299.93,
-      "q_high": 403.68
+      "n": 11870,
+      "q_low": -639.84,
+      "q_high": 258.43
     },
     "81": {
-      "n": 1087,
-      "q_low": -219.67,
-      "q_high": 108.7
+      "n": 824,
+      "q_low": -601.1,
+      "q_high": 21.82
     },
     "82": {
-      "n": 1257,
-      "q_low": -212.52,
-      "q_high": 33.0
+      "n": 997,
+      "q_low": -601.86,
+      "q_high": 26.75
     },
     "84": {
-      "n": 2918,
-      "q_low": -353.27,
-      "q_high": 550.76
+      "n": 2561,
+      "q_low": -646.76,
+      "q_high": 457.24
     },
     "A": {
-      "n": 15554,
-      "q_low": -56.13,
-      "q_high": 52.5
+      "n": 12525,
+      "q_low": -661.08,
+      "q_high": -69.76
     },
     "B": {
-      "n": 10979,
-      "q_low": -77.19,
-      "q_high": 50.44
+      "n": 8950,
+      "q_low": -681.28,
+      "q_high": -64.61
     },
     "C": {
-      "n": 8785,
-      "q_low": -200.65,
-      "q_high": 44.46
+      "n": 7069,
+      "q_low": -681.53,
+      "q_high": -54.83
     },
     "D": {
-      "n": 11782,
-      "q_low": -66.36,
-      "q_high": 48.35
+      "n": 9698,
+      "q_low": -680.86,
+      "q_high": -83.36
     },
     "E": {
-      "n": 2866,
-      "q_low": -105.83,
-      "q_high": 55.04
+      "n": 2303,
+      "q_low": -648.2,
+      "q_high": -31.06
     },
     "F": {
-      "n": 2701,
-      "q_low": -61.74,
-      "q_high": 63.08
+      "n": 2336,
+      "q_low": -653.62,
+      "q_high": -53.63
     },
     "G": {
-      "n": 4155,
-      "q_low": -47.7,
-      "q_high": 67.13
+      "n": 3289,
+      "q_low": -651.77,
+      "q_high": -74.15
     },
     "H": {
-      "n": 2629,
-      "q_low": -48.25,
-      "q_high": 61.94
+      "n": 2125,
+      "q_low": -629.32,
+      "q_high": -72.43
     },
     "J": {
-      "n": 2551,
-      "q_low": -55.05,
-      "q_high": 71.79
+      "n": 2129,
+      "q_low": -634.33,
+      "q_high": -92.93
     },
     "L": {
-      "n": 645,
-      "q_low": -374.89,
-      "q_high": 675.26
+      "n": 523,
+      "q_low": -641.89,
+      "q_high": 471.06
     },
     "O": {
-      "n": 2333,
-      "q_low": -384.13,
-      "q_high": 556.94
+      "n": 1898,
+      "q_low": -640.34,
+      "q_high": 391.34
     },
     "P": {
-      "n": 831,
-      "q_low": -23.29,
-      "q_high": 958.11
+      "n": 677,
+      "q_low": -627.15,
+      "q_high": 488.27
     },
     "R": {
-      "n": 3407,
-      "q_low": -48.78,
-      "q_high": 64.49
+      "n": 2745,
+      "q_low": -637.66,
+      "q_high": -53.71
     },
     "S": {
-      "n": 370,
-      "q_low": -162.82,
-      "q_high": 19.3
+      "n": 289,
+      "q_low": -660.55,
+      "q_high": -51.33
     },
     "W": {
-      "n": 163,
-      "q_low": -138.09,
-      "q_high": 15.54
+      "n": 155,
+      "q_low": -665.39,
+      "q_high": -131.73
     }
   },
   "by_route_daytype": {
     "28__weekday": {
-      "n": 4737,
-      "q_low": -267.8,
-      "q_high": 56.48
+      "n": 4012,
+      "q_low": -637.3,
+      "q_high": -35.17
     },
     "28__weekend_holiday": {
-      "n": 465,
-      "q_low": -251.76,
-      "q_high": 50.29
+      "n": 464,
+      "q_low": -594.09,
+      "q_high": -66.78
     },
     "38__weekday": {
-      "n": 4775,
-      "q_low": -258.84,
-      "q_high": 90.53
+      "n": 3822,
+      "q_low": -636.53,
+      "q_high": -18.24
     },
     "38__weekend_holiday": {
-      "n": 479,
-      "q_low": -252.07,
-      "q_high": 61.33
+      "n": 461,
+      "q_low": -625.95,
+      "q_high": -40.61
     },
     "55__weekday": {
-      "n": 196,
-      "q_low": -149.32,
-      "q_high": 92.13
-    },
-    "55__weekend_holiday": {
-      "n": 30,
-      "q_low": -124.91,
-      "q_high": 73.07
+      "n": 149,
+      "q_low": -653.28,
+      "q_high": -124.83
     },
     "60__weekday": {
-      "n": 126,
-      "q_low": -119.36,
-      "q_high": 1.88
+      "n": 98,
+      "q_low": -706.28,
+      "q_high": -120.32
     },
     "61__weekday": {
-      "n": 237,
-      "q_low": -110.29,
-      "q_high": 10.14
+      "n": 186,
+      "q_low": -702.24,
+      "q_high": -198.61
     },
     "62__weekday": {
-      "n": 295,
-      "q_low": -113.72,
-      "q_high": 11.84
+      "n": 236,
+      "q_low": -642.88,
+      "q_high": -56.6
     },
     "62__weekend_holiday": {
       "n": 45,
-      "q_low": -110.41,
-      "q_high": 8.48
+      "q_low": -717.56,
+      "q_high": -113.59
     },
     "63__weekday": {
-      "n": 327,
-      "q_low": -99.48,
-      "q_high": 36.32
+      "n": 257,
+      "q_low": -683.27,
+      "q_high": -71.44
     },
     "63__weekend_holiday": {
       "n": 42,
-      "q_low": -108.08,
-      "q_high": 39.69
-    },
-    "64__weekday": {
-      "n": 38,
-      "q_low": -163.99,
-      "q_high": 160.99
+      "q_low": -663.97,
+      "q_high": -140.33
     },
     "65__weekday": {
-      "n": 817,
-      "q_low": -128.12,
-      "q_high": 621.99
+      "n": 687,
+      "q_low": -608.4,
+      "q_high": 291.59
     },
     "65__weekend_holiday": {
-      "n": 91,
-      "q_low": -147.8,
-      "q_high": 637.25
+      "n": 89,
+      "q_low": -672.17,
+      "q_high": 313.38
     },
     "75__weekday": {
-      "n": 466,
-      "q_low": -102.96,
-      "q_high": 93.69
+      "n": 371,
+      "q_low": -648.03,
+      "q_high": -60.65
     },
     "75__weekend_holiday": {
-      "n": 63,
-      "q_low": -129.96,
-      "q_high": 48.87
+      "n": 57,
+      "q_low": -658.85,
+      "q_high": -88.28
     },
     "80__weekday": {
-      "n": 11265,
-      "q_low": -294.23,
-      "q_high": 384.88
+      "n": 9751,
+      "q_low": -638.38,
+      "q_high": 249.89
     },
     "80__weekend_holiday": {
-      "n": 2720,
-      "q_low": -324.92,
-      "q_high": 473.16
+      "n": 2119,
+      "q_low": -644.32,
+      "q_high": 300.49
     },
     "81__weekday": {
-      "n": 609,
-      "q_low": -215.38,
-      "q_high": 71.81
+      "n": 539,
+      "q_low": -614.4,
+      "q_high": 22.75
     },
     "81__weekend_holiday": {
-      "n": 478,
-      "q_low": -226.57,
-      "q_high": 124.74
+      "n": 285,
+      "q_low": -594.89,
+      "q_high": 11.62
     },
     "82__weekday": {
-      "n": 802,
-      "q_low": -209.25,
-      "q_high": 28.61
+      "n": 709,
+      "q_low": -602.58,
+      "q_high": 23.83
     },
     "82__weekend_holiday": {
-      "n": 455,
-      "q_low": -214.55,
-      "q_high": 37.49
+      "n": 288,
+      "q_low": -588.32,
+      "q_high": 31.88
     },
     "84__weekday": {
-      "n": 2596,
-      "q_low": -354.49,
-      "q_high": 536.04
+      "n": 2248,
+      "q_low": -650.43,
+      "q_high": 437.65
     },
     "84__weekend_holiday": {
-      "n": 322,
-      "q_low": -332.84,
-      "q_high": 673.28
+      "n": 313,
+      "q_low": -622.61,
+      "q_high": 514.65
     },
     "A__weekday": {
-      "n": 11346,
-      "q_low": -55.1,
-      "q_high": 50.84
+      "n": 9535,
+      "q_low": -656.36,
+      "q_high": -70.09
     },
     "A__weekend_holiday": {
-      "n": 4208,
-      "q_low": -58.22,
-      "q_high": 60.26
+      "n": 2990,
+      "q_low": -671.97,
+      "q_high": -69.07
     },
     "B__weekday": {
-      "n": 7705,
-      "q_low": -71.15,
-      "q_high": 50.25
+      "n": 6498,
+      "q_low": -678.41,
+      "q_high": -62.13
     },
     "B__weekend_holiday": {
-      "n": 3274,
-      "q_low": -92.5,
-      "q_high": 52.04
+      "n": 2452,
+      "q_low": -689.77,
+      "q_high": -73.21
     },
     "C__weekday": {
-      "n": 6245,
-      "q_low": -210.8,
-      "q_high": 44.65
+      "n": 5183,
+      "q_low": -682.21,
+      "q_high": -44.46
     },
     "C__weekend_holiday": {
-      "n": 2540,
-      "q_low": -191.04,
-      "q_high": 43.68
+      "n": 1886,
+      "q_low": -680.14,
+      "q_high": -71.57
     },
     "D__weekday": {
-      "n": 9073,
-      "q_low": -63.8,
-      "q_high": 49.51
+      "n": 7567,
+      "q_low": -680.86,
+      "q_high": -83.52
     },
     "D__weekend_holiday": {
-      "n": 2709,
-      "q_low": -76.18,
-      "q_high": 45.47
+      "n": 2131,
+      "q_low": -680.33,
+      "q_high": -80.23
     },
     "E__weekday": {
-      "n": 2056,
-      "q_low": -95.57,
-      "q_high": 55.67
+      "n": 1675,
+      "q_low": -648.2,
+      "q_high": -25.99
     },
     "E__weekend_holiday": {
-      "n": 810,
-      "q_low": -121.96,
-      "q_high": 54.42
+      "n": 628,
+      "q_low": -648.58,
+      "q_high": -48.89
     },
     "F__weekday": {
-      "n": 2116,
-      "q_low": -57.66,
-      "q_high": 58.31
+      "n": 1841,
+      "q_low": -654.85,
+      "q_high": -57.71
     },
     "F__weekend_holiday": {
-      "n": 585,
-      "q_low": -83.78,
-      "q_high": 368.06
+      "n": 495,
+      "q_low": -645.81,
+      "q_high": 9.27
     },
     "G__weekday": {
-      "n": 2674,
-      "q_low": -47.18,
-      "q_high": 62.82
+      "n": 2184,
+      "q_low": -656.06,
+      "q_high": -69.65
     },
     "G__weekend_holiday": {
-      "n": 1481,
-      "q_low": -49.19,
-      "q_high": 77.5
+      "n": 1105,
+      "q_low": -646.94,
+      "q_high": -78.8
     },
     "H__weekday": {
-      "n": 1751,
-      "q_low": -46.14,
-      "q_high": 60.49
+      "n": 1479,
+      "q_low": -629.32,
+      "q_high": -71.89
     },
     "H__weekend_holiday": {
-      "n": 878,
-      "q_low": -54.1,
-      "q_high": 63.82
+      "n": 646,
+      "q_low": -631.66,
+      "q_high": -72.53
     },
     "J__weekday": {
-      "n": 2079,
-      "q_low": -53.81,
-      "q_high": 71.57
+      "n": 1735,
+      "q_low": -639.86,
+      "q_high": -90.13
     },
     "J__weekend_holiday": {
-      "n": 472,
-      "q_low": -58.27,
-      "q_high": 72.9
+      "n": 394,
+      "q_low": -619.84,
+      "q_high": -79.99
     },
     "L__weekday": {
-      "n": 448,
-      "q_low": -364.33,
-      "q_high": 643.39
+      "n": 364,
+      "q_low": -649.52,
+      "q_high": 451.26
     },
     "L__weekend_holiday": {
-      "n": 197,
-      "q_low": -403.71,
-      "q_high": 717.78
+      "n": 159,
+      "q_low": -613.97,
+      "q_high": 538.43
     },
     "O__weekday": {
-      "n": 1661,
-      "q_low": -376.22,
-      "q_high": 592.11
+      "n": 1373,
+      "q_low": -641.39,
+      "q_high": 403.86
     },
     "O__weekend_holiday": {
-      "n": 672,
-      "q_low": -396.68,
-      "q_high": 113.05
+      "n": 525,
+      "q_low": -630.84,
+      "q_high": 252.19
     },
     "P__weekday": {
-      "n": 481,
-      "q_low": -25.82,
-      "q_high": 887.87
+      "n": 414,
+      "q_low": -602.4,
+      "q_high": 381.0
     },
     "P__weekend_holiday": {
-      "n": 350,
-      "q_low": -21.49,
-      "q_high": 1016.69
+      "n": 263,
+      "q_low": -633.36,
+      "q_high": 547.63
     },
     "R__weekday": {
-      "n": 2195,
-      "q_low": -49.23,
-      "q_high": 64.07
+      "n": 1809,
+      "q_low": -638.4,
+      "q_high": -55.47
     },
     "R__weekend_holiday": {
-      "n": 1212,
-      "q_low": -47.43,
-      "q_high": 65.38
+      "n": 936,
+      "q_low": -635.67,
+      "q_high": -45.59
     },
     "S__weekday": {
-      "n": 137,
-      "q_low": -120.39,
-      "q_high": 44.21
+      "n": 122,
+      "q_low": -660.55,
+      "q_high": 173.6
     },
     "S__weekend_holiday": {
-      "n": 233,
-      "q_low": -175.23,
-      "q_high": 11.38
+      "n": 167,
+      "q_low": -655.06,
+      "q_high": -73.25
     },
     "W__weekday": {
-      "n": 143,
-      "q_low": -166.46,
-      "q_high": 15.54
+      "n": 135,
+      "q_low": -665.39,
+      "q_high": -150.0
     }
   },
   "by_route_daytype_horizon": {
     "28__weekday__short": {
-      "n": 4734,
-      "q_low": -267.8,
-      "q_high": 55.67
+      "n": 4009,
+      "q_low": -637.3,
+      "q_high": -35.17
     },
     "28__weekend_holiday__short": {
-      "n": 465,
-      "q_low": -251.76,
-      "q_high": 50.29
+      "n": 464,
+      "q_low": -594.09,
+      "q_high": -66.78
     },
     "38__weekday__short": {
-      "n": 4768,
-      "q_low": -258.84,
-      "q_high": 90.53
+      "n": 3819,
+      "q_low": -636.67,
+      "q_high": -18.24
     },
     "38__weekend_holiday__short": {
-      "n": 479,
-      "q_low": -252.07,
-      "q_high": 61.33
+      "n": 461,
+      "q_low": -625.95,
+      "q_high": -40.61
     },
     "55__weekday__short": {
-      "n": 196,
-      "q_low": -149.32,
-      "q_high": 92.13
-    },
-    "55__weekend_holiday__short": {
-      "n": 30,
-      "q_low": -124.91,
-      "q_high": 73.07
+      "n": 149,
+      "q_low": -653.28,
+      "q_high": -124.83
     },
     "60__weekday__short": {
-      "n": 126,
-      "q_low": -119.36,
-      "q_high": 1.88
+      "n": 98,
+      "q_low": -706.28,
+      "q_high": -120.32
     },
     "61__weekday__short": {
-      "n": 236,
-      "q_low": -110.29,
-      "q_high": 10.14
+      "n": 185,
+      "q_low": -702.24,
+      "q_high": -198.61
     },
     "62__weekday__short": {
-      "n": 282,
-      "q_low": -108.95,
-      "q_high": 5.7
+      "n": 224,
+      "q_low": -636.81,
+      "q_high": -56.6
     },
     "62__weekend_holiday__short": {
       "n": 45,
-      "q_low": -110.41,
-      "q_high": 8.48
+      "q_low": -717.56,
+      "q_high": -113.59
     },
     "63__weekday__short": {
-      "n": 327,
-      "q_low": -99.48,
-      "q_high": 36.32
+      "n": 257,
+      "q_low": -683.27,
+      "q_high": -71.44
     },
     "63__weekend_holiday__short": {
       "n": 42,
-      "q_low": -108.08,
-      "q_high": 39.69
-    },
-    "64__weekday__short": {
-      "n": 33,
-      "q_low": -106.79,
-      "q_high": 65.74
+      "q_low": -663.97,
+      "q_high": -140.33
     },
     "65__weekday__short": {
-      "n": 810,
-      "q_low": -128.12,
-      "q_high": 621.99
+      "n": 680,
+      "q_low": -608.4,
+      "q_high": 291.59
     },
     "65__weekend_holiday__short": {
-      "n": 91,
-      "q_low": -147.8,
-      "q_high": 637.25
+      "n": 89,
+      "q_low": -672.17,
+      "q_high": 313.38
     },
     "75__weekday__short": {
-      "n": 466,
-      "q_low": -102.96,
-      "q_high": 93.69
+      "n": 371,
+      "q_low": -648.03,
+      "q_high": -60.65
     },
     "75__weekend_holiday__short": {
-      "n": 63,
-      "q_low": -129.96,
-      "q_high": 48.87
+      "n": 57,
+      "q_low": -658.85,
+      "q_high": -88.28
     },
     "80__weekday__long": {
-      "n": 38,
-      "q_low": -428.33,
-      "q_high": 83.74
+      "n": 35,
+      "q_low": -550.92,
+      "q_high": -6.86
     },
     "80__weekday__medium": {
-      "n": 824,
-      "q_low": -250.01,
-      "q_high": 47.18
+      "n": 708,
+      "q_low": -545.5,
+      "q_high": 18.59
     },
     "80__weekday__short": {
-      "n": 10403,
-      "q_low": -293.78,
-      "q_high": 406.36
+      "n": 9008,
+      "q_low": -642.27,
+      "q_high": 261.04
     },
     "80__weekend_holiday__medium": {
-      "n": 221,
-      "q_low": -404.48,
-      "q_high": 58.79
+      "n": 190,
+      "q_low": -554.62,
+      "q_high": 60.07
     },
     "80__weekend_holiday__short": {
-      "n": 2478,
-      "q_low": -316.82,
-      "q_high": 511.97
+      "n": 1910,
+      "q_low": -645.93,
+      "q_high": 316.57
     },
     "81__weekday__short": {
-      "n": 589,
-      "q_low": -218.16,
-      "q_high": 82.44
+      "n": 520,
+      "q_low": -614.4,
+      "q_high": 20.89
     },
     "81__weekend_holiday__short": {
-      "n": 469,
-      "q_low": -226.57,
-      "q_high": 122.81
+      "n": 280,
+      "q_low": -594.89,
+      "q_high": 11.62
     },
     "82__weekday__medium": {
-      "n": 139,
-      "q_low": -159.56,
-      "q_high": 17.11
+      "n": 124,
+      "q_low": -559.22,
+      "q_high": 28.48
     },
     "82__weekday__short": {
-      "n": 655,
-      "q_low": -216.42,
-      "q_high": 33.08
-    },
-    "82__weekend_holiday__medium": {
-      "n": 56,
-      "q_low": -124.38,
-      "q_high": 136.54
+      "n": 577,
+      "q_low": -610.03,
+      "q_high": 23.83
     },
     "82__weekend_holiday__short": {
-      "n": 395,
-      "q_low": -218.9,
-      "q_high": 35.27
+      "n": 261,
+      "q_low": -594.97,
+      "q_high": 29.53
     },
     "84__weekday__medium": {
-      "n": 151,
-      "q_low": -243.51,
-      "q_high": 111.73
+      "n": 153,
+      "q_low": -492.1,
+      "q_high": 18.75
     },
     "84__weekday__short": {
-      "n": 2432,
-      "q_low": -355.71,
-      "q_high": 547.53
+      "n": 2085,
+      "q_low": -651.56,
+      "q_high": 450.71
     },
     "84__weekend_holiday__short": {
-      "n": 298,
-      "q_low": -351.01,
-      "q_high": 741.66
+      "n": 292,
+      "q_low": -622.75,
+      "q_high": 514.65
     },
     "A__weekday__short": {
-      "n": 11341,
-      "q_low": -55.1,
-      "q_high": 50.84
+      "n": 9531,
+      "q_low": -656.36,
+      "q_high": -70.23
     },
     "A__weekend_holiday__short": {
-      "n": 4205,
-      "q_low": -57.97,
-      "q_high": 60.26
+      "n": 2987,
+      "q_low": -671.97,
+      "q_high": -69.07
     },
     "B__weekday__short": {
-      "n": 7704,
-      "q_low": -71.15,
-      "q_high": 50.25
+      "n": 6497,
+      "q_low": -678.41,
+      "q_high": -62.13
     },
     "B__weekend_holiday__short": {
-      "n": 3274,
-      "q_low": -92.5,
-      "q_high": 52.04
+      "n": 2452,
+      "q_low": -689.77,
+      "q_high": -73.21
     },
     "C__weekday__short": {
-      "n": 6244,
-      "q_low": -210.8,
-      "q_high": 44.65
+      "n": 5183,
+      "q_low": -682.21,
+      "q_high": -44.46
     },
     "C__weekend_holiday__short": {
-      "n": 2537,
-      "q_low": -191.77,
-      "q_high": 44.46
+      "n": 1885,
+      "q_low": -680.14,
+      "q_high": -71.57
     },
     "D__weekday__short": {
-      "n": 9073,
-      "q_low": -63.8,
-      "q_high": 49.51
+      "n": 7567,
+      "q_low": -680.86,
+      "q_high": -83.52
     },
     "D__weekend_holiday__short": {
-      "n": 2709,
-      "q_low": -76.18,
-      "q_high": 45.47
+      "n": 2131,
+      "q_low": -680.33,
+      "q_high": -80.23
     },
     "E__weekday__short": {
-      "n": 2056,
-      "q_low": -95.57,
-      "q_high": 55.67
+      "n": 1675,
+      "q_low": -648.2,
+      "q_high": -25.99
     },
     "E__weekend_holiday__short": {
-      "n": 809,
-      "q_low": -121.96,
-      "q_high": 54.42
+      "n": 627,
+      "q_low": -648.58,
+      "q_high": -48.89
     },
     "F__weekday__short": {
-      "n": 2115,
-      "q_low": -57.66,
-      "q_high": 58.31
+      "n": 1840,
+      "q_low": -654.85,
+      "q_high": -58.6
     },
     "F__weekend_holiday__short": {
-      "n": 583,
-      "q_low": -83.78,
-      "q_high": 368.06
+      "n": 493,
+      "q_low": -645.81,
+      "q_high": 9.27
     },
     "G__weekday__short": {
-      "n": 2673,
-      "q_low": -47.18,
-      "q_high": 62.82
+      "n": 2184,
+      "q_low": -656.06,
+      "q_high": -69.65
     },
     "G__weekend_holiday__short": {
-      "n": 1481,
-      "q_low": -49.19,
-      "q_high": 77.5
+      "n": 1105,
+      "q_low": -646.94,
+      "q_high": -78.8
     },
     "H__weekday__short": {
-      "n": 1751,
-      "q_low": -46.14,
-      "q_high": 60.49
+      "n": 1479,
+      "q_low": -629.32,
+      "q_high": -71.89
     },
     "H__weekend_holiday__short": {
-      "n": 878,
-      "q_low": -54.1,
-      "q_high": 63.82
+      "n": 646,
+      "q_low": -631.66,
+      "q_high": -72.53
     },
     "J__weekday__short": {
-      "n": 2079,
-      "q_low": -53.81,
-      "q_high": 71.57
+      "n": 1735,
+      "q_low": -639.86,
+      "q_high": -90.13
     },
     "J__weekend_holiday__short": {
-      "n": 471,
-      "q_low": -58.27,
-      "q_high": 72.9
+      "n": 393,
+      "q_low": -619.84,
+      "q_high": -92.93
     },
     "L__weekday__short": {
-      "n": 447,
-      "q_low": -364.33,
-      "q_high": 643.39
+      "n": 363,
+      "q_low": -649.52,
+      "q_high": 451.26
     },
     "L__weekend_holiday__short": {
-      "n": 197,
-      "q_low": -403.71,
-      "q_high": 717.78
+      "n": 159,
+      "q_low": -613.97,
+      "q_high": 538.43
     },
     "O__weekday__short": {
-      "n": 1661,
-      "q_low": -376.22,
-      "q_high": 592.11
+      "n": 1373,
+      "q_low": -641.39,
+      "q_high": 403.86
     },
     "O__weekend_holiday__short": {
-      "n": 671,
-      "q_low": -396.68,
-      "q_high": 113.05
+      "n": 524,
+      "q_low": -630.84,
+      "q_high": 252.19
     },
     "P__weekday__short": {
-      "n": 481,
-      "q_low": -25.82,
-      "q_high": 887.87
+      "n": 414,
+      "q_low": -602.4,
+      "q_high": 381.0
     },
     "P__weekend_holiday__short": {
-      "n": 350,
-      "q_low": -21.49,
-      "q_high": 1016.69
+      "n": 263,
+      "q_low": -633.36,
+      "q_high": 547.63
     },
     "R__weekday__short": {
-      "n": 2188,
-      "q_low": -49.16,
-      "q_high": 63.92
+      "n": 1805,
+      "q_low": -637.66,
+      "q_high": -55.47
     },
     "R__weekend_holiday__short": {
-      "n": 1209,
-      "q_low": -47.43,
-      "q_high": 65.38
+      "n": 934,
+      "q_low": -635.67,
+      "q_high": -45.59
     },
     "S__weekday__short": {
-      "n": 137,
-      "q_low": -120.39,
-      "q_high": 44.21
+      "n": 122,
+      "q_low": -660.55,
+      "q_high": 173.6
     },
     "S__weekend_holiday__short": {
-      "n": 210,
-      "q_low": -168.85,
-      "q_high": 11.38
+      "n": 150,
+      "q_low": -675.35,
+      "q_high": -51.33
     },
     "W__weekday__short": {
-      "n": 143,
-      "q_low": -166.46,
-      "q_high": 15.54
+      "n": 135,
+      "q_low": -665.39,
+      "q_high": -150.0
     }
   },
   "coverage_verification": {
     "global_empirical_coverage": 0.9,
-    "per_stratum_min_coverage": 0.8889,
-    "per_stratum_max_coverage": 0.9737,
+    "per_stratum_min_coverage": 0.8964,
+    "per_stratum_max_coverage": 0.9429,
     "strata_below_target": []
   }
 }
