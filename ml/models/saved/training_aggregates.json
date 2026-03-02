@@ -1,11 +1,11 @@
 {
-  "global_avg_error": 774.9333333333333,
-  "global_error_std": 226.6231821033909,
+  "global_avg_error": 793.3333333333334,
+  "global_error_std": 244.57183188662785,
   "route_avg_error": {
-    "C": 759.9166666666666
+    "C": 782.9166666666666
   },
   "route_error_std": {
-    "C": 252.60046006340215
+    "C": 274.24257952448306
   },
   "hour_route_error": {},
   "stop_avg_error": {},
@@ -14,5 +14,5 @@
   "route_horizon_error": {},
   "route_horizon_std": {},
   "day_of_week_error": {},
-  "version": "20260301_091818"
+  "version": "20260302_093538"
 }
