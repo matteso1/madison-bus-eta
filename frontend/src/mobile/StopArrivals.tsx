@@ -58,39 +58,41 @@ export default function StopArrivals({ stop, distance, onBack, onTrackBus }: Sto
             delayed: p.dly === true || p.dly === 'true',
           }));
 
-        // Fetch conformal predictions (non-blocking enhancement)
-        const withConfidence = await Promise.all(
-          filtered.map(async (pred) => {
-            try {
-              const confRes = await axios.post(`${API_BASE}/api/conformal-prediction`, {
-                route: pred.route,
-                stop_id: stop.stpid,
-                api_prediction_min: pred.minutes,
-                vehicle_id: pred.vid,
-              });
-              if (cancelledRef.current) return pred;
-              const data = confRes.data;
-              if (data.model_available) {
-                return {
-                  ...pred,
-                  confidence: {
-                    low: data.eta_low_min,
-                    median: data.eta_median_min,
-                    high: data.eta_high_min,
-                  },
-                };
-              }
-            } catch {
-              // Conformal prediction failed -- use prediction without confidence
-            }
-            return pred;
-          })
-        );
+        if (cancelledRef.current) return;
+        setPredictions(filtered);
+        setLoading(false);
 
-        if (!cancelledRef.current) {
-          setPredictions(withConfidence);
-          setLoading(false);
-        }
+        // Fetch conformal predictions in background (non-blocking enhancement)
+        filtered.forEach(async (pred, index) => {
+          try {
+            const confRes = await axios.post(`${API_BASE}/api/conformal-prediction`, {
+              route: pred.route,
+              stop_id: stop.stpid,
+              api_prediction_min: pred.minutes,
+              vehicle_id: pred.vid,
+            });
+            if (cancelledRef.current) return;
+            const data = confRes.data;
+            if (data.model_available) {
+              setPredictions(prev => {
+                const updated = [...prev];
+                if (updated[index]) {
+                  updated[index] = {
+                    ...updated[index],
+                    confidence: {
+                      low: data.eta_low_min,
+                      median: data.eta_median_min,
+                      high: data.eta_high_min,
+                    },
+                  };
+                }
+                return updated;
+              });
+            }
+          } catch {
+            // Conformal prediction failed -- card stays without confidence
+          }
+        });
       } catch (err) {
         console.error('Failed to fetch arrivals:', err);
         if (!cancelledRef.current) {
@@ -187,7 +189,7 @@ export default function StopArrivals({ stop, distance, onBack, onTrackBus }: Sto
       ) : (
         predictions.map((pred) => (
           <ArrivalCard
-            key={pred.vid}
+            key={`${pred.vid}-${pred.route}`}
             route={pred.route}
             destination={pred.destination}
             minutes={pred.minutes}
