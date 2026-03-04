@@ -127,16 +127,37 @@ def _get_regression_model():
         latest = reg.get('latest')
         if not latest:
             return None, 0.0
-        model_path = ml_path / f'model_{latest}.pkl'
-        if not model_path.exists():
-            return None, 0.0
-        with open(model_path, 'rb') as f:
-            _regression_cache['model'] = _pickle.load(f)
-        bias = 0.0
+        # Find registry entry to get filename and bias
+        entry_data = None
         for entry in reg.get('models', []):
             if entry['version'] == latest:
-                bias = entry.get('metrics', {}).get('bias_correction_seconds', 0.0) or 0.0
+                entry_data = entry
                 break
+
+        # Resolve model path: use registry filename if available, else try .ubj then .pkl
+        if entry_data and 'filename' in entry_data:
+            model_path = ml_path / entry_data['filename']
+        else:
+            model_path = ml_path / f'model_{latest}.ubj'
+            if not model_path.exists():
+                model_path = ml_path / f'model_{latest}.pkl'
+
+        if not model_path.exists():
+            return None, 0.0
+
+        # Load based on format
+        if model_path.suffix == '.ubj':
+            import xgboost as xgb
+            model = xgb.XGBRegressor()
+            model.load_model(str(model_path))
+            _regression_cache['model'] = model
+        else:
+            with open(model_path, 'rb') as f:
+                _regression_cache['model'] = _pickle.load(f)
+
+        bias = 0.0
+        if entry_data:
+            bias = entry_data.get('metrics', {}).get('bias_correction_seconds', 0.0) or 0.0
         _regression_cache['bias'] = bias
         _regression_cache['mtime'] = mtime
         return _regression_cache['model'], _regression_cache['bias']
