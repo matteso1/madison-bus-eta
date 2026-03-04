@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import ArrivalCard from './ArrivalCard';
 
@@ -43,7 +43,10 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: NearbyStopsProps) {
   const [nearbyStops, setNearbyStops] = useState<NearbyStopData[]>([]);
   const [loading, setLoading] = useState(true);
+  // Cache nearest stops so we only re-fetch predictions on the 30s interval
+  const cachedStopsRef = useRef<NearbyStopData[] | null>(null);
 
+  // Phase 1: Fetch routes + stops once when location changes, compute nearest 8
   useEffect(() => {
     if (!userLocation) {
       setLoading(false);
@@ -53,14 +56,12 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
     const [lon, lat] = userLocation;
     let cancelled = false;
 
-    async function fetchNearby() {
+    async function fetchStops() {
       try {
-        // Fetch all routes
         const routesRes = await axios.get(`${API_BASE}/routes`);
         const routes = routesRes.data?.['bustime-response']?.routes || [];
         const routeIds: string[] = routes.map((r: { rt: string }) => r.rt);
 
-        // Fetch stops for all routes in batches
         const allStops = new Map<string, Stop & { routes: string[] }>();
         const batchSize = 5;
         for (let i = 0; i < routeIds.length; i += batchSize) {
@@ -93,7 +94,8 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
           });
         }
 
-        // Sort by distance, take top 8
+        if (cancelled) return;
+
         const sorted = [...allStops.values()]
           .map(s => ({
             stop: { stpid: s.stpid, stpnm: s.stpnm, lat: s.lat, lon: s.lon },
@@ -103,14 +105,34 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
           .sort((a, b) => a.distance - b.distance)
           .slice(0, 8);
 
-        // Fetch predictions for nearest stops
-        const withPredictions = await Promise.all(
-          sorted.map(async (item) => {
+        cachedStopsRef.current = sorted;
+      } catch (err) {
+        console.error('Failed to fetch stops:', err);
+      }
+    }
+
+    fetchStops();
+    return () => { cancelled = true; };
+  }, [userLocation]);
+
+  // Phase 2: Fetch predictions for cached nearest stops every 30s
+  useEffect(() => {
+    if (!userLocation) return;
+    let cancelled = false;
+
+    async function fetchPredictions() {
+      const stops = cachedStopsRef.current;
+      if (!stops || stops.length === 0) return;
+
+      try {
+        const updated = await Promise.all(
+          stops.map(async (item) => {
+            const updated = { ...item, predictions: [] as Prediction[] };
             try {
               const res = await axios.get(`${API_BASE}/predictions?stpid=${item.stop.stpid}`);
               const preds = res.data?.['bustime-response']?.prd || [];
               const predArr = Array.isArray(preds) ? preds : [preds];
-              item.predictions = predArr
+              updated.predictions = predArr
                 .filter((p: { prdctdn: string }) => p.prdctdn !== 'DLY' && parseInt(p.prdctdn) <= 30)
                 .slice(0, 3)
                 .map((p: { rt: string; des: string; prdctdn: string; vid: string; dly: boolean | string }) => ({
@@ -121,24 +143,26 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
                   delayed: p.dly === true || p.dly === 'true',
                 }));
             } catch { /* prediction fetch failed for this stop */ }
-            return item;
+            return updated;
           })
         );
 
         if (!cancelled) {
-          setNearbyStops(withPredictions.filter(s => s.predictions.length > 0));
+          setNearbyStops(updated.filter(s => s.predictions.length > 0));
+          setLoading(false);
         }
       } catch (err) {
-        console.error('Failed to fetch nearby stops:', err);
-      } finally {
+        console.error('Failed to fetch predictions:', err);
         if (!cancelled) setLoading(false);
       }
     }
 
-    fetchNearby();
-    const timer = setInterval(fetchNearby, 30000);
+    // Initial fetch after a short delay to let stop data load
+    const initialTimer = setTimeout(fetchPredictions, 1000);
+    const timer = setInterval(fetchPredictions, 30000);
     return () => {
       cancelled = true;
+      clearTimeout(initialTimer);
       clearInterval(timer);
     };
   }, [userLocation]);

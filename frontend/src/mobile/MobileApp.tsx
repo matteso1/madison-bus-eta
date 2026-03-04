@@ -78,7 +78,7 @@ export default function MobileApp() {
 
   return (
     <div style={{
-      height: '100vh',
+      height: '100dvh',
       width: '100vw',
       background: 'var(--bg)',
       display: 'flex',

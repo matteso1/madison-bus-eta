@@ -1,4 +1,4 @@
-import { useRef, useCallback, type ReactNode } from 'react';
+import { useRef, useCallback, useEffect, type ReactNode } from 'react';
 import { motion, useMotionValue, animate, type PanInfo } from 'framer-motion';
 
 export type SheetState = 'peek' | 'half' | 'full';
@@ -7,7 +7,6 @@ interface BottomSheetProps {
   children: ReactNode;
   state: SheetState;
   onStateChange: (state: SheetState) => void;
-  peekHeight?: number;
 }
 
 function getSnapPoints() {
@@ -20,8 +19,17 @@ function getSnapPoints() {
 
 export default function BottomSheet({ children, state, onStateChange }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
-  const snapPoints = getSnapPoints();
-  const height = useMotionValue(snapPoints[state]);
+  const height = useMotionValue(getSnapPoints()[state]);
+
+  // Sync sheet position when state changes from parent (e.g., tracking starts)
+  useEffect(() => {
+    const sp = getSnapPoints();
+    animate(height, sp[state], {
+      type: 'spring',
+      stiffness: 300,
+      damping: 30,
+    });
+  }, [state, height]);
 
   const handleDragEnd = useCallback((_: unknown, info: PanInfo) => {
     const currentHeight = height.get();
