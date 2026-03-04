@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import requests
 import os
 from dotenv import load_dotenv
@@ -45,6 +45,97 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# ── Usage analytics ──────────────────────────────────────────────────────────
+import hashlib
+
+_usage_engine = None
+
+def _get_usage_engine():
+    """Return a cached SQLAlchemy engine (pool_size=2) for usage logging."""
+    global _usage_engine
+    if _usage_engine is None:
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            return None
+        from sqlalchemy import create_engine
+        _usage_engine = create_engine(database_url, pool_size=2, pool_pre_ping=True)
+    return _usage_engine
+
+def _ensure_usage_table():
+    """Create the usage_events table and indexes if they don't exist."""
+    engine = _get_usage_engine()
+    if engine is None:
+        return
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usage_events (
+                    id SERIAL PRIMARY KEY,
+                    event_type VARCHAR(50) NOT NULL,
+                    ip_hash VARCHAR(64) NOT NULL,
+                    user_agent TEXT,
+                    endpoint VARCHAR(200),
+                    route VARCHAR(20),
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_usage_events_created ON usage_events(created_at DESC)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_usage_events_type ON usage_events(event_type, created_at DESC)"
+            ))
+            conn.commit()
+    except Exception as e:
+        logging.debug(f"Usage table setup failed: {e}")
+
+_ensure_usage_table()
+
+@app.after_request
+def _log_usage_event(response):
+    """Log every request as a usage event (except admin/health/static)."""
+    try:
+        path = request.path
+        # Skip paths we don't want to track
+        if path.startswith(('/admin', '/health', '/favicon', '/static')):
+            return response
+
+        # Hash client IP
+        forwarded = request.headers.get('X-Forwarded-For', '')
+        raw_ip = forwarded.split(',')[0].strip() if forwarded else request.remote_addr or ''
+        ip_hash = hashlib.sha256(raw_ip.encode()).hexdigest()
+
+        # Determine event type
+        if path == '/' or path.startswith('/assets'):
+            event_type = 'page_view'
+        else:
+            event_type = 'api_call'
+
+        user_agent = (request.headers.get('User-Agent') or '')[:500]
+        endpoint = path[:200]
+        route_param = request.args.get('rt', '') or request.args.get('route', '')
+        route_param = route_param[:20]
+
+        engine = _get_usage_engine()
+        if engine is not None:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    INSERT INTO usage_events (event_type, ip_hash, user_agent, endpoint, route)
+                    VALUES (:event_type, :ip_hash, :user_agent, :endpoint, :route)
+                """), {
+                    "event_type": event_type,
+                    "ip_hash": ip_hash,
+                    "user_agent": user_agent,
+                    "endpoint": endpoint,
+                    "route": route_param,
+                })
+                conn.commit()
+    except Exception:
+        pass  # Never crash the response
+    return response
 
 API_KEY = os.getenv('MADISON_METRO_API_KEY')
 API_BASE = os.getenv('MADISON_METRO_API_BASE', 'https://metromap.cityofmadison.com/bustime/api/v3')
@@ -5028,6 +5119,114 @@ def admin_cache_clear():
     count = len(CACHE)
     CACHE.clear()
     return jsonify({"cleared": count})
+
+
+@app.route("/api/admin/usage", methods=["GET"])
+def admin_usage():
+    """Return usage analytics for the admin dashboard."""
+    admin_pw = os.getenv('ADMIN_PASSWORD', '')
+    if not admin_pw or request.args.get('password') != admin_pw:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    days = int(request.args.get('days', 7))
+    engine = _get_usage_engine()
+    if engine is None:
+        return jsonify({"error": "Database not configured"}), 500
+
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Totals
+            row = conn.execute(text("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(DISTINCT ip_hash) AS unique_visitors,
+                    COUNT(*) FILTER (WHERE event_type = 'api_call') AS api_calls
+                FROM usage_events
+                WHERE created_at >= NOW() - make_interval(days => :days)
+            """), {"days": days}).fetchone()
+            totals = {
+                "total_requests": row[0],
+                "unique_visitors": row[1],
+                "api_calls": row[2],
+            }
+
+            # Daily breakdown
+            daily_rows = conn.execute(text("""
+                SELECT
+                    created_at::date AS day,
+                    COUNT(*) AS requests,
+                    COUNT(DISTINCT ip_hash) AS unique_visitors,
+                    COUNT(*) FILTER (WHERE event_type = 'api_call') AS api_calls,
+                    COUNT(*) FILTER (WHERE event_type = 'page_view') AS page_views
+                FROM usage_events
+                WHERE created_at >= NOW() - make_interval(days => :days)
+                GROUP BY day
+                ORDER BY day DESC
+            """), {"days": days}).fetchall()
+            daily = [
+                {
+                    "date": str(r[0]),
+                    "requests": r[1],
+                    "unique_visitors": r[2],
+                    "api_calls": r[3],
+                    "page_views": r[4],
+                }
+                for r in daily_rows
+            ]
+
+            # Top endpoints
+            ep_rows = conn.execute(text("""
+                SELECT endpoint, COUNT(*) AS cnt
+                FROM usage_events
+                WHERE created_at >= NOW() - make_interval(days => :days)
+                GROUP BY endpoint
+                ORDER BY cnt DESC
+                LIMIT 20
+            """), {"days": days}).fetchall()
+            top_endpoints = [{"endpoint": r[0], "count": r[1]} for r in ep_rows]
+
+            # Top routes
+            rt_rows = conn.execute(text("""
+                SELECT route, COUNT(*) AS cnt
+                FROM usage_events
+                WHERE created_at >= NOW() - make_interval(days => :days)
+                  AND route != ''
+                GROUP BY route
+                ORDER BY cnt DESC
+                LIMIT 20
+            """), {"days": days}).fetchall()
+            top_routes = [{"route": r[0], "count": r[1]} for r in rt_rows]
+
+        return jsonify({
+            "days": days,
+            "totals": totals,
+            "daily": daily,
+            "top_endpoints": top_endpoints,
+            "top_routes": top_routes,
+        })
+    except Exception as e:
+        logging.error(f"Admin usage query error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin")
+def admin_dashboard():
+    """Serve the admin analytics dashboard."""
+    admin_pw = os.getenv('ADMIN_PASSWORD', '')
+    password = request.args.get('password', '')
+    if not admin_pw or password != admin_pw:
+        return """<!DOCTYPE html>
+<html><head><title>Admin Login</title>
+<style>body{background:#080810;color:#e0e0e0;font-family:Inter,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+form{background:#0f0f1a;padding:2rem;border-radius:12px;border:1px solid #1e1e2e}
+input{background:#1a1a2e;color:#e0e0e0;border:1px solid #1e1e2e;padding:0.5rem 1rem;border-radius:6px;font-size:1rem;margin-right:0.5rem}
+button{background:#00d4ff;color:#080810;border:none;padding:0.5rem 1.5rem;border-radius:6px;font-weight:600;cursor:pointer;font-size:1rem}
+h2{margin-top:0;color:#00d4ff}</style></head>
+<body><form method="GET" action="/admin"><h2>Admin Login</h2>
+<input type="password" name="password" placeholder="Password" required autofocus>
+<button type="submit">Enter</button></form></body></html>""", 200
+    return render_template('admin.html', password=password)
 
 
 if __name__ == "__main__":

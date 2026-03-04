@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Madison Bus ETA - Admin Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080810;
+    --surface: #0f0f1a;
+    --border: #1e1e2e;
+    --signal: #00d4ff;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --font-data: 'JetBrains Mono', monospace;
+    --font-ui: 'Inter', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    padding: 1.5rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: var(--signal);
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+  .controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .controls button {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .controls button:hover { border-color: var(--signal); color: var(--signal); }
+  .controls button.active { background: var(--signal); color: var(--bg); border-color: var(--signal); font-weight: 600; }
+  .status-text { color: var(--text-muted); font-size: 0.8rem; margin-left: auto; font-family: var(--font-data); }
+
+  .metric-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .metric-card .label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+  .metric-card .value {
+    font-family: var(--font-data);
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--signal);
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .section h2 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text);
+  }
+
+  /* Bar chart */
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 160px;
+    padding-top: 0.5rem;
+  }
+  .chart-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .chart-bar {
+    width: 100%;
+    max-width: 40px;
+    background: var(--signal);
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+    transition: height 0.3s;
+    position: relative;
+  }
+  .chart-bar:hover { opacity: 0.8; }
+  .chart-bar .tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: var(--font-data);
+    font-size: 0.7rem;
+    color: var(--text);
+    white-space: nowrap;
+    z-index: 10;
+  }
+  .chart-bar:hover .tooltip { display: block; }
+  .chart-label {
+    font-family: var(--font-data);
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    max-height: 50px;
+    overflow: hidden;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  .num { font-family: var(--font-data); font-size: 0.85rem; }
+  .bar-cell { width: 40%; }
+  .bar-bg {
+    background: rgba(0, 212, 255, 0.08);
+    border-radius: 3px;
+    height: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bar-fill {
+    background: var(--signal);
+    height: 100%;
+    border-radius: 3px;
+    opacity: 0.5;
+    transition: width 0.3s;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  @media (max-width: 768px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+
+  .loading {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 3rem;
+    font-size: 0.9rem;
+  }
+  .error-msg {
+    color: var(--danger);
+    text-align: center;
+    padding: 2rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>Admin Dashboard</h1>
+<p class="subtitle">Madison Bus ETA -- Usage Analytics</p>
+
+<div class="controls">
+  <button onclick="loadData(7)" id="btn-7" class="active">7 Days</button>
+  <button onclick="loadData(14)" id="btn-14">14 Days</button>
+  <button onclick="loadData(30)" id="btn-30">30 Days</button>
+  <span class="status-text" id="status"></span>
+</div>
+
+<div class="metric-cards" id="metrics">
+  <div class="loading">Loading...</div>
+</div>
+
+<div class="section" id="chart-section">
+  <h2>Daily Requests</h2>
+  <div class="chart" id="daily-chart"></div>
+</div>
+
+<div class="section">
+  <h2>Daily Breakdown</h2>
+  <div id="daily-table"><div class="loading">Loading...</div></div>
+</div>
+
+<div class="two-col">
+  <div class="section">
+    <h2>Top Endpoints</h2>
+    <div id="endpoints-table"><div class="loading">Loading...</div></div>
+  </div>
+  <div class="section">
+    <h2>Top Routes</h2>
+    <div id="routes-table"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+const PASSWORD = "{{ password }}";
+let currentDays = 7;
+
+function fmt(n) {
+  if (n == null) return '--';
+  return Number(n).toLocaleString();
+}
+
+function setActive(days) {
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + days);
+  if (btn) btn.classList.add('active');
+}
+
+function renderMetrics(totals) {
+  const el = document.getElementById('metrics');
+  el.innerHTML = `
+    <div class="metric-card">
+      <div class="label">Total Requests</div>
+      <div class="value">${fmt(totals.total_requests)}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Unique Visitors</div>
+      <div class="value">${fmt(totals.unique_visitors)}</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">API Calls</div>
+      <div class="value">${fmt(totals.api_calls)}</div>
+    </div>
+  `;
+}
+
+function renderChart(daily) {
+  const el = document.getElementById('daily-chart');
+  if (!daily || daily.length === 0) {
+    el.innerHTML = '<div class="loading">No data</div>';
+    return;
+  }
+  const sorted = [...daily].reverse();
+  const maxReq = Math.max(...sorted.map(d => d.requests), 1);
+  el.innerHTML = sorted.map(d => {
+    const h = Math.max(2, (d.requests / maxReq) * 140);
+    const label = d.date.slice(5);
+    return `<div class="chart-col">
+      <div class="chart-bar" style="height:${h}px">
+        <div class="tooltip">${d.date}: ${fmt(d.requests)} req</div>
+      </div>
+      <div class="chart-label">${label}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDailyTable(daily) {
+  const el = document.getElementById('daily-table');
+  if (!daily || daily.length === 0) {
+    el.innerHTML = '<div class="loading">No data</div>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Date</th><th>Requests</th><th>Unique Visitors</th><th>API Calls</th><th>Page Views</th>
+    </tr></thead>
+    <tbody>${daily.map(d => `<tr>
+      <td class="num">${d.date}</td>
+      <td class="num">${fmt(d.requests)}</td>
+      <td class="num">${fmt(d.unique_visitors)}</td>
+      <td class="num">${fmt(d.api_calls)}</td>
+      <td class="num">${fmt(d.page_views)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderRankedTable(containerId, items, labelKey, valueKey) {
+  const el = document.getElementById(containerId);
+  if (!items || items.length === 0) {
+    el.innerHTML = '<div class="loading">No data</div>';
+    return;
+  }
+  const maxVal = Math.max(...items.map(i => i[valueKey]), 1);
+  el.innerHTML = `<table>
+    <thead><tr><th>${labelKey === 'endpoint' ? 'Endpoint' : 'Route'}</th><th>Count</th><th class="bar-cell"></th></tr></thead>
+    <tbody>${items.map(item => {
+      const pct = (item[valueKey] / maxVal) * 100;
+      return `<tr>
+        <td class="num">${item[labelKey]}</td>
+        <td class="num">${fmt(item[valueKey])}</td>
+        <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+async function loadData(days) {
+  currentDays = days;
+  setActive(days);
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Loading...';
+  try {
+    const resp = await fetch(`/api/admin/usage?days=${days}&password=${encodeURIComponent(PASSWORD)}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    renderMetrics(data.totals);
+    renderChart(data.daily);
+    renderDailyTable(data.daily);
+    renderRankedTable('endpoints-table', data.top_endpoints, 'endpoint', 'count');
+    renderRankedTable('routes-table', data.top_routes, 'route', 'count');
+    statusEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    statusEl.textContent = '';
+    document.getElementById('metrics').innerHTML = `<div class="error-msg">Error: ${e.message}</div>`;
+  }
+}
+
+loadData(7);
+</script>
+</body>
+</html>
