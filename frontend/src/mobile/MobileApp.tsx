@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import MapView from '../components/MapView';
 import type { TrackedBus, VehicleData, StopClickEvent, BusClickEvent } from '../components/MapView';
 import BottomSheet from './BottomSheet';
 import NearbyStops from './NearbyStops';
+import StopArrivals from './StopArrivals';
 import TrackingBar from './TrackingBar';
 
 type MobileView = 'nearby' | 'stop' | 'tracking';
@@ -15,6 +17,9 @@ export default function MobileApp() {
   const [view, setView] = useState<MobileView>('nearby');
   const [sheetState, setSheetState] = useState<SheetState>('half');
   const [trackedDestination, setTrackedDestination] = useState('');
+  const [selectedStop, setSelectedStop] = useState<{ stpid: string; stpnm: string; lat: number; lon: number; distance: number } | null>(null);
+  const [trackingMinutes, setTrackingMinutes] = useState<number | null>(null);
+  const [trackingStopName, setTrackingStopName] = useState<string>('');
 
   // Geolocation on mount
   useEffect(() => {
@@ -44,6 +49,18 @@ export default function MobileApp() {
     // On mobile, bus interaction is through the bottom sheet
   }, []);
 
+  const handleStopSelect = useCallback((stop: { stpid: string; stpnm: string; lat: number; lon: number }, distance: number) => {
+    setSelectedStop({ ...stop, distance });
+    setView('stop');
+    setSheetState('half');
+  }, []);
+
+  const handleBackToNearby = useCallback(() => {
+    setSelectedStop(null);
+    setView('nearby');
+    setSheetState('half');
+  }, []);
+
   const handleTrackBus = useCallback((vid: string, route: string, destination: string) => {
     setTrackedBus({
       vid,
@@ -60,6 +77,8 @@ export default function MobileApp() {
   const handleStopTracking = useCallback(() => {
     setTrackedBus(null);
     setTrackedDestination('');
+    setTrackingMinutes(null);
+    setTrackingStopName('');
     setSelectedRoute('ALL');
     setView('nearby');
     setSheetState('half');
@@ -75,6 +94,31 @@ export default function MobileApp() {
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }, []);
+
+  // Poll live ETA when tracking a bus
+  useEffect(() => {
+    if (!trackedBus) return;
+    let cancelled = false;
+    const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
+
+    async function fetchTrackingETA() {
+      try {
+        const res = await axios.get(`${API_BASE}/predictions?vid=${trackedBus!.vid}`);
+        const preds = res.data?.['bustime-response']?.prd || [];
+        const predArr = Array.isArray(preds) ? preds : [preds];
+        if (predArr.length > 0 && !cancelled) {
+          const first = predArr[0];
+          const mins = first.prdctdn === 'DUE' ? 0 : (first.prdctdn === 'DLY' ? null : parseInt(first.prdctdn));
+          setTrackingMinutes(mins);
+          setTrackingStopName(first.stpnm || '');
+        }
+      } catch { /* tracking poll failed */ }
+    }
+
+    fetchTrackingETA();
+    const timer = setInterval(fetchTrackingETA, 15000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [trackedBus]);
 
   return (
     <div style={{
@@ -142,13 +186,21 @@ export default function MobileApp() {
           <TrackingBar
             route={trackedBus.route}
             destination={trackedDestination}
-            minutes={null}
+            minutes={trackingMinutes}
+            nextStop={trackingStopName}
             onStopTracking={handleStopTracking}
+          />
+        ) : view === 'stop' && selectedStop ? (
+          <StopArrivals
+            stop={selectedStop}
+            distance={selectedStop.distance}
+            onBack={handleBackToNearby}
+            onTrackBus={handleTrackBus}
           />
         ) : (
           <NearbyStops
             userLocation={userLocation}
-            onStopSelect={() => {}}
+            onStopSelect={handleStopSelect}
             onTrackBus={handleTrackBus}
           />
         )}

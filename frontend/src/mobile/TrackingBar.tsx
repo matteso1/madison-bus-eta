@@ -2,10 +2,11 @@ interface TrackingBarProps {
   route: string;
   destination: string;
   minutes: number | null;
+  nextStop?: string;
   onStopTracking: () => void;
 }
 
-export default function TrackingBar({ route, destination, minutes, onStopTracking }: TrackingBarProps) {
+export default function TrackingBar({ route, destination, minutes, nextStop, onStopTracking }: TrackingBarProps) {
   return (
     <div style={{
       display: 'flex',
@@ -26,17 +27,30 @@ export default function TrackingBar({ route, destination, minutes, onStopTrackin
         {route}
       </div>
 
-      {/* Destination */}
-      <div style={{
-        flex: 1,
-        fontFamily: 'var(--font-ui)',
-        fontSize: 13,
-        color: 'var(--text-primary)',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}>
-        {destination}
+      {/* Destination + Next Stop */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'var(--font-ui)',
+          fontSize: 13,
+          color: 'var(--text-primary)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {destination}
+        </div>
+        {nextStop && (
+          <div style={{
+            fontFamily: 'var(--font-ui)',
+            fontSize: 11,
+            color: 'var(--text-secondary)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            Next: {nextStop}
+          </div>
+        )}
       </div>
 
       {/* ETA */}

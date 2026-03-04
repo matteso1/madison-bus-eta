@@ -27,7 +27,7 @@ interface NearbyStopData {
 
 interface NearbyStopsProps {
   userLocation: [number, number] | null;  // [lon, lat]
-  onStopSelect: (stop: Stop) => void;
+  onStopSelect: (stop: Stop, distance: number) => void;
   onTrackBus: (vid: string, route: string, destination: string) => void;
 }
 
@@ -205,7 +205,7 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
       {nearbyStops.map((item) => (
         <div key={item.stop.stpid}>
           <button
-            onClick={() => onStopSelect(item.stop)}
+            onClick={() => onStopSelect(item.stop, item.distance)}
             style={{
               background: 'none',
               border: 'none',
