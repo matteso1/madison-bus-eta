@@ -8,8 +8,11 @@ import type { TabId } from './components/layout/BottomTabs';
 import ContextPanel from './components/panel/ContextPanel';
 import TrackingOverlay from './components/TrackingOverlay';
 import BusInfoPanel from './components/BusInfoPanel';
+import { useIsMobile } from './hooks/useIsMobile';
+import MobileApp from './mobile/MobileApp';
 
 export default function App() {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<TabId>('map');
   const [selectedRoute, setSelectedRoute] = useState('ALL');
   const [selectedStop, setSelectedStop] = useState<StopClickEvent | null>(null);
@@ -107,6 +110,10 @@ export default function App() {
     setActiveTripPlan(null);
     setSelectedRoute('ALL');
   }, []);
+
+  if (isMobile) {
+    return <MobileApp />;
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>

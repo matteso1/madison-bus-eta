@@ -368,3 +368,19 @@ html, body, #root {
 .trip-search-input::placeholder {
   color: var(--text-dim);
 }
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  html, body {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  button {
+    min-height: 44px;
+  }
+
+  .mobile-safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
