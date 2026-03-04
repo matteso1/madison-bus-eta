@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+import xgboost as xgb
+
 # Model storage directory
 MODELS_DIR = Path(__file__).parent / 'saved'
 MODELS_DIR.mkdir(exist_ok=True)
@@ -49,11 +51,17 @@ def save_model(model, metrics: Dict[str, Any], notes: str = "") -> str:
     version = timestamp.strftime('%Y%m%d_%H%M%S')
     
     # Save model file
-    model_filename = f'model_{version}.pkl'
-    model_path = MODELS_DIR / model_filename
-    
-    with open(model_path, 'wb') as f:
-        pickle.dump(model, f)
+    # Use native XGBoost .ubj format for XGBoost models (version-portable),
+    # fall back to pickle for non-XGBoost models.
+    if hasattr(model, 'save_model') and isinstance(model, xgb.XGBModel):
+        model_filename = f'model_{version}.ubj'
+        model_path = MODELS_DIR / model_filename
+        model.save_model(str(model_path))
+    else:
+        model_filename = f'model_{version}.pkl'
+        model_path = MODELS_DIR / model_filename
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
     
     # Update registry
     registry = _load_registry()
@@ -124,9 +132,15 @@ def load_model(version: Optional[str] = None):
     model_path = MODELS_DIR / model_entry['filename']
     if not model_path.exists():
         return None
-    
-    with open(model_path, 'rb') as f:
-        return pickle.load(f)
+
+    # Load based on file extension: .ubj uses native XGBoost, .pkl uses pickle
+    if model_path.suffix == '.ubj':
+        model = xgb.XGBRegressor()
+        model.load_model(str(model_path))
+        return model
+    else:
+        with open(model_path, 'rb') as f:
+            return pickle.load(f)
 
 
 def load_latest_model():
