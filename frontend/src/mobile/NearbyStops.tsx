@@ -46,7 +46,7 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
   // Cache nearest stops so we only re-fetch predictions on the 30s interval
   const cachedStopsRef = useRef<NearbyStopData[] | null>(null);
 
-  // Phase 1: Fetch routes + stops once when location changes, compute nearest 8
+  // Phase 1: Fetch nearby stops in one call, compute nearest 8
   useEffect(() => {
     if (!userLocation) {
       setLoading(false);
@@ -58,56 +58,24 @@ export default function NearbyStops({ userLocation, onStopSelect, onTrackBus }: 
 
     async function fetchStops() {
       try {
-        const routesRes = await axios.get(`${API_BASE}/routes`);
-        const routes = routesRes.data?.['bustime-response']?.routes || [];
-        const routeIds: string[] = routes.map((r: { rt: string }) => r.rt);
-
-        const allStops = new Map<string, Stop & { routes: string[] }>();
-        const batchSize = 5;
-        for (let i = 0; i < routeIds.length; i += batchSize) {
-          const batch = routeIds.slice(i, i + batchSize);
-          const results = await Promise.all(
-            batch.map((rt) =>
-              axios.get(`${API_BASE}/stops?rt=${rt}`).catch(() => null)
-            )
-          );
-          if (cancelled) return;
-          results.forEach((res, idx) => {
-            if (!res) return;
-            const stops = res.data?.['bustime-response']?.stops || [];
-            stops.forEach((s: { stpid: string; stpnm: string; lat: number; lon: number }) => {
-              const existing = allStops.get(s.stpid);
-              if (existing) {
-                if (!existing.routes.includes(batch[idx])) {
-                  existing.routes.push(batch[idx]);
-                }
-              } else {
-                allStops.set(s.stpid, {
-                  stpid: s.stpid,
-                  stpnm: s.stpnm,
-                  lat: s.lat,
-                  lon: s.lon,
-                  routes: [batch[idx]],
-                });
-              }
-            });
-          });
-        }
-
+        const res = await axios.get(`${API_BASE}/stops/nearby`, {
+          params: { lat, lon, radius: 1.0 },
+        });
         if (cancelled) return;
 
-        const sorted = [...allStops.values()]
-          .map(s => ({
+        const stops = res.data?.stops || [];
+        const sorted = stops
+          .map((s: { stpid: string; stpnm: string; lat: number; lon: number }) => ({
             stop: { stpid: s.stpid, stpnm: s.stpnm, lat: s.lat, lon: s.lon },
             distance: haversineMeters(lat, lon, s.lat, s.lon),
             predictions: [] as Prediction[],
           }))
-          .sort((a, b) => a.distance - b.distance)
+          .sort((a: NearbyStopData, b: NearbyStopData) => a.distance - b.distance)
           .slice(0, 8);
 
         cachedStopsRef.current = sorted;
       } catch (err) {
-        console.error('Failed to fetch stops:', err);
+        console.error('Failed to fetch nearby stops:', err);
       }
     }
 

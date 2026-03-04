@@ -45,8 +45,12 @@ export default function MobileApp() {
     // Live data updates from MapView -- mobile uses NearbyStops for arrivals
   }, []);
 
-  const handleStopClick = useCallback((_stop: StopClickEvent) => {
-    // On mobile, stop clicks are handled via NearbyStops, not map taps
+  const handleStopClick = useCallback((stop: StopClickEvent) => {
+    const lat = stop.lat ?? 0;
+    const lon = stop.lon ?? 0;
+    setSelectedStop({ stpid: stop.stpid, stpnm: stop.stpnm, lat, lon, distance: 0 });
+    setView('stop');
+    setSheetState('half');
   }, []);
 
   const handleBusClick = useCallback((_bus: BusClickEvent) => {

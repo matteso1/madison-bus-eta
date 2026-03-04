@@ -497,7 +497,7 @@ export default function MapView({
                 }
             }
 
-            if (!bestSegment && bestFullPath) bestSegment = bestFullPath;
+            // Don't fall back to full path -- better to show no bold segment than the wrong one
             return { segment: bestSegment, fullPath: bestFullPath, segmentStops };
         };
 
@@ -714,7 +714,7 @@ export default function MapView({
                 getFillColor: [15, 15, 26],
                 getLineColor: [0, 212, 255],
                 onClick: ({ object }) => {
-                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route });
+                    if (object) onStopClick({ stpid: object.stpid, stpnm: object.stpnm, route: object.route, lat: object.position[1], lon: object.position[0] });
                 }
             }));
         }
