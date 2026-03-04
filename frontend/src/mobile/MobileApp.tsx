@@ -23,6 +23,7 @@ export default function MobileApp() {
   const [trackingStopName, setTrackingStopName] = useState<string>('');
   const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
   const [showTripPlanner, setShowTripPlanner] = useState(false);
+  const [flyToTrigger, setFlyToTrigger] = useState(0);
 
   // Geolocation on mount
   useEffect(() => {
@@ -106,6 +107,7 @@ export default function MobileApp() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setUserLocation([pos.coords.longitude, pos.coords.latitude]);
+        setFlyToTrigger(prev => prev + 1);
       },
       () => {},
       { enableHighAccuracy: true, timeout: 10000 }
@@ -155,6 +157,7 @@ export default function MobileApp() {
           userLocation={userLocation}
           trackedBus={trackedBus}
           activeTripPlan={activeTripPlan}
+          flyToTrigger={flyToTrigger}
           onRoutesLoaded={handleRoutesLoaded}
           onLiveDataUpdated={handleLiveDataUpdated}
           onStopClick={handleStopClick}

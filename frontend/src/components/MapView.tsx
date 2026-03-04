@@ -148,6 +148,7 @@ interface MapViewProps {
     userLocation: [number, number] | null;
     trackedBus: TrackedBus | null;
     activeTripPlan: TripPlan | null;
+    flyToTrigger?: number;  // increment to fly to userLocation
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
@@ -158,7 +159,7 @@ interface MapViewProps {
 
 export default function MapView({
     selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan,
-    onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick
+    flyToTrigger, onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
@@ -170,6 +171,12 @@ export default function MapView({
     const mapRef = useRef<maplibregl.Map | null>(null);
 
     const API_BASE = import.meta.env.VITE_APP_API_URL || 'http://localhost:5000';
+
+    // Fly to user location when triggered
+    useEffect(() => {
+        if (!flyToTrigger || !userLocation || !mapRef.current) return;
+        mapRef.current.flyTo({ center: userLocation, zoom: 15, duration: 1000 });
+    }, [flyToTrigger, userLocation]);
 
     // ML predictions are fetched per-stop (in StopPredictions and TrackingOverlay),
     // not on bus hover — bus tooltip just shows route/destination info.
