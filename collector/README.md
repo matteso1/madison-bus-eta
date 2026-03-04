@@ -17,9 +17,7 @@ python collector.py
 2. Point to this `collector/` directory
 3. Set environment variables:
    - `MADISON_METRO_API_KEY` - Your API key
-   - `SENTINEL_ENABLED` - "true" to stream to Sentinel
-   - `SENTINEL_HOST` - Sentinel server hostname
-   - `SENTINEL_PORT` - Sentinel server port
+   - `DATABASE_URL` - PostgreSQL connection string (optional)
 
 ## Rate Limits
 
