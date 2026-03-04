@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import MapView from '../components/MapView';
-import type { TrackedBus, VehicleData, StopClickEvent, BusClickEvent } from '../components/MapView';
+import type { TrackedBus, VehicleData, StopClickEvent, BusClickEvent, TripPlan } from '../components/MapView';
 import BottomSheet from './BottomSheet';
 import NearbyStops from './NearbyStops';
 import StopArrivals from './StopArrivals';
+import MobileTripPlanner from './MobileTripPlanner';
 import TrackingBar from './TrackingBar';
 
 type MobileView = 'nearby' | 'stop' | 'tracking';
@@ -20,6 +21,8 @@ export default function MobileApp() {
   const [selectedStop, setSelectedStop] = useState<{ stpid: string; stpnm: string; lat: number; lon: number; distance: number } | null>(null);
   const [trackingMinutes, setTrackingMinutes] = useState<number | null>(null);
   const [trackingStopName, setTrackingStopName] = useState<string>('');
+  const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
+  const [showTripPlanner, setShowTripPlanner] = useState(false);
 
   // Geolocation on mount
   useEffect(() => {
@@ -61,6 +64,18 @@ export default function MobileApp() {
     setSheetState('half');
   }, []);
 
+  const handleTripSelect = useCallback((plan: TripPlan) => {
+    setActiveTripPlan(plan);
+    setSelectedRoute(plan.routeId);
+    setSheetState('peek');
+  }, []);
+
+  const handleTripClose = useCallback(() => {
+    setShowTripPlanner(false);
+    setActiveTripPlan(null);
+    setSelectedRoute('ALL');
+  }, []);
+
   const handleTrackBus = useCallback((vid: string, route: string, destination: string) => {
     setTrackedBus({
       vid,
@@ -72,6 +87,8 @@ export default function MobileApp() {
     setSelectedRoute(route);
     setView('tracking');
     setSheetState('peek');
+    setShowTripPlanner(false);
+    setActiveTripPlan(null);
   }, []);
 
   const handleStopTracking = useCallback(() => {
@@ -137,7 +154,7 @@ export default function MobileApp() {
           selectedStop={null}
           userLocation={userLocation}
           trackedBus={trackedBus}
-          activeTripPlan={null}
+          activeTripPlan={activeTripPlan}
           onRoutesLoaded={handleRoutesLoaded}
           onLiveDataUpdated={handleLiveDataUpdated}
           onStopClick={handleStopClick}
@@ -197,12 +214,50 @@ export default function MobileApp() {
             onBack={handleBackToNearby}
             onTrackBus={handleTrackBus}
           />
-        ) : (
-          <NearbyStops
+        ) : showTripPlanner ? (
+          <MobileTripPlanner
             userLocation={userLocation}
-            onStopSelect={handleStopSelect}
-            onTrackBus={handleTrackBus}
+            onTripSelect={handleTripSelect}
+            onClose={handleTripClose}
+            activePlan={activeTripPlan}
           />
+        ) : (
+          <>
+            <button
+              onClick={() => {
+                setShowTripPlanner(true);
+                setSheetState('full');
+              }}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-ui)',
+                fontSize: 14,
+                textAlign: 'left',
+                cursor: 'pointer',
+                marginBottom: 16,
+                minHeight: 44,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              Where to?
+            </button>
+            <NearbyStops
+              userLocation={userLocation}
+              onStopSelect={handleStopSelect}
+              onTrackBus={handleTrackBus}
+            />
+          </>
         )}
       </BottomSheet>
     </div>
