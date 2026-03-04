@@ -5210,11 +5210,12 @@ def admin_usage():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/admin")
+@app.route("/admin", methods=["GET", "POST"])
 def admin_dashboard():
     """Serve the admin analytics dashboard."""
     admin_pw = os.getenv('ADMIN_PASSWORD', '')
-    password = request.args.get('password', '')
+    # Accept password from POST form data or GET query param
+    password = request.form.get('password', '') or request.args.get('password', '')
     if not admin_pw or password != admin_pw:
         return """<!DOCTYPE html>
 <html><head><title>Admin Login</title>
@@ -5223,7 +5224,7 @@ form{background:#0f0f1a;padding:2rem;border-radius:12px;border:1px solid #1e1e2e
 input{background:#1a1a2e;color:#e0e0e0;border:1px solid #1e1e2e;padding:0.5rem 1rem;border-radius:6px;font-size:1rem;margin-right:0.5rem}
 button{background:#00d4ff;color:#080810;border:none;padding:0.5rem 1.5rem;border-radius:6px;font-weight:600;cursor:pointer;font-size:1rem}
 h2{margin-top:0;color:#00d4ff}</style></head>
-<body><form method="GET" action="/admin"><h2>Admin Login</h2>
+<body><form method="POST" action="/admin"><h2>Admin Login</h2>
 <input type="password" name="password" placeholder="Password" required autofocus>
 <button type="submit">Enter</button></form></body></html>""", 200
     return render_template('admin.html', password=password)
