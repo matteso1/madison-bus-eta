@@ -26,7 +26,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install xgboost scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv holidays
+          pip install xgboost==1.7.6 scikit-learn pandas numpy sqlalchemy psycopg2-binary python-dotenv holidays
 
       - name: Ensure DB indexes exist
         env:
@@ -56,6 +56,16 @@ jobs:
                   CREATE INDEX IF NOT EXISTS idx_ab_test_matched_created
                   ON ab_test_predictions(matched, created_at DESC)
                   WHERE matched = true
+              '''))
+              # Index for fast weather lookups (latest observation)
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_weather_obs_observed_at
+                  ON weather_observations(observed_at DESC)
+              '''))
+              # Index for fast prediction lookups by vehicle
+              conn.execute(text('''
+                  CREATE INDEX IF NOT EXISTS idx_predictions_vid_created
+                  ON predictions(vid, created_at DESC)
               '''))
               conn.commit()
               print('DB indexes verified')
