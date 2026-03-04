@@ -252,7 +252,7 @@
 </div>
 
 <script>
-const PASSWORD = "{{ password }}";
+const PASSWORD = {{ password|tojson }};
 let currentDays = 7;
 
 function fmt(n) {
