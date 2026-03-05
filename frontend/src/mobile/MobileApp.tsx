@@ -53,8 +53,22 @@ export default function MobileApp() {
     setSheetState('half');
   }, []);
 
-  const handleBusClick = useCallback((_bus: BusClickEvent) => {
-    // On mobile, bus interaction is through the bottom sheet
+  const handleBusClick = useCallback((bus: BusClickEvent) => {
+    setSelectedRoute(bus.route);
+  }, []);
+
+  const handleRouteClick = useCallback((routeId: string) => {
+    setSelectedRoute(routeId);
+  }, []);
+
+  const handleShowAll = useCallback(() => {
+    setSelectedRoute('ALL');
+    setTrackedBus(null);
+    setTrackedDestination('');
+    setTrackingMinutes(null);
+    setTrackingStopName('');
+    setView('nearby');
+    setSheetState('half');
   }, []);
 
   const handleStopSelect = useCallback((stop: { stpid: string; stpnm: string; lat: number; lon: number }, distance: number) => {
@@ -166,6 +180,8 @@ export default function MobileApp() {
           onLiveDataUpdated={handleLiveDataUpdated}
           onStopClick={handleStopClick}
           onBusClick={handleBusClick}
+          showAllBuses={true}
+          onRouteClick={handleRouteClick}
         />
 
         {/* Locate me button */}
@@ -199,6 +215,56 @@ export default function MobileApp() {
             <line x1="18" y1="12" x2="22" y2="12" />
           </svg>
         </button>
+
+        {selectedRoute !== 'ALL' && !trackedBus && !activeTripPlan && (
+          <button
+            onClick={handleShowAll}
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 16,
+              padding: '8px 14px',
+              borderRadius: 20,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              zIndex: 5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            All Routes
+          </button>
+        )}
+
+        {selectedRoute !== 'ALL' && !trackedBus && !activeTripPlan && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 130,
+              padding: '8px 12px',
+              borderRadius: 20,
+              background: 'var(--signal)',
+              color: '#080810',
+              fontFamily: 'var(--font-data)',
+              fontSize: 13,
+              fontWeight: 700,
+              zIndex: 5,
+            }}
+          >
+            Route {selectedRoute}
+          </div>
+        )}
       </div>
 
       {/* Bottom sheet */}
