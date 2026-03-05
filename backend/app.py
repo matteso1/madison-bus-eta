@@ -794,15 +794,21 @@ def get_vehicles():
     chunks = [all_ids[i:i + CHUNK_SIZE] for i in range(0, len(all_ids), CHUNK_SIZE)]
     
     all_vehicles = []
-    
+    api_errors = []
+
     def fetch_chunk(chunk):
         try:
             rt_str = ",".join(chunk)
-            # Short timeout to fail fast on individual chunks
             res = api_get("getvehicles", rt=rt_str)
-            if "bustime-response" in res and "vehicle" in res["bustime-response"]:
-                v = res["bustime-response"]["vehicle"]
-                return v if isinstance(v, list) else [v]
+            if "bustime-response" in res:
+                br = res["bustime-response"]
+                if "vehicle" in br:
+                    v = br["vehicle"]
+                    return v if isinstance(v, list) else [v]
+                if "error" in br:
+                    err = br["error"]
+                    err_msg = err[0].get("msg", str(err[0])) if isinstance(err, list) else (err.get("msg", str(err)) if isinstance(err, dict) else str(err))
+                    api_errors.append(err_msg)
             return []
         except:
             return []
@@ -813,7 +819,13 @@ def get_vehicles():
         for f in concurrent.futures.as_completed(futures):
             all_vehicles.extend(f.result())
 
-    # 4. Construct Response
+    # 4. If we got no vehicles but did get API errors, pass the error through
+    if not all_vehicles and api_errors:
+        result = {"bustime-response": {"error": [{"msg": api_errors[0]}]}}
+        # Don't cache errors
+        return jsonify(result)
+
+    # 5. Construct Response
     result = {"bustime-response": {"vehicle": all_vehicles}}
     
     cache_set(cache_key, result, 15)
