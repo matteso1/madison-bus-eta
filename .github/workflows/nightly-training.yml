@@ -64,8 +64,8 @@ jobs:
               '''))
               # Index for fast prediction lookups by vehicle
               conn.execute(text('''
-                  CREATE INDEX IF NOT EXISTS idx_predictions_vid_created
-                  ON predictions(vid, created_at DESC)
+                  CREATE INDEX IF NOT EXISTS idx_predictions_vid_collected
+                  ON predictions(vid, collected_at DESC)
               '''))
               conn.commit()
               print('DB indexes verified')

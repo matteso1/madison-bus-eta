@@ -915,6 +915,40 @@ def get_patterns():
         print(f"Error in patterns endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/all-patterns")
+def get_all_patterns():
+    """Return all route patterns in one request. Cached 24h to avoid API waste."""
+    cache_key = "all_patterns_v1"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    try:
+        # Get route list (also cached)
+        routes_data = cache_get("routes") or api_get("getroutes")
+        if not routes_data or "bustime-response" not in routes_data:
+            return jsonify({"error": "Failed to get routes"}), 503
+        rts = routes_data["bustime-response"].get("routes", [])
+        if isinstance(rts, dict):
+            rts = [rts]
+        route_ids = [str(r["rt"]) for r in rts if "rt" in r]
+
+        all_patterns = {}
+        CHUNK = 1  # getpatterns only takes one route at a time
+        for rt in route_ids:
+            try:
+                res = api_get("getpatterns", rt=rt)
+                if "bustime-response" in res and "ptr" in res["bustime-response"]:
+                    all_patterns[rt] = res["bustime-response"]["ptr"]
+            except Exception:
+                pass
+
+        result = {"patterns": all_patterns, "routes": rts}
+        cache_set(cache_key, result, 24 * 3600)  # 24h cache
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/health")
 def health():
     try:

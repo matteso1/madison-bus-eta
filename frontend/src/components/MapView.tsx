@@ -285,31 +285,57 @@ export default function MapView({
         return parsed;
     }, []);
 
-    // Load route list + all-routes patterns (for the city overview map)
+    // Load route list + all-routes patterns in a single request
     useEffect(() => {
         const load = async () => {
             try {
-                const routesRes = await axios.get(`${API_BASE}/routes`);
-                const routeList = routesRes.data['bustime-response']?.routes || [];
-                onRoutesLoaded(routeList);
+                const res = await axios.get(`${API_BASE}/all-patterns`);
+                const { routes: routeList, patterns } = res.data;
+                if (routeList) onRoutesLoaded(routeList);
 
                 const allPatterns: any[] = [];
-                const BATCH_SIZE = 5;
-                for (let i = 0; i < routeList.length; i += BATCH_SIZE) {
-                    const batch = routeList.slice(i, i + BATCH_SIZE);
-                    const batchResults = await Promise.all(
-                        batch.map((r: any) =>
-                            axios.get(`${API_BASE}/patterns?rt=${r.rt}`).catch(() => null)
-                        )
-                    );
-                    batchResults.forEach((res, j) => {
-                        const rt = batch[j].rt;
-                        allPatterns.push(...parsePatternResponse(res, rt));
+                for (const [rt, ptrs] of Object.entries(patterns || {})) {
+                    const ptrArr = Array.isArray(ptrs) ? ptrs : [ptrs];
+                    ptrArr.forEach((p: any) => {
+                        if (!p?.pt?.length) return;
+                        const path: [number, number][] = [];
+                        const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
+                        p.pt.forEach((pt: any, idx: number) => {
+                            const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
+                            path.push(pos);
+                            if (pt.typ === 'S' && pt.stpid) {
+                                stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
+                            }
+                        });
+                        const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
+                        allPatterns.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
                     });
                 }
                 setAllRoutePatterns(allPatterns);
             } catch (e) {
-                console.error('Failed to load routes/patterns:', e);
+                // Fallback: load routes + patterns individually
+                try {
+                    const routesRes = await axios.get(`${API_BASE}/routes`);
+                    const routeList = routesRes.data['bustime-response']?.routes || [];
+                    onRoutesLoaded(routeList);
+                    const allPatterns: any[] = [];
+                    const BATCH_SIZE = 5;
+                    for (let i = 0; i < routeList.length; i += BATCH_SIZE) {
+                        const batch = routeList.slice(i, i + BATCH_SIZE);
+                        const batchResults = await Promise.all(
+                            batch.map((r: any) =>
+                                axios.get(`${API_BASE}/patterns?rt=${r.rt}`).catch(() => null)
+                            )
+                        );
+                        batchResults.forEach((res, j) => {
+                            const rt = batch[j].rt;
+                            allPatterns.push(...parsePatternResponse(res, rt));
+                        });
+                    }
+                    setAllRoutePatterns(allPatterns);
+                } catch (e2) {
+                    console.error('Failed to load routes/patterns:', e2);
+                }
             }
         };
         load();
