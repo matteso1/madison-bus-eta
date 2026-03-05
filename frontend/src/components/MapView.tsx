@@ -149,17 +149,19 @@ interface MapViewProps {
     trackedBus: TrackedBus | null;
     activeTripPlan: TripPlan | null;
     flyToTrigger?: number;  // increment to fly to userLocation
+    showAllBuses?: boolean;
     onRoutesLoaded: (routes: Array<{ rt: string; rtnm: string }>) => void;
     onLiveDataUpdated: (vehicles: VehicleData[], delayedCount: number) => void;
     onStopClick: (stop: StopClickEvent) => void;
     onBusClick?: (bus: BusClickEvent) => void;
     onMapClick?: (lngLat: [number, number]) => void;
+    onRouteClick?: (routeId: string) => void;
 }
 
 
 export default function MapView({
     selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan,
-    flyToTrigger, onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick
+    flyToTrigger, showAllBuses, onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onRouteClick
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
@@ -312,22 +314,25 @@ export default function MapView({
         load();
     }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
 
-    // Live vehicle polling — only when a specific route is selected (bus dots aren't shown on overview)
+    // Live vehicle polling — fetches for tracked bus, single route, or all buses
     useEffect(() => {
         const isTracking = !!trackedBus;
         const hasRoute = selectedRoute !== 'ALL';
         const routeToFetch = trackedBus?.route || (hasRoute ? selectedRoute : null);
 
-        if (!routeToFetch) {
+        if (!routeToFetch && !showAllBuses) {
             setLiveData([]);
             return;
         }
 
-        const interval = isTracking ? 5000 : 10000;
+        const interval = isTracking ? 5000 : (routeToFetch ? 10000 : 15000);
 
         const fetchLive = async () => {
             try {
-                const res = await axios.get(`${API_BASE}/vehicles?rt=${routeToFetch}`);
+                const url = routeToFetch
+                    ? `${API_BASE}/vehicles?rt=${routeToFetch}`
+                    : `${API_BASE}/vehicles`;
+                const res = await axios.get(url);
                 const vehicles = res.data?.['bustime-response']?.vehicle;
                 if (!vehicles) { setLiveData([]); return; }
                 const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
@@ -349,7 +354,7 @@ export default function MapView({
         fetchLive();
         const timer = setInterval(fetchLive, interval);
         return () => clearInterval(timer);
-    }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute]);
+    }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute, showAllBuses]);
 
     // Poll active bunching pairs every 30s for map overlay
     useEffect(() => {
@@ -410,9 +415,9 @@ export default function MapView({
 
     const filteredLive = useMemo(() => {
         if (trackedBus) return liveData.filter(v => v.route === trackedBus.route);
-        if (selectedRoute === 'ALL') return [];
+        if (selectedRoute === 'ALL') return showAllBuses ? liveData : [];
         return liveData.filter(v => v.route === selectedRoute);
-    }, [liveData, selectedRoute, trackedBus]);
+    }, [liveData, selectedRoute, trackedBus, showAllBuses]);
 
     const trackedVehicle = useMemo(() => {
         if (!trackedBus) return null;
@@ -560,15 +565,20 @@ export default function MapView({
         // 1) Route paths — hidden during trip mode, bolder when a single route is selected
         if (filteredPatterns.length > 0 && !activeTripPlan) {
             const isSingleRoute = selectedRoute !== 'ALL' || !!trackedBus;
+            const isAllBusesMode = showAllBuses && selectedRoute === 'ALL' && !trackedBus;
             L.push(new PathLayer({
                 id: 'route-paths',
                 data: filteredPatterns,
+                pickable: isAllBusesMode,
                 getPath: (d: any) => d.path,
                 getColor: (d: any) => [...d.color, trackedBus ? 80 : (isSingleRoute ? 220 : 160)],
                 getWidth: isSingleRoute ? 5 : 3,
                 widthMinPixels: isSingleRoute ? 3 : 1.5,
                 capRounded: true,
                 jointRounded: true,
+                onClick: ({ object }) => {
+                    if (object && onRouteClick && isAllBusesMode) onRouteClick(object.route);
+                },
             }));
         }
 
@@ -756,19 +766,42 @@ export default function MapView({
             }));
         }
 
+        // 8) All-buses dots -- canvas-rendered ScatterplotLayer for performance
+        if (showAllBuses && selectedRoute === 'ALL' && !activeTripPlan && !trackedBus && filteredLive.length > 0) {
+            L.push(new ScatterplotLayer({
+                id: 'all-buses',
+                data: filteredLive,
+                pickable: true,
+                getPosition: (d: VehicleData) => d.position,
+                getRadius: 30,
+                radiusMinPixels: 6,
+                radiusMaxPixels: 10,
+                getFillColor: (d: VehicleData) => [...d.color, 230],
+                getLineColor: [255, 255, 255, 200],
+                stroked: true,
+                lineWidthMinPixels: 1.5,
+                onClick: ({ object }) => {
+                    if (object && onRouteClick) {
+                        onRouteClick(object.route);
+                    }
+                },
+            }));
+        }
+
         // Bus markers rendered as DOM Markers in JSX (below)
 
         return L;
     }, [filteredPatterns, stopsData, onStopClick,
         trackedBus, activeTripPlan, tripData, tripWalkPaths, selectedRoute,
-        bunchingPairs]);
+        bunchingPairs, showAllBuses, filteredLive, onRouteClick]);
 
     const nonTracked = useMemo(() => {
         if (activeTripPlan) return [];
+        if (showAllBuses && selectedRoute === 'ALL' && !trackedBus) return [];
         return trackedBus
             ? filteredLive.filter(v => v.vid !== trackedBus.vid)
             : filteredLive;
-    }, [filteredLive, trackedBus, activeTripPlan]);
+    }, [filteredLive, trackedBus, activeTripPlan, showAllBuses, selectedRoute]);
 
     return (
         <Map
