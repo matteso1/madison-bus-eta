@@ -53,10 +53,11 @@ def save_model(model, metrics: Dict[str, Any], notes: str = "") -> str:
     # Save model file
     # Use native XGBoost .ubj format for XGBoost models (version-portable),
     # fall back to pickle for non-XGBoost models.
-    if hasattr(model, 'save_model') and isinstance(model, xgb.XGBModel):
+    # Note: avoid isinstance(model, xgb.XGBModel) as it crashes in xgboost 1.7.x + sklearn 1.8.x
+    if hasattr(model, 'save_model') and hasattr(model, 'get_booster'):
         model_filename = f'model_{version}.ubj'
         model_path = MODELS_DIR / model_filename
-        model.save_model(str(model_path))
+        model.get_booster().save_model(str(model_path))
     else:
         model_filename = f'model_{version}.pkl'
         model_path = MODELS_DIR / model_filename
