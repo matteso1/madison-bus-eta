@@ -50,8 +50,15 @@ export default function App() {
     const fetchAllBuses = async () => {
       try {
         const res = await axios.get(`${API_BASE}/vehicles`);
-        const vehicles = res.data?.['bustime-response']?.vehicle || [];
-        const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
+        const apiErr = res.data?.['bustime-response']?.error;
+        const vehicles = res.data?.['bustime-response']?.vehicle;
+        if (apiErr && !vehicles) {
+          const errMsg = Array.isArray(apiErr) ? apiErr[0]?.msg || String(apiErr[0]) : (typeof apiErr === 'string' ? apiErr : apiErr.msg || 'API error');
+          setApiError(String(errMsg));
+          return;
+        }
+        setApiError(null);
+        const arr = Array.isArray(vehicles) ? vehicles : vehicles ? [vehicles] : [];
         setBusCount(arr.length);
         setDelayedCount(arr.filter((v: any) => v.dly === true || v.dly === 'true').length);
       } catch {}
