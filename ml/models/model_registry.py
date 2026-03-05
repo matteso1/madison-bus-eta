@@ -135,9 +135,21 @@ def load_model(version: Optional[str] = None):
 
     # Load based on file extension: .ubj uses native XGBoost, .pkl uses pickle
     if model_path.suffix == '.ubj':
-        model = xgb.XGBRegressor(objective='reg:squarederror')
-        model.load_model(str(model_path))
-        return model
+        # Load via Booster to avoid _estimator_type bug in xgboost 1.7.x sklearn wrapper
+        booster = xgb.Booster()
+        booster.load_model(str(model_path))
+
+        class _BoosterWrapper:
+            """Thin wrapper so booster.predict() works with numpy arrays."""
+            def __init__(self, b):
+                self._booster = b
+            def predict(self, X):
+                import numpy as np
+                if not isinstance(X, xgb.DMatrix):
+                    X = xgb.DMatrix(X)
+                return self._booster.predict(X)
+
+        return _BoosterWrapper(booster)
     else:
         with open(model_path, 'rb') as f:
             return pickle.load(f)
