@@ -156,12 +156,13 @@ interface MapViewProps {
     onBusClick?: (bus: BusClickEvent) => void;
     onMapClick?: (lngLat: [number, number]) => void;
     onRouteClick?: (routeId: string) => void;
+    onApiError?: (error: string | null) => void;
 }
 
 
 export default function MapView({
     selectedRoute, selectedStop, userLocation, trackedBus, activeTripPlan,
-    flyToTrigger, showAllBuses, onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onRouteClick
+    flyToTrigger, showAllBuses, onRoutesLoaded, onLiveDataUpdated, onStopClick, onBusClick, onRouteClick, onApiError
 }: MapViewProps) {
     const [liveData, setLiveData] = useState<VehicleData[]>([]);
     const [allRoutePatterns, setAllRoutePatterns] = useState<any[]>([]);
@@ -333,6 +334,13 @@ export default function MapView({
                     ? `${API_BASE}/vehicles?rt=${routeToFetch}`
                     : `${API_BASE}/vehicles`;
                 const res = await axios.get(url);
+                const apiErr = res.data?.['bustime-response']?.error;
+                if (apiErr && !res.data?.['bustime-response']?.vehicle) {
+                    const errMsg = Array.isArray(apiErr) ? apiErr[0]?.msg || apiErr[0] : (typeof apiErr === 'string' ? apiErr : apiErr.msg || 'API error');
+                    if (onApiError) onApiError(String(errMsg));
+                    return;
+                }
+                if (onApiError) onApiError(null);
                 const vehicles = res.data?.['bustime-response']?.vehicle;
                 if (!vehicles) { setLiveData([]); return; }
                 const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
@@ -354,7 +362,7 @@ export default function MapView({
         fetchLive();
         const timer = setInterval(fetchLive, interval);
         return () => clearInterval(timer);
-    }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute, showAllBuses]);
+    }, [API_BASE, onLiveDataUpdated, trackedBus, selectedRoute, showAllBuses, onApiError]);
 
     // Poll active bunching pairs every 30s for map overlay
     useEffect(() => {

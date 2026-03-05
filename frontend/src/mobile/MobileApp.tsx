@@ -24,6 +24,7 @@ export default function MobileApp() {
   const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
   const [showTripPlanner, setShowTripPlanner] = useState(false);
   const [flyToTrigger, setFlyToTrigger] = useState(0);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Geolocation on mount
   useEffect(() => {
@@ -55,6 +56,10 @@ export default function MobileApp() {
 
   const handleBusClick = useCallback((bus: BusClickEvent) => {
     setSelectedRoute(bus.route);
+  }, []);
+
+  const handleApiError = useCallback((error: string | null) => {
+    setApiError(error);
   }, []);
 
   const handleRouteClick = useCallback((routeId: string) => {
@@ -167,6 +172,52 @@ export default function MobileApp() {
       overflow: 'hidden',
       position: 'relative',
     }}>
+      {/* API error banner */}
+      {apiError && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: 'rgba(239, 68, 68, 0.95)',
+          padding: '12px 16px',
+          fontFamily: 'var(--font-ui)',
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: '#fff',
+          backdropFilter: 'blur(8px)',
+        }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>Live bus data temporarily unavailable</div>
+          <div style={{ opacity: 0.9 }}>
+            Madison Metro's API has run out of requests for now. This is a limitation of the free API tier
+            and is outside our control. Data will resume automatically when the limit resets.
+          </div>
+          <div style={{ marginTop: 8, opacity: 0.85, fontSize: 12 }}>
+            Want to help? Email{' '}
+            <a href="mailto:mymetrobus@cityofmadison.com?subject=API%20Rate%20Limit%20Increase%20Request%20for%20Madison%20Bus%20ETA&body=Hi%20Madison%20Metro%20team%2C%0A%0AI%20use%20the%20Madison%20Bus%20ETA%20app%20(madisonbuseta.com)%20to%20check%20live%20bus%20arrivals%20and%20it%20has%20been%20really%20helpful.%20Unfortunately%20the%20app%20sometimes%20hits%20the%20API%20request%20limit.%20Would%20it%20be%20possible%20to%20increase%20the%20API%20quota%3F%0A%0AThank%20you!" style={{ color: '#fff', textDecoration: 'underline' }}>
+              mymetrobus@cityofmadison.com
+            </a>{' '}
+            to request a higher API limit for Madison Bus ETA.
+          </div>
+          <button
+            onClick={() => setApiError(null)}
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              background: 'none',
+              border: 'none',
+              color: '#fff',
+              fontSize: 18,
+              cursor: 'pointer',
+              opacity: 0.7,
+              padding: 4,
+            }}
+          >x</button>
+        </div>
+      )}
+
       {/* Map fills entire screen */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <MapView
@@ -182,6 +233,7 @@ export default function MobileApp() {
           onBusClick={handleBusClick}
           showAllBuses={true}
           onRouteClick={handleRouteClick}
+          onApiError={handleApiError}
         />
 
         {/* Locate me button */}

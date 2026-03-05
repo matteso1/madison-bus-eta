@@ -24,6 +24,7 @@ export default function App() {
   const [activeTripPlan, setActiveTripPlan] = useState<TripPlan | null>(null);
   const [liveVehicles, setLiveVehicles] = useState<VehicleData[]>([]);
   const [clickedBus, setClickedBus] = useState<BusClickEvent | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Auto-request geolocation on mount
   useEffect(() => {
@@ -64,6 +65,10 @@ export default function App() {
     setBusCount(vehicles.length);
     setDelayedCount(delayed);
     setLiveVehicles(vehicles);
+  }, []);
+
+  const handleApiError = useCallback((error: string | null) => {
+    setApiError(error);
   }, []);
 
   const handleStopClick = useCallback((stop: StopClickEvent) => {
@@ -117,6 +122,31 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
+      {apiError && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.95)',
+          padding: '10px 16px',
+          fontFamily: 'var(--font-ui)',
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: '#fff',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          position: 'relative',
+        }}>
+          <div style={{ flex: 1 }}>
+            <strong>Live bus data temporarily unavailable.</strong>{' '}
+            Madison Metro's API has run out of requests. This is outside our control and will reset automatically.{' '}
+            Help by emailing{' '}
+            <a href="mailto:mymetrobus@cityofmadison.com?subject=API%20Rate%20Limit%20Increase%20Request%20for%20Madison%20Bus%20ETA&body=Hi%20Madison%20Metro%20team%2C%0A%0AI%20use%20the%20Madison%20Bus%20ETA%20app%20(madisonbuseta.com)%20to%20check%20live%20bus%20arrivals%20and%20it%20has%20been%20really%20helpful.%20Unfortunately%20the%20app%20sometimes%20hits%20the%20API%20request%20limit.%20Would%20it%20be%20possible%20to%20increase%20the%20API%20quota%3F%0A%0AThank%20you!" style={{ color: '#fff', textDecoration: 'underline' }}>
+              mymetrobus@cityofmadison.com
+            </a>{' '}
+            to request a higher API limit.
+          </div>
+          <button onClick={() => setApiError(null)} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer', opacity: 0.7, padding: 4 }}>x</button>
+        </div>
+      )}
       <TopBar
         busCount={busCount}
         delayedCount={delayedCount}
@@ -137,6 +167,7 @@ export default function App() {
             onLiveDataUpdated={handleLiveDataUpdated}
             onStopClick={handleStopClick}
             onBusClick={handleBusClick}
+            onApiError={handleApiError}
           />
 
           {trackedBus && (
