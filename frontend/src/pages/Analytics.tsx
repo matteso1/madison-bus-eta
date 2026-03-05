@@ -7,7 +7,7 @@ import {
     FlaskConical, ShieldCheck, ShieldAlert, ShieldX
 } from 'lucide-react';
 import {
-    XAxis, YAxis, Tooltip, ResponsiveContainer,
+    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
     ReferenceLine, BarChart, Bar, LineChart, Line,
     ScatterChart, Scatter, Cell, AreaChart, Area
 } from 'recharts';
@@ -558,8 +558,9 @@ export default function AnalyticsPage() {
                                 <>
                                     <ResponsiveContainer width="100%" height={350}>
                                         <BarChart data={featureImportance} layout="vertical">
-                                            <XAxis type="number" stroke="#475569" fontSize={10} />
-                                            <YAxis dataKey="name" type="category" stroke="#94a3b8" width={140} fontSize={10} />
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                                            <XAxis type="number" stroke="#94a3b8" fontSize={10} tick={{ fill: '#94a3b8' }} />
+                                            <YAxis dataKey="name" type="category" stroke="#94a3b8" width={140} fontSize={10} tick={{ fill: '#94a3b8' }} />
                                             <Tooltip content={<CustomTooltip />} />
                                             <Bar dataKey="importance" fill="#10b981" radius={[0, 4, 4, 0]} name="Importance" />
                                         </BarChart>
