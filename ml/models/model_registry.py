@@ -135,7 +135,7 @@ def load_model(version: Optional[str] = None):
 
     # Load based on file extension: .ubj uses native XGBoost, .pkl uses pickle
     if model_path.suffix == '.ubj':
-        model = xgb.XGBRegressor()
+        model = xgb.XGBRegressor(objective='reg:squarederror')
         model.load_model(str(model_path))
         return model
     else:

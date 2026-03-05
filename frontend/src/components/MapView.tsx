@@ -285,61 +285,50 @@ export default function MapView({
         return parsed;
     }, []);
 
-    // Load route list + all-routes patterns in a single request
+    // Parse a bulk {routes, patterns} response into allPatterns array
+    const parseBulkPatterns = useCallback((data: any) => {
+        const { routes: routeList, patterns } = data;
+        if (routeList) onRoutesLoaded(routeList);
+        const allPatterns: any[] = [];
+        for (const [rt, ptrs] of Object.entries(patterns || {})) {
+            const ptrArr = Array.isArray(ptrs) ? ptrs : [ptrs];
+            ptrArr.forEach((p: any) => {
+                if (!p?.pt?.length) return;
+                const path: [number, number][] = [];
+                const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
+                p.pt.forEach((pt: any, idx: number) => {
+                    const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
+                    path.push(pos);
+                    if (pt.typ === 'S' && pt.stpid) {
+                        stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
+                    }
+                });
+                const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
+                allPatterns.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
+            });
+        }
+        return allPatterns;
+    }, [onRoutesLoaded]);
+
+    // Load route patterns from static file (instant, no API calls)
     useEffect(() => {
         const load = async () => {
             try {
-                const res = await axios.get(`${API_BASE}/all-patterns`);
-                const { routes: routeList, patterns } = res.data;
-                if (routeList) onRoutesLoaded(routeList);
-
-                const allPatterns: any[] = [];
-                for (const [rt, ptrs] of Object.entries(patterns || {})) {
-                    const ptrArr = Array.isArray(ptrs) ? ptrs : [ptrs];
-                    ptrArr.forEach((p: any) => {
-                        if (!p?.pt?.length) return;
-                        const path: [number, number][] = [];
-                        const stops: { idx: number; stpid: string; stpnm: string; pos: [number, number] }[] = [];
-                        p.pt.forEach((pt: any, idx: number) => {
-                            const pos: [number, number] = [parseFloat(pt.lon), parseFloat(pt.lat)];
-                            path.push(pos);
-                            if (pt.typ === 'S' && pt.stpid) {
-                                stops.push({ idx, stpid: String(pt.stpid), stpnm: pt.stpnm || '', pos });
-                            }
-                        });
-                        const color = ROUTE_COLORS[rt] || DEFAULT_ROUTE_COLOR;
-                        allPatterns.push({ path, stops, color, route: rt, pid: p.pid, dir: p.rtdir });
-                    });
-                }
-                setAllRoutePatterns(allPatterns);
-            } catch (e) {
-                // Fallback: load routes + patterns individually
+                // Static file — bundled at build time, served by CDN, zero API cost
+                const res = await axios.get('/static-routes.json');
+                setAllRoutePatterns(parseBulkPatterns(res.data));
+            } catch {
+                // Fallback: fetch from backend API
                 try {
-                    const routesRes = await axios.get(`${API_BASE}/routes`);
-                    const routeList = routesRes.data['bustime-response']?.routes || [];
-                    onRoutesLoaded(routeList);
-                    const allPatterns: any[] = [];
-                    const BATCH_SIZE = 5;
-                    for (let i = 0; i < routeList.length; i += BATCH_SIZE) {
-                        const batch = routeList.slice(i, i + BATCH_SIZE);
-                        const batchResults = await Promise.all(
-                            batch.map((r: any) =>
-                                axios.get(`${API_BASE}/patterns?rt=${r.rt}`).catch(() => null)
-                            )
-                        );
-                        batchResults.forEach((res, j) => {
-                            const rt = batch[j].rt;
-                            allPatterns.push(...parsePatternResponse(res, rt));
-                        });
-                    }
-                    setAllRoutePatterns(allPatterns);
-                } catch (e2) {
-                    console.error('Failed to load routes/patterns:', e2);
+                    const res = await axios.get(`${API_BASE}/all-patterns`);
+                    setAllRoutePatterns(parseBulkPatterns(res.data));
+                } catch {
+                    console.error('Failed to load route patterns');
                 }
             }
         };
         load();
-    }, [API_BASE, onRoutesLoaded, parsePatternResponse]);
+    }, [API_BASE, parseBulkPatterns]);
 
     // Live vehicle polling — fetches for tracked bus, single route, or all buses
     useEffect(() => {
