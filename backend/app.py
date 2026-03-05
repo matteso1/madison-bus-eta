@@ -514,10 +514,17 @@ def api_get(endpoint, **params):
     p = {"key": API_KEY, "format": "json"}
     p.update(params)
     r = requests.get(f"{API_BASE}/{endpoint}", params=p)
+    if r.status_code == 429:
+        return {"error": "API rate limit exceeded", "text": "Too many requests - API quota exhausted"}
+    if r.status_code >= 400:
+        try:
+            return r.json()
+        except Exception:
+            return {"error": f"HTTP {r.status_code}", "text": r.text[:200] if r.text else ""}
     try:
         return r.json()
     except Exception:
-        return {"error": "Non-JSON response!", "text": r.text}
+        return {"error": "Non-JSON response!", "text": r.text[:200] if r.text else ""}
 
 # ==================== OFFLINE FALLBACK HELPERS ====================
 OFFLINE_DF = None
@@ -809,6 +816,9 @@ def get_vehicles():
                     err = br["error"]
                     err_msg = err[0].get("msg", str(err[0])) if isinstance(err, list) else (err.get("msg", str(err)) if isinstance(err, dict) else str(err))
                     api_errors.append(err_msg)
+            elif "error" in res:
+                # api_get returned a non-bustime error (e.g. HTTP 429, non-JSON response)
+                api_errors.append(res.get("text", res["error"])[:200])
             return []
         except:
             return []

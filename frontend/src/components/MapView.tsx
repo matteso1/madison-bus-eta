@@ -335,14 +335,20 @@ export default function MapView({
                     : `${API_BASE}/vehicles`;
                 const res = await axios.get(url);
                 const apiErr = res.data?.['bustime-response']?.error;
-                if (apiErr && !res.data?.['bustime-response']?.vehicle) {
+                if (apiErr) {
                     const errMsg = Array.isArray(apiErr) ? apiErr[0]?.msg || apiErr[0] : (typeof apiErr === 'string' ? apiErr : apiErr.msg || 'API error');
                     if (onApiError) onApiError(String(errMsg));
                     return;
                 }
-                if (onApiError) onApiError(null);
                 const vehicles = res.data?.['bustime-response']?.vehicle;
-                if (!vehicles) { setLiveData([]); return; }
+                if (!vehicles || (Array.isArray(vehicles) && vehicles.length === 0)) {
+                    const hour = new Date().getHours();
+                    if (hour >= 6 && hour < 23 && showAllBuses) {
+                        if (onApiError) onApiError('No buses returned — Madison Metro API may be out of requests.');
+                    }
+                    setLiveData([]); return;
+                }
+                if (onApiError) onApiError(null);
                 const arr = Array.isArray(vehicles) ? vehicles : [vehicles];
                 const mapped: VehicleData[] = arr.map((v: any) => ({
                     position: [parseFloat(v.lon), parseFloat(v.lat)],

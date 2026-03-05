@@ -52,13 +52,19 @@ export default function App() {
         const res = await axios.get(`${API_BASE}/vehicles`);
         const apiErr = res.data?.['bustime-response']?.error;
         const vehicles = res.data?.['bustime-response']?.vehicle;
-        if (apiErr && !vehicles) {
+        if (apiErr) {
           const errMsg = Array.isArray(apiErr) ? apiErr[0]?.msg || String(apiErr[0]) : (typeof apiErr === 'string' ? apiErr : apiErr.msg || 'API error');
           setApiError(String(errMsg));
           return;
         }
-        setApiError(null);
         const arr = Array.isArray(vehicles) ? vehicles : vehicles ? [vehicles] : [];
+        // If 0 buses during service hours (6am-11pm), likely API quota exhausted
+        const hour = new Date().getHours();
+        if (arr.length === 0 && hour >= 6 && hour < 23) {
+          setApiError('No buses returned — Madison Metro API may be out of requests.');
+        } else {
+          setApiError(null);
+        }
         setBusCount(arr.length);
         setDelayedCount(arr.filter((v: any) => v.dly === true || v.dly === 'true').length);
       } catch {}
