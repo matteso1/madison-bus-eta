@@ -238,20 +238,10 @@ def match_predictions_to_arrivals(
         try:
             prdtm_str = best_match.get('prdtm', '')
             if prdtm_str:
-                # Parse the local time
+                from zoneinfo import ZoneInfo
                 predicted_arrival = datetime.strptime(prdtm_str, "%Y%m%d %H:%M")
-                
-                # Try to use pytz for proper timezone handling
-                try:
-                    import pytz
-                    chicago_tz = pytz.timezone('America/Chicago')
-                    predicted_arrival = chicago_tz.localize(predicted_arrival)
-                    predicted_arrival = predicted_arrival.astimezone(timezone.utc)
-                except ImportError:
-                    # Fallback: CST is UTC-6 (doesn't handle DST but close enough)
-                    from datetime import timedelta as td
-                    predicted_arrival = predicted_arrival.replace(tzinfo=timezone.utc)
-                    predicted_arrival = predicted_arrival + td(hours=6)  # CST -> UTC
+                predicted_arrival = predicted_arrival.replace(tzinfo=ZoneInfo("America/Chicago"))
+                predicted_arrival = predicted_arrival.astimezone(timezone.utc)
             else:
                 continue
         except ValueError:
