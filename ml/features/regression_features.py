@@ -7,11 +7,14 @@ how wrong the API's ETA predictions will be.
 Target variable: error_seconds (actual_arrival - predicted_arrival)
 """
 
+import logging
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
 from typing import Tuple, Dict, Optional
 from sklearn.model_selection import train_test_split
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_regression_training_data(days: int = 7) -> pd.DataFrame:
@@ -578,15 +581,28 @@ def prepare_regression_training_data(
         train_df = df_base[train_mask].copy()
         test_df = df_base[test_mask].copy()
 
-        split_info = {
-            'split_type': 'temporal',
-            'cutoff_date': cutoff_date.isoformat(),
-            'train_date_range': f"{train_df['created_at'].min()} to {train_df['created_at'].max()}",
-            'test_date_range': f"{test_df['created_at'].min()} to {test_df['created_at'].max()}",
-            'test_days': test_days
-        }
-    else:
-        # Fallback to random split (not recommended for production)
+        # If temporal split produces an empty training set (e.g. data spans
+        # fewer days than test_days), fall back to random split so training
+        # can still proceed.
+        if len(train_df) == 0:
+            logger.warning(
+                f"Temporal split produced 0 training rows (data spans "
+                f"{(max_date - df_base['created_at'].min()).days}d, "
+                f"test_days={test_days}). Falling back to random split."
+            )
+            use_temporal_split = False
+
+        if use_temporal_split:
+            split_info = {
+                'split_type': 'temporal',
+                'cutoff_date': cutoff_date.isoformat(),
+                'train_date_range': f"{train_df['created_at'].min()} to {train_df['created_at'].max()}",
+                'test_date_range': f"{test_df['created_at'].min()} to {test_df['created_at'].max()}",
+                'test_days': test_days
+            }
+
+    if not use_temporal_split:
+        # Fallback to random split
         train_idx, test_idx = train_test_split(
             df_base.index,
             test_size=0.2,
