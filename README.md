@@ -1,8 +1,16 @@
 # Madison Bus ETA
 
+> [!NOTE]
+> **🪦 Retired — no longer maintained (June 2026).**
+> This was a fun side project: real-time Madison Metro bus tracking with ML-powered arrival predictions. The backend, database, and nightly training pipeline have been wound down, so the live app and predictions aren't running anymore.
+>
+> The code stays public as-is — fork it, read it, learn from it, whatever you like. It was fun while it lasted. Thanks to anyone who gave it a shot. 🚌
+>
+> — Nils
+
 Real-time bus tracking with ML-powered arrival predictions for Madison, WI. Built because the official Metro app doesn't cut it.
 
-**Live:** [madisonbuseta.com](https://madisonbuseta.com)
+**Live:** ~~[madisonbuseta.com](https://madisonbuseta.com)~~ _(retired)_
 
 ---
 
@@ -140,7 +148,7 @@ Madison Metro's API has a daily request cap. If the app detects the API is out o
 
 ## Contributing
 
-Open an issue or email [nilsmatteson@icloud.com](mailto:nilsmatteson@icloud.com). Real usage data and bug reports are genuinely useful.
+This project is retired and no longer actively maintained, but the code is MIT-licensed and free to fork. Questions or curiosity: [nilsmatteson@icloud.com](mailto:nilsmatteson@icloud.com).
 
 ---
 
